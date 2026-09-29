@@ -120,6 +120,11 @@ def _find_header_row(
 
 
 def parse_cadastros(raw: bytes, file_name: str) -> dict:
+    """Lê apenas as colunas úteis do CADASTROS em modo streaming.
+
+    Evita acesso aleatório célula a célula, que é muito lento em planilhas
+    grandes quando o openpyxl está em read_only.
+    """
     wb = openpyxl.load_workbook(
         io.BytesIO(raw),
         data_only=True,
@@ -127,56 +132,123 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
     )
     ws = wb[wb.sheetnames[0]]
 
-    header_info = _find_header_row(
-        ws,
-        {"GRUPO", "CODIGO", "DESCRICAO", "TIPO", "UNIDADE"},
-        max_rows=10,
-    )
-    if not header_info:
+    required_headers = {
+        "GRUPO",
+        "CODIGO",
+        "DESCRICAO",
+        "TIPO",
+        "UNIDADE",
+    }
+
+    header_row = None
+    header_map: dict[str, int] = {}
+
+    # Localiza o cabeçalho lendo somente as primeiras linhas.
+    for row_index, values in enumerate(
+        ws.iter_rows(
+            min_row=1,
+            max_row=10,
+            values_only=True,
+        ),
+        start=1,
+    ):
+        current = {
+            normalize_text(value): index
+            for index, value in enumerate(values)
+            if value is not None
+            and normalize_text(value)
+        }
+        if required_headers.issubset(current.keys()):
+            header_row = row_index
+            header_map = current
+            break
+
+    if header_row is None:
+        wb.close()
         raise ValueError(
             "Não encontrei o cabeçalho esperado do relatório CADASTROS."
         )
 
-    header_row, headers = header_info
-    column_by_name = {
-        value: col
-        for col, value in headers.items()
-        if value
-    }
+    code_idx = header_map["CODIGO"]
+    group_idx = header_map["GRUPO"]
+    desc_idx = header_map["DESCRICAO"]
+    type_idx = header_map["TIPO"]
+    unit_idx = header_map["UNIDADE"]
+    price_idx = header_map.get("ULT. PRECO")
 
-    code_col = column_by_name["CODIGO"]
-    group_col = column_by_name["GRUPO"]
-    desc_col = column_by_name["DESCRICAO"]
-    type_col = column_by_name["TIPO"]
-    unit_col = column_by_name["UNIDADE"]
-    price_col = column_by_name.get("ULT. PRECO")
+    required_indexes = [
+        code_idx,
+        group_idx,
+        desc_idx,
+        type_idx,
+        unit_idx,
+    ]
+    if price_idx is not None:
+        required_indexes.append(price_idx)
+
+    max_col = max(required_indexes) + 1
 
     candidates: list[dict] = []
+    total_rows_read = 0
+    rows_discarded = 0
 
-    for row_index in range(header_row + 1, ws.max_row + 1):
-        codigo = normalize_code(ws.cell(row_index, code_col).value)
-        if not codigo:
+    # Uma única passagem pelas linhas de dados e somente até a última
+    # coluna realmente necessária.
+    for values in ws.iter_rows(
+        min_row=header_row + 1,
+        max_col=max_col,
+        values_only=True,
+    ):
+        total_rows_read += 1
+
+        codigo_raw = values[code_idx] if code_idx < len(values) else None
+        if codigo_raw is None or str(codigo_raw).strip() == "":
+            rows_discarded += 1
             continue
 
-        grupo = str(ws.cell(row_index, group_col).value or "").strip()
+        grupo = str(
+            values[group_idx] if group_idx < len(values) else ""
+            or ""
+        ).strip()
         descricao = str(
-            ws.cell(row_index, desc_col).value or ""
+            values[desc_idx] if desc_idx < len(values) else ""
+            or ""
         ).strip()
-        tp = str(ws.cell(row_index, type_col).value or "").strip()
-        unidade = str(
-            ws.cell(row_index, unit_col).value or ""
+        tp = str(
+            values[type_idx] if type_idx < len(values) else ""
+            or ""
         ).strip()
-        ult_preco = (
-            to_number(ws.cell(row_index, price_col).value)
-            if price_col
-            else 0.0
+
+        # Filtro barato antes das demais conversões.
+        # Os candidatos conhecidos hoje estão concentrados em:
+        # - grupo 0600 + MP + descrição iniciando por CHAPA;
+        # - descrição iniciando por BARRA DE COBRE ELETROLITICO NU.
+        desc_upper = descricao.upper()
+        possible_chapa = (
+            grupo == "0600"
+            and tp.upper() == "MP"
+            and desc_upper.startswith("CHAPA")
         )
+        possible_barra = desc_upper.startswith(
+            "BARRA DE COBRE"
+        )
+
+        if not possible_chapa and not possible_barra:
+            rows_discarded += 1
+            continue
+
+        codigo = normalize_code(codigo_raw)
+        if not codigo:
+            rows_discarded += 1
+            continue
 
         desc_norm = normalize_text(descricao)
         categoria = ""
         regra = ""
 
-        if desc_norm.startswith("BARRA DE COBRE ELETROLITICO NU"):
+        if desc_norm.startswith(
+            "BARRA DE COBRE ELETROLITICO NU"
+        ):
             categoria = "BARRA_COBRE"
             regra = "DESCRICAO_BARRA_COBRE"
         elif (
@@ -188,7 +260,19 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
             regra = "GRUPO_0600_MP_DESCRICAO_CHAPA"
 
         if not categoria:
+            rows_discarded += 1
             continue
+
+        unidade = str(
+            values[unit_idx] if unit_idx < len(values) else ""
+            or ""
+        ).strip()
+        ult_preco = (
+            to_number(values[price_idx])
+            if price_idx is not None
+            and price_idx < len(values)
+            else 0.0
+        )
 
         candidates.append(
             {
@@ -213,20 +297,25 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
             }
         )
 
+    wb.close()
+
     return {
         "file_name": file_name,
         "candidates": candidates,
         "total_candidates": len(candidates),
         "chapas": sum(
-            1 for row in candidates
+            1
+            for row in candidates
             if row["categoria"] == "CHAPA"
         ),
         "barras": sum(
-            1 for row in candidates
+            1
+            for row in candidates
             if row["categoria"] == "BARRA_COBRE"
         ),
+        "rows_read": total_rows_read,
+        "rows_discarded": rows_discarded,
     }
-
 
 def parse_chapas_eml(raw: bytes, file_name: str) -> dict:
     message = BytesParser(policy=policy.default).parsebytes(raw)
