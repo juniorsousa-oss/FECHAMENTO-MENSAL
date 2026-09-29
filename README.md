@@ -2,7 +2,36 @@
 
 Aplicativo Streamlit para acompanhamento e análise do fechamento mensal de inventário.
 
-## Módulos
+## Alimentação do histórico
+
+O histórico mensal é alimentado exclusivamente por relatório analítico de estoque `.xlsx` ou `.xltx`.
+
+Colunas obrigatórias:
+- CODIGO
+- TP
+- ARMZ
+- SALDO EM ESTOQUE
+- VALOR EM ESTOQUE
+
+A importação é bloqueada quando houver:
+- produto sem saldo;
+- produto sem custo/valor;
+- saldo negativo;
+- valor de estoque negativo;
+- TP ou ARMZ ausente;
+- código duplicado no mesmo armazém.
+
+## Dashboard
+
+Para cada competência o Dashboard apresenta:
+- análise total: estoque inicial, estoque final e resumo;
+- análise por armazém (ARMZ): inicial, final e resumo;
+- análise por tipo de produto (TP): inicial, final e resumo;
+- histórico mês a mês.
+
+O estoque inicial de um mês é obtido do estoque final do mês anterior.
+
+## Módulos laterais
 
 - Dashboard
 - Conferência de chapas e barramentos
@@ -10,22 +39,8 @@ Aplicativo Streamlit para acompanhamento e análise do fechamento mensal de inve
 - Análise de movimentações
 - Configurações
 
-## Dashboard mensal
-
-O Dashboard acompanha por competência:
-
-- estoque inicial e final total;
-- S2: estoque inicial, estoque final, baixa de OP, ajustes, compras, transferências/doações/vendas e resumo;
-- EP: estoque inicial, estoque final e resumo;
-- PA: estoque inicial, estoque final e resumo;
-- faturamento;
-- variação do estoque;
-- histórico mês a mês.
-
-Quando uma nova competência é aberta, os estoques iniciais podem ser sugeridos a partir dos estoques finais do mês anterior.
+As regras de movimentações serão definidas em etapa posterior.
 
 ## Persistência
 
-Os dados mensais e as configurações são persistidos no Supabase. A página e a competência selecionadas são mantidas na URL para sobreviver à atualização do navegador.
-
-O favicon é carregado a partir da identidade visual atualmente salva no aplicativo NFS Setta.
+Dados e configurações são persistidos no Supabase. A página e a competência selecionadas permanecem na URL.
