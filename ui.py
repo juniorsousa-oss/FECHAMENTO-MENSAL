@@ -22,6 +22,8 @@ section[data-testid="stSidebar"] .block-container{padding-top:1.6rem!important;p
 .sidebar-logo-preview{width:100%;min-height:82px;display:flex;justify-content:center;align-items:center;margin:.65rem 0 .5rem;padding:.65rem .8rem;background:#fff;border:1px dashed #d1d5db;border-radius:10px;box-sizing:border-box;overflow:hidden}
 .sidebar-logo-preview img{display:block;width:auto;height:auto;max-width:140px;max-height:62px;object-fit:contain}
 .sidebar-info-card{background:#f8fafc;border:1px solid #e5e8ee;border-radius:10px;padding:.75rem .85rem;color:#6b7280;font-size:.76rem;line-height:1.55}
+.logo-preview{width:100%;min-height:150px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid #e5e8ee;border-radius:12px;padding:1rem;box-sizing:border-box;margin:.5rem 0 1rem}
+.logo-preview img{display:block;max-width:205px;max-height:86px;width:auto;height:auto;object-fit:contain}
 section[data-testid="stSidebar"] div[role="radiogroup"]{display:flex;flex-direction:column;gap:.34rem}
 section[data-testid="stSidebar"] div[role="radiogroup"] label{position:relative;width:100%;min-height:42px;display:flex!important;align-items:center!important;padding:.56rem .72rem .56rem .88rem!important;margin:0!important;border:1px solid transparent!important;border-radius:10px!important;background:transparent!important;cursor:pointer}
 section[data-testid="stSidebar"] div[role="radiogroup"] label>div:first-child{position:absolute!important;opacity:0!important;width:0!important;height:0!important;overflow:hidden!important}
@@ -30,6 +32,15 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:hover{background:#
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked){background:#111827!important;border-color:#111827!important;box-shadow:0 5px 14px rgba(17,24,39,.14)!important}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)::before{content:"";position:absolute;left:.42rem;top:50%;width:4px;height:20px;border-radius:999px;background:#ef4444;transform:translateY(-50%)}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p{color:#fff!important;font-weight:700!important}
+
+[data-testid="stAppViewContainer"] > .main,
+[data-testid="stAppViewContainer"] .main,
+[data-testid="stMain"],
+.stMain{width:100%!important;max-width:100%!important;margin-left:0!important;margin-right:0!important}
+[data-testid="stAppViewContainer"] .main .block-container,
+[data-testid="stMain"] .block-container,
+.stMain .block-container{width:100%!important;max-width:100%!important;margin-left:0!important;margin-right:0!important}
+section[data-testid="stSidebar"][aria-expanded="false"]{width:0!important;min-width:0!important;max-width:0!important;flex-basis:0!important}
 .setta-logo-card{width:100%;min-height:128px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid #e5e8ee;border-radius:16px;box-shadow:0 4px 14px rgba(24,39,75,.08);box-sizing:border-box;margin:0 0 2.55rem;padding:1.1rem 2rem}
 .setta-logo-card img{display:block;width:auto;height:auto;max-width:205px;max-height:86px;object-fit:contain}
 .app-title{margin:0!important;padding:0!important;font-size:2.55rem!important;line-height:1.08!important;font-weight:800!important;letter-spacing:-.04em!important;color:#050505!important}
@@ -88,11 +99,13 @@ div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{min-width:100%!
 """
 
 
-def logo_html() -> str:
+def logo_html(data: str = "", mime: str = "image/svg+xml") -> str:
+    if data:
+        return f'<img src="data:{mime};base64,{data}" alt="Logo Setta">'
     if not LOGO_FILE.exists():
         return '<b style="font-size:2rem;letter-spacing:.08em">SETTA</b>'
-    data = base64.b64encode(LOGO_FILE.read_bytes()).decode()
-    return f'<img src="data:image/svg+xml;base64,{data}" alt="Logo Setta">'
+    fallback = base64.b64encode(LOGO_FILE.read_bytes()).decode()
+    return f'<img src="data:image/svg+xml;base64,{fallback}" alt="Logo Setta">'
 
 
 def inject_css() -> None:
