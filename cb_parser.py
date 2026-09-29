@@ -13,6 +13,47 @@ import openpyxl
 from bs4 import BeautifulSoup
 
 
+INITIAL_CONFIRMED_CODES = {
+    "00110004","00110158","00110061","00110162","00110154","00110064",
+    "00110065","00110114","00110161","00110001","00110160","00110003",
+    "00110049","00110066","00110108","00110073","00110067","00110109",
+    "00110176","00110157","00110178","00110159","00110172","00110171",
+    "00110170","00110202","00110201","00110156","00110155","00110343",
+    "00110341","00110340","06000005","06000031","06000014","06000167",
+    "06000168","06000169","06000187","06000170","06000011","06000055",
+    "06000178","06000179","06000189","06000188","06000186","06000210",
+    "06000211",
+}
+
+INITIAL_CHAPA_MAP = {
+    ("2500X1200", "#12 FINA FRIA"): "06000005",
+    ("2500X1200", "#16 FINA FRIA"): "06000031",
+    ("2500X1200", "#18 FINA FRIA"): "06000014",
+    ("2500X1200", "#12 GALVANIZADA"): "06000167",
+    ("2500X1200", "#14 GALVANIZADA"): "06000168",
+    ("2500X1200", "#16 GALVANIZADA"): "06000169",
+    ("2500X1200", "#18 GALVANIZADA"): "06000187",
+    ("3000X1200", "#12 FINA FRIA"): "06000005",
+    ("3000X1200", "#16 FINA FRIA"): "06000031",
+    ("3000X1200", "#18 FINA FRIA"): "06000014",
+    ("3000X1200", "#12 GALVANIZADA"): "06000167",
+    ("3000X1200", "#14 GALVANIZADA"): "06000168",
+    ("3000X1200", "#16 GALVANIZADA"): "06000169",
+    ("3000X1200", "#18 GALVANIZADA"): "06000187",
+    ("3000X1200", "3/16'' FINA QUENTE"): "06000170",
+    ("3000X1200", '1/8" FINA QUENTE'): "06000011",
+    ("3000X1200", '1/8" XADREZ'): "06000055",
+    ("VARIADAS", "MAGNELIS 1,55"): "06000178",
+    ("VARIADAS", "MAGNELIS 1,95"): "06000179",
+    ("SIVACON", "#12 GALVANIZADA"): "06000167",
+    ("SIVACON", "#14 GALVANIZADA"): "06000168",
+    ("SIVACON", "#16 GALVANIZADA"): "06000169",
+    ("SIVACON", "#20 GALVANIZADA"): "06000186",
+    ("SIVACON", "5MM ALUMINIO"): "06000210",
+    ("SIVACON", "3MM ALUMINIO"): "06000211",
+}
+
+
 def normalize_code(value: Any) -> str:
     if value is None:
         return ""
@@ -158,9 +199,17 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
                 "tp": tp,
                 "unidade": unidade,
                 "ult_preco": ult_preco,
-                "status": "CANDIDATO",
+                "status": (
+                    "CONFIRMADO"
+                    if codigo in INITIAL_CONFIRMED_CODES
+                    else "CANDIDATO"
+                ),
                 "origem": file_name,
-                "regra_detectada": regra,
+                "regra_detectada": (
+                    "BASE_INICIAL_VALIDADA"
+                    if codigo in INITIAL_CONFIRMED_CODES
+                    else regra
+                ),
             }
         )
 
@@ -546,8 +595,18 @@ def resolve_chapa_rows(
     mappings: list[dict],
     catalog: list[dict],
 ) -> dict:
-    mapping_exact: dict[tuple[str, str], dict] = {}
+    mapping_exact: dict[tuple[str, str], dict] = {
+        (normalize_text(dim), normalize_text(desc)): {
+            "codigo": codigo
+        }
+        for (dim, desc), codigo in INITIAL_CHAPA_MAP.items()
+    }
     mapping_fallback: dict[str, list[dict]] = defaultdict(list)
+
+    for (dim, desc), codigo in INITIAL_CHAPA_MAP.items():
+        mapping_fallback[normalize_text(desc)].append(
+            {"codigo": codigo}
+        )
 
     for row in mappings:
         if str(row.get("status") or "").upper() != "CONFIRMADO":
@@ -598,6 +657,11 @@ def resolve_chapa_rows(
         catalog_item = catalog_map.get(codigo)
 
         if not codigo or not catalog_item:
+            if (
+                float(source_row.get("chapas") or 0) == 0
+                and float(source_row.get("peso_total") or 0) == 0
+            ):
+                continue
             unresolved.append(source_row)
             continue
 
