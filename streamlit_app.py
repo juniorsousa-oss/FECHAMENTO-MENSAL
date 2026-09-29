@@ -11,6 +11,7 @@ import streamlit as st
 from PIL import Image
 
 import db
+from report_parser import parse_inventory_report
 from ui import inject_css, logo_html
 
 ROOT = Path(__file__).parent
@@ -57,7 +58,6 @@ st.set_page_config(
 
 
 def browser_icon():
-    """Usa o favicon efetivamente salvo e exibido hoje no NFS Setta."""
     try:
         visual = db.load_nfs_visual_config()
         data = str(visual.get("favicon_data") or "").strip()
@@ -96,11 +96,9 @@ def month_start(value: date | datetime) -> date:
 
 
 def previous_month(value: date) -> date:
-    return date(value.year - 1, 12, 1) if value.month == 1 else date(value.year, value.month - 1, 1)
-
-
-def next_month(value: date) -> date:
-    return date(value.year + 1, 1, 1) if value.month == 12 else date(value.year, value.month + 1, 1)
+    if value.month == 1:
+        return date(value.year - 1, 12, 1)
+    return date(value.year, value.month - 1, 1)
 
 
 def month_label(value: date) -> str:
@@ -108,107 +106,89 @@ def month_label(value: date) -> str:
 
 
 def money_br(value: object) -> str:
+    if value is None:
+        return "—"
     try:
-        number = float(value or 0)
+        number = float(value)
     except Exception:
-        number = 0.0
+        return "—"
     sign = "-" if number < 0 else ""
     text = f"{abs(number):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return f"{sign}R$ {text}"
 
 
-def percent_br(value: object) -> str:
-    try:
-        number = float(value or 0)
-    except Exception:
-        number = 0.0
-    return f"{number:.2f}%".replace(".", ",")
-
-
-def value_class(value: object) -> str:
-    try:
-        number = float(value or 0)
-    except Exception:
+def delta_class(value: float | None) -> str:
+    if value is None:
         return ""
-    if number < 0:
+    if value < 0:
         return " negative"
-    if number > 0:
+    if value > 0:
         return " positive"
     return ""
 
 
-def inventory_row(label: str, value: str, css_class: str = "") -> str:
+def stock_card(title: str, initial: float | None, final: float | None) -> str:
+    summary = None if initial is None or final is None else final - initial
     return (
+        '<div class="inventory-box">'
+        f'<div class="inventory-box-title">{title}</div>'
         '<div class="inventory-row">'
-        f'<div class="inventory-label">{label}</div>'
-        f'<div class="inventory-value{css_class}">{value}</div>'
-        "</div>"
+        '<div class="inventory-label">Inicial</div>'
+        f'<div class="inventory-value">{money_br(initial)}</div>'
+        '</div>'
+        '<div class="inventory-row">'
+        '<div class="inventory-label">Final</div>'
+        f'<div class="inventory-value">{money_br(final)}</div>'
+        '</div>'
+        '<div class="inventory-row">'
+        '<div class="inventory-label">Resumo</div>'
+        f'<div class="inventory-value{delta_class(summary)}">{money_br(summary)}</div>'
+        '</div>'
+        '</div>'
     )
 
 
-def movement_column(title: str, rows: list[tuple[str, float]]) -> str:
-    body = []
-    for label, value in rows:
-        body.append(
-            '<div class="mov-row">'
-            f'<div class="mov-label">{label}</div>'
-            f'<div class="mov-value{value_class(value)}">{money_br(value)}</div>'
-            "</div>"
-        )
-    return (
-        '<div class="mov-col">'
-        f'<div class="mov-head">{title}</div>'
-        + "".join(body)
-        + "</div>"
-    )
+def parse_competencia(value: object) -> date | None:
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except Exception:
+        return None
 
 
-def blank_month(competencia: date, previous: dict | None = None) -> dict:
-    previous = previous or {}
-    return {
-        "competencia": competencia.isoformat(),
-        "faturamento": 0.0,
-        "ei_s2": float(previous.get("ef_s2") or 0),
-        "ef_s2": 0.0,
-        "baixa_op_s2": 0.0,
-        "ajustes_s2": 0.0,
-        "compras_s2": 0.0,
-        "transferencias_s2": 0.0,
-        "vendas_s2": 0.0,
-        "ei_ep": float(previous.get("ef_ep") or 0),
-        "ef_ep": 0.0,
-        "ei_pa": float(previous.get("ef_pa") or 0),
-        "ef_pa": 0.0,
-        "observacao": "",
-    }
+def summary_lookup(rows: list[dict]) -> dict[tuple[str, str, str], dict]:
+    result: dict[tuple[str, str, str], dict] = {}
+    for row in rows:
+        competencia = str(row.get("competencia") or "")[:10]
+        dimensao = str(row.get("dimensao") or "")
+        chave = str(row.get("chave") or "")
+        result[(competencia, dimensao, chave)] = row
+    return result
 
 
-def month_totals(record: dict) -> dict:
-    ei_s2 = float(record.get("ei_s2") or 0)
-    ef_s2 = float(record.get("ef_s2") or 0)
-    ei_ep = float(record.get("ei_ep") or 0)
-    ef_ep = float(record.get("ef_ep") or 0)
-    ei_pa = float(record.get("ei_pa") or 0)
-    ef_pa = float(record.get("ef_pa") or 0)
-    faturamento = float(record.get("faturamento") or 0)
-    baixa = float(record.get("baixa_op_s2") or 0)
+def dimension_rows(
+    summaries: list[dict],
+    competencia: date,
+    dimension: str,
+) -> list[dict]:
+    key = competencia.isoformat()
+    return [
+        row
+        for row in summaries
+        if str(row.get("competencia") or "")[:10] == key
+        and str(row.get("dimensao") or "") == dimension
+    ]
 
-    ei_total = ei_s2 + ei_ep + ei_pa
-    ef_total = ef_s2 + ef_ep + ef_pa
-    variacao = ef_total - ei_total
-    percentual_div = -(ei_total / ef_total * 100) if ef_total else 0.0
-    percentual_produto_fat = abs(baixa) / faturamento * 100 if faturamento else 0.0
 
-    return {
-        "ei_total": ei_total,
-        "ef_total": ef_total,
-        "variacao": variacao,
-        "percentual_div": percentual_div,
-        "percentual_produto_fat": percentual_produto_fat,
-        "resumo_s2": ef_s2 - ei_s2,
-        "resumo_ep": ef_ep - ei_ep,
-        "resumo_pa": ef_pa - ei_pa,
-    }
+def dimension_value(
+    lookup: dict[tuple[str, str, str], dict],
+    competencia: date,
+    dimension: str,
+    key: str,
+) -> float:
+    row = lookup.get((competencia.isoformat(), dimension, key))
+    if not row:
+        return 0.0
+    return float(row.get("valor_total") or 0)
 
 
 if "app_cfg" not in st.session_state:
@@ -275,8 +255,8 @@ with st.sidebar:
         <div class="sidebar-info-card">
             <b>Data operacional</b><br>{datetime.now(TZ):%d/%m/%Y}<br><br>
             <b>Módulo</b><br>Fechamento mensal de inventário<br><br>
-            <b>Persistência</b><br>Supabase habilitado<br><br>
-            <b>Versão</b><br>Protótipo 0.2
+            <b>Alimentação</b><br>Relatório analítico de estoque<br><br>
+            <b>Versão</b><br>Protótipo 0.3
         </div>
         """,
         unsafe_allow_html=True,
@@ -291,245 +271,353 @@ st.markdown(
 st.markdown(f'<p class="app-sub">{cfg["subtitle"]}</p>', unsafe_allow_html=True)
 
 try:
-    month_rows = db.list_months()
-    db_error = ""
+    imports = db.list_inventory_imports()
+    summaries = db.list_inventory_summaries()
+    data_error = ""
 except Exception as exc:
-    month_rows = []
-    db_error = str(exc)
+    imports = []
+    summaries = []
+    data_error = str(exc)
 
-month_by_key = {
+imports_by_month = {
     str(row.get("competencia") or "")[:10]: row
-    for row in month_rows
-    if str(row.get("competencia") or "").strip()
+    for row in imports
 }
-
-today_month = month_start(datetime.now(TZ).date())
-first_option = date(today_month.year - 2, 1, 1)
-last_option = date(today_month.year + 1, 12, 1)
-
-month_options = []
-cursor = first_option
-while cursor <= last_option:
-    month_options.append(cursor)
-    cursor = next_month(cursor)
-
-query_month = str(st.query_params.get("mes", "") or "").strip()
-try:
-    query_month_date = date.fromisoformat(query_month + "-01") if len(query_month) == 7 else None
-except Exception:
-    query_month_date = None
-
-default_month = query_month_date if query_month_date in month_options else today_month
-
-if "selected_month" not in st.session_state:
-    st.session_state.selected_month = default_month
+summary_map = summary_lookup(summaries)
+available_months = sorted(
+    [
+        parsed
+        for parsed in (parse_competencia(row.get("competencia")) for row in imports)
+        if parsed is not None
+    ]
+)
 
 
 if page == "Dashboard":
-    st.markdown('<div class="section-title">Dashboard mensal</div>', unsafe_allow_html=True)
-
-    top1, top2 = st.columns([1.55, 1])
-    with top1:
-        selected_month = st.selectbox(
-            "Competência",
-            month_options,
-            index=month_options.index(st.session_state.selected_month)
-            if st.session_state.selected_month in month_options
-            else month_options.index(today_month),
-            format_func=month_label,
-            key="dashboard_month",
-        )
-        st.session_state.selected_month = selected_month
-        st.query_params["mes"] = selected_month.strftime("%Y-%m")
-    with top2:
-        saved = selected_month.isoformat() in month_by_key
-        st.metric(
-            "Situação da competência",
-            "SALVA" if saved else "NÃO REGISTRADA",
-        )
-
-    previous = month_by_key.get(previous_month(selected_month).isoformat(), {})
-    record = month_by_key.get(selected_month.isoformat()) or blank_month(selected_month, previous)
-    totals = month_totals(record)
-
-    if db_error:
-        st.warning(f"Persistência temporariamente indisponível: {db_error}")
-
-    summary_col, movements_col = st.columns([1.05, 2.35], gap="large")
-
-    with summary_col:
-        summary_html = (
-            '<div class="inventory-box">'
-            '<div class="inventory-box-title">Resumo do mês</div>'
-            + inventory_row("Estoque inicial total", money_br(totals["ei_total"]))
-            + inventory_row("Estoque final total", money_br(totals["ef_total"]))
-            + inventory_row("Faturamento", money_br(record.get("faturamento")))
-            + inventory_row(
-                "Percentual Div. Est. Final/Inic",
-                percent_br(totals["percentual_div"]),
-                value_class(totals["percentual_div"]),
-            )
-            + inventory_row(
-                "Percentual Produto/Fat",
-                percent_br(totals["percentual_produto_fat"]),
-                value_class(totals["percentual_produto_fat"]),
-            )
-            + inventory_row(
-                "Variação de estoque",
-                money_br(totals["variacao"]),
-                value_class(totals["variacao"]),
-            )
-            + "</div>"
-        )
-        st.markdown(summary_html, unsafe_allow_html=True)
-
-    with movements_col:
-        s2_rows = [
-            ("EI S2", float(record.get("ei_s2") or 0)),
-            ("EF S2", float(record.get("ef_s2") or 0)),
-            ("Baixa OP S2", float(record.get("baixa_op_s2") or 0)),
-            ("Ajustes S2", float(record.get("ajustes_s2") or 0)),
-            ("Compras S2", float(record.get("compras_s2") or 0)),
-            (
-                "Transf. de arm. / doação / venda",
-                float(record.get("transferencias_s2") or 0),
-            ),
-            ("Vendas S2", float(record.get("vendas_s2") or 0)),
-            ("Resumo S2", totals["resumo_s2"]),
-        ]
-        ep_rows = [
-            ("EI EP", float(record.get("ei_ep") or 0)),
-            ("EF EP", float(record.get("ef_ep") or 0)),
-            ("Resumo EP", totals["resumo_ep"]),
-        ]
-        pa_rows = [
-            ("EI PA", float(record.get("ei_pa") or 0)),
-            ("EF PA", float(record.get("ef_pa") or 0)),
-            ("Resumo PA", totals["resumo_pa"]),
-        ]
-
-        st.markdown(
-            '<div class="inventory-box">'
-            '<div class="inventory-box-title">Movimentações do mês</div>'
-            '<div style="padding:.75rem">'
-            '<div class="mov-grid">'
-            + movement_column("S2", s2_rows)
-            + movement_column("EP", ep_rows)
-            + movement_column("PA", pa_rows)
-            + "</div></div></div>",
-            unsafe_allow_html=True,
-        )
-
-    with st.expander("REGISTRAR / EDITAR COMPETÊNCIA", expanded=not saved):
-        st.caption(
-            "Ao abrir uma competência ainda não cadastrada, o estoque inicial é sugerido "
-            "a partir do estoque final do mês anterior. Todos os campos continuam editáveis."
-        )
-
-        f1, f2 = st.columns(2)
-        faturamento = f1.number_input(
-            "Faturamento",
-            value=float(record.get("faturamento") or 0),
-            step=1000.0,
-            format="%.2f",
-            key=f"fat_{selected_month}",
-        )
-        observacao = f2.text_input(
-            "Observação",
-            value=str(record.get("observacao") or ""),
-            key=f"obs_{selected_month}",
-        )
-
-        st.markdown("#### S2")
-        s21, s22, s23 = st.columns(3)
-        ei_s2 = s21.number_input("EI S2", value=float(record.get("ei_s2") or 0), format="%.2f", key=f"ei_s2_{selected_month}")
-        ef_s2 = s22.number_input("EF S2", value=float(record.get("ef_s2") or 0), format="%.2f", key=f"ef_s2_{selected_month}")
-        baixa_op_s2 = s23.number_input("Baixa OP S2", value=float(record.get("baixa_op_s2") or 0), format="%.2f", key=f"baixa_{selected_month}")
-
-        s24, s25 = st.columns(2)
-        ajustes_s2 = s24.number_input("Ajustes S2", value=float(record.get("ajustes_s2") or 0), format="%.2f", key=f"ajustes_{selected_month}")
-        compras_s2 = s25.number_input("Compras S2", value=float(record.get("compras_s2") or 0), format="%.2f", key=f"compras_{selected_month}")
-
-        s26, s27 = st.columns(2)
-        transferencias_s2 = s26.number_input(
-            "Transf. de armazém / doação / venda",
-            value=float(record.get("transferencias_s2") or 0),
-            format="%.2f",
-            key=f"transf_{selected_month}",
-        )
-        vendas_s2 = s27.number_input("Vendas S2", value=float(record.get("vendas_s2") or 0), format="%.2f", key=f"vendas_{selected_month}")
-
-        st.markdown("#### EP e PA")
-        e1, e2, p1, p2 = st.columns(4)
-        ei_ep = e1.number_input("EI EP", value=float(record.get("ei_ep") or 0), format="%.2f", key=f"ei_ep_{selected_month}")
-        ef_ep = e2.number_input("EF EP", value=float(record.get("ef_ep") or 0), format="%.2f", key=f"ef_ep_{selected_month}")
-        ei_pa = p1.number_input("EI PA", value=float(record.get("ei_pa") or 0), format="%.2f", key=f"ei_pa_{selected_month}")
-        ef_pa = p2.number_input("EF PA", value=float(record.get("ef_pa") or 0), format="%.2f", key=f"ef_pa_{selected_month}")
-
-        if st.button(
-            "SALVAR COMPETÊNCIA",
-            type="primary",
-            use_container_width=True,
-            key=f"save_month_{selected_month}",
-        ):
-            try:
-                db.save_month(
-                    {
-                        "competencia": selected_month,
-                        "faturamento": faturamento,
-                        "ei_s2": ei_s2,
-                        "ef_s2": ef_s2,
-                        "baixa_op_s2": baixa_op_s2,
-                        "ajustes_s2": ajustes_s2,
-                        "compras_s2": compras_s2,
-                        "transferencias_s2": transferencias_s2,
-                        "vendas_s2": vendas_s2,
-                        "ei_ep": ei_ep,
-                        "ef_ep": ef_ep,
-                        "ei_pa": ei_pa,
-                        "ef_pa": ef_pa,
-                        "observacao": observacao,
-                    }
-                )
-                st.session_state["_flash_month"] = f"{month_label(selected_month)} salva com sucesso."
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Não foi possível salvar a competência: {exc}")
-
-    if st.session_state.pop("_flash_month", None):
-        st.success("Competência salva com sucesso.")
-
+    st.markdown('<div class="section-title">Dashboard de estoque mensal</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="section-title history-title">Histórico mês a mês</div>',
+        """
+        <div class="intro">
+            O histórico é alimentado exclusivamente pelo relatório analítico de estoque.
+            Para cada competência, o sistema usa ARMZ para os armazéns, TP para o tipo do produto
+            e VALOR EM ESTOQUE para o valor financeiro.
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
-    history = []
-    for row in month_rows:
-        try:
-            comp = date.fromisoformat(str(row.get("competencia"))[:10])
-        except Exception:
-            continue
-        calc = month_totals(row)
-        history.append(
-            {
-                "Competência": month_label(comp),
-                "Estoque inicial": money_br(calc["ei_total"]),
-                "Estoque final": money_br(calc["ef_total"]),
-                "Variação": money_br(calc["variacao"]),
-                "EI S2": money_br(row.get("ei_s2")),
-                "EF S2": money_br(row.get("ef_s2")),
-                "EI EP": money_br(row.get("ei_ep")),
-                "EF EP": money_br(row.get("ef_ep")),
-                "EI PA": money_br(row.get("ei_pa")),
-                "EF PA": money_br(row.get("ef_pa")),
-            }
-        )
+    if data_error:
+        st.error(f"Não foi possível carregar a base do fechamento: {data_error}")
 
-    if history:
-        st.dataframe(pd.DataFrame(history), use_container_width=True, hide_index=True)
+    with st.expander("IMPORTAR NOVO FECHAMENTO", expanded=not available_months):
+        col_a, col_b = st.columns([0.8, 1.8])
+        with col_a:
+            competencia_input = st.date_input(
+                "Competência",
+                value=month_start(datetime.now(TZ).date()),
+                format="DD/MM/YYYY",
+                help="O dia é desconsiderado; a competência é gravada pelo mês/ano.",
+            )
+            competencia_input = month_start(competencia_input)
+        with col_b:
+            uploaded = st.file_uploader(
+                "Relatório analítico",
+                type=["xlsx", "xltx"],
+                accept_multiple_files=False,
+                help="O relatório deve conter CODIGO, TP, ARMZ, SALDO EM ESTOQUE e VALOR EM ESTOQUE.",
+            )
+
+        if uploaded is not None:
+            try:
+                parsed = parse_inventory_report(uploaded.getvalue(), uploaded.name)
+
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Linhas válidas", f"{parsed['valid_rows']:,}".replace(",", "."))
+                m2.metric("Erros", parsed["invalid_rows"])
+                m3.metric("Armazéns", len(parsed["warehouses"]))
+                m4.metric("Valor válido", money_br(parsed["total_value"]))
+
+                st.caption(
+                    "Armazéns identificados: "
+                    + ", ".join(parsed["warehouses"])
+                    + " | Tipos identificados: "
+                    + ", ".join(parsed["product_types"])
+                )
+
+                if parsed["errors"]:
+                    st.error(
+                        "IMPORTAÇÃO BLOQUEADA. O relatório possui produto sem saldo, sem custo, "
+                        "valor/saldo negativo, TP/ARMZ ausente ou duplicidade. Corrija o relatório "
+                        "antes de continuar a análise."
+                    )
+                    error_df = pd.DataFrame(parsed["errors"])
+                    columns = [
+                        column
+                        for column in [
+                            "linha",
+                            "codigo",
+                            "tp",
+                            "armz",
+                            "saldo",
+                            "valor_estoque",
+                            "descricao",
+                            "motivo",
+                        ]
+                        if column in error_df.columns
+                    ]
+                    st.dataframe(
+                        error_df[columns],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    existing = imports_by_month.get(competencia_input.isoformat())
+                    if existing:
+                        st.warning(
+                            f"Já existe fechamento para {month_label(competencia_input)}. "
+                            "Ao confirmar, o relatório anterior será substituído."
+                        )
+
+                    if st.button(
+                        "VALIDAR E IMPORTAR FECHAMENTO",
+                        type="primary",
+                        use_container_width=True,
+                    ):
+                        try:
+                            db.import_inventory_report(
+                                competencia_input,
+                                uploaded.name,
+                                parsed["rows"],
+                            )
+                            st.session_state["_import_ok"] = (
+                                f"{month_label(competencia_input)} importado com sucesso."
+                            )
+                            st.query_params["mes"] = competencia_input.strftime("%Y-%m")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Não foi possível importar o fechamento: {exc}")
+            except Exception as exc:
+                st.error(f"Relatório inválido: {exc}")
+
+    flash = st.session_state.pop("_import_ok", None)
+    if flash:
+        st.success(flash)
+
+    if not available_months:
+        st.info("Nenhum fechamento mensal foi importado ainda.")
     else:
-        st.info("Nenhuma competência foi salva ainda.")
+        query_month = str(st.query_params.get("mes", "") or "").strip()
+        query_date = None
+        if len(query_month) == 7:
+            try:
+                query_date = date.fromisoformat(query_month + "-01")
+            except Exception:
+                query_date = None
+
+        default_month = query_date if query_date in available_months else available_months[-1]
+
+        selected_month = st.selectbox(
+            "Competência analisada",
+            available_months,
+            index=available_months.index(default_month),
+            format_func=month_label,
+        )
+        st.query_params["mes"] = selected_month.strftime("%Y-%m")
+
+        import_info = imports_by_month.get(selected_month.isoformat(), {})
+        status = str(import_info.get("status") or "")
+        previous = previous_month(selected_month)
+        previous_exists = previous.isoformat() in imports_by_month
+
+        if status != "VALIDO":
+            st.error(
+                f"{month_label(selected_month)} possui pendência de validação "
+                f"({int(import_info.get('linhas_invalidas') or 0)} item(ns)). "
+                "A análise desta competência fica bloqueada até a correção."
+            )
+            historical_errors = db.list_import_errors(selected_month)
+            if historical_errors:
+                st.dataframe(
+                    pd.DataFrame(historical_errors),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        else:
+            previous_status = str(
+                imports_by_month.get(previous.isoformat(), {}).get("status") or ""
+            )
+            if previous_exists and previous_status != "VALIDO":
+                st.warning(
+                    f"O estoque inicial de {month_label(selected_month)} vem de "
+                    f"{month_label(previous)}, que possui pendência histórica de validação."
+                )
+
+            st.markdown(
+                '<div class="section-title" style="margin-top:1.25rem!important;">Análise total</div>',
+                unsafe_allow_html=True,
+            )
+
+            final_total = dimension_value(summary_map, selected_month, "TOTAL", "TOTAL")
+            initial_total = (
+                dimension_value(summary_map, previous, "TOTAL", "TOTAL")
+                if previous_exists
+                else None
+            )
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Estoque inicial total", money_br(initial_total))
+            c2.metric("Estoque final total", money_br(final_total))
+            c3.metric(
+                "Resumo total",
+                money_br(None if initial_total is None else final_total - initial_total),
+            )
+
+            st.markdown(
+                '<div class="section-title" style="margin-top:1.4rem!important;">Por armazém</div>',
+                unsafe_allow_html=True,
+            )
+
+            current_warehouses = {
+                str(row.get("armz") or "")
+                for row in dimension_rows(summaries, selected_month, "ARMZ")
+            }
+            previous_warehouses = (
+                {
+                    str(row.get("armz") or "")
+                    for row in dimension_rows(summaries, previous, "ARMZ")
+                }
+                if previous_exists
+                else set()
+            )
+            warehouses = sorted(current_warehouses | previous_warehouses)
+
+            if warehouses:
+                for start in range(0, len(warehouses), 3):
+                    columns = st.columns(3)
+                    for column, armz in zip(columns, warehouses[start : start + 3]):
+                        initial_value = (
+                            dimension_value(
+                                summary_map,
+                                previous,
+                                "ARMZ",
+                                f"ARMZ:{armz}",
+                            )
+                            if previous_exists
+                            else None
+                        )
+                        final_value = dimension_value(
+                            summary_map,
+                            selected_month,
+                            "ARMZ",
+                            f"ARMZ:{armz}",
+                        )
+                        with column:
+                            st.markdown(
+                                stock_card(
+                                    f"ARMAZÉM {armz}",
+                                    initial_value,
+                                    final_value,
+                                ),
+                                unsafe_allow_html=True,
+                            )
+
+            st.markdown(
+                '<div class="section-title" style="margin-top:1.4rem!important;">Por tipo de produto (TP)</div>',
+                unsafe_allow_html=True,
+            )
+
+            current_types = {
+                str(row.get("tp") or "")
+                for row in dimension_rows(summaries, selected_month, "TP")
+            }
+            previous_types = (
+                {
+                    str(row.get("tp") or "")
+                    for row in dimension_rows(summaries, previous, "TP")
+                }
+                if previous_exists
+                else set()
+            )
+            product_types = sorted(current_types | previous_types)
+
+            type_rows = []
+            for tp in product_types:
+                initial_value = (
+                    dimension_value(summary_map, previous, "TP", f"TP:{tp}")
+                    if previous_exists
+                    else None
+                )
+                final_value = dimension_value(
+                    summary_map,
+                    selected_month,
+                    "TP",
+                    f"TP:{tp}",
+                )
+                type_rows.append(
+                    {
+                        "TP": tp,
+                        "Estoque inicial": money_br(initial_value),
+                        "Estoque final": money_br(final_value),
+                        "Resumo": money_br(
+                            None
+                            if initial_value is None
+                            else final_value - initial_value
+                        ),
+                    }
+                )
+
+            if type_rows:
+                st.dataframe(
+                    pd.DataFrame(type_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            st.markdown(
+                '<div class="section-title" style="margin-top:1.4rem!important;">Histórico mês a mês</div>',
+                unsafe_allow_html=True,
+            )
+
+            history_rows = []
+            for competencia in available_months:
+                current_value = dimension_value(
+                    summary_map,
+                    competencia,
+                    "TOTAL",
+                    "TOTAL",
+                )
+                prev_comp = previous_month(competencia)
+                prev_exists = prev_comp.isoformat() in imports_by_month
+                initial_value = (
+                    dimension_value(summary_map, prev_comp, "TOTAL", "TOTAL")
+                    if prev_exists
+                    else None
+                )
+                info = imports_by_month.get(competencia.isoformat(), {})
+                history_rows.append(
+                    {
+                        "Competência": month_label(competencia),
+                        "Inicial": money_br(initial_value),
+                        "Final": money_br(current_value),
+                        "Resumo": money_br(
+                            None
+                            if initial_value is None
+                            else current_value - initial_value
+                        ),
+                        "Status": (
+                            "OK"
+                            if str(info.get("status") or "") == "VALIDO"
+                            else "PENDÊNCIA"
+                        ),
+                        "Arquivo": str(info.get("arquivo_nome") or ""),
+                    }
+                )
+
+            st.dataframe(
+                pd.DataFrame(history_rows),
+                use_container_width=True,
+                hide_index=True,
+            )
 
 
 elif page == "Conferência de chapas e barramentos":
@@ -541,7 +629,7 @@ elif page == "Conferência de chapas e barramentos":
         """
         <div class="module-hero">
             <strong>Módulo preparado para a conferência física e sistêmica de chapas e barramentos.</strong>
-            <span>Na próxima etapa definiremos as planilhas de origem, códigos, medidas, unidades, custos e regras de correlação.</span>
+            <span>As regras específicas serão definidas na próxima etapa.</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -557,8 +645,8 @@ elif page == "Conferência de baixas":
     st.markdown(
         """
         <div class="module-hero">
-            <strong>Módulo destinado à validação das baixas que impactam o fechamento do estoque.</strong>
-            <span>Vamos definir os relatórios envolvidos, a chave de comparação, os tipos de baixa válidos e os alertas de divergência.</span>
+            <strong>Módulo destinado à validação das baixas que impactam o fechamento.</strong>
+            <span>As fontes, chaves e regras da conferência serão definidas depois.</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -574,44 +662,31 @@ elif page == "Análise de movimentações":
     st.markdown(
         """
         <div class="module-hero">
-            <strong>Análise das movimentações que explicam a variação do estoque no mês.</strong>
-            <span>Esta área será usada para detalhar compras, baixas de OP, ajustes, transferências, doações, vendas e demais movimentos do período.</span>
+            <strong>As movimentações ainda não foram definidas.</strong>
+            <span>Por enquanto, este módulo permanece sem cálculos para não assumir regras antes da validação do processo.</span>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    if month_rows:
-        movement_table = []
-        for row in month_rows:
-            comp = date.fromisoformat(str(row.get("competencia"))[:10])
-            calc = month_totals(row)
-            movement_table.append(
-                {
-                    "Competência": month_label(comp),
-                    "Baixa OP S2": money_br(row.get("baixa_op_s2")),
-                    "Ajustes S2": money_br(row.get("ajustes_s2")),
-                    "Compras S2": money_br(row.get("compras_s2")),
-                    "Transferências": money_br(row.get("transferencias_s2")),
-                    "Vendas S2": money_br(row.get("vendas_s2")),
-                    "Variação total": money_br(calc["variacao"]),
-                }
-            )
-        st.dataframe(pd.DataFrame(movement_table), use_container_width=True, hide_index=True)
-    else:
-        st.info("Salve a primeira competência no Dashboard para iniciar o histórico de movimentações.")
-
 
 else:
     st.markdown('<div class="section-title">Configurações</div>', unsafe_allow_html=True)
     st.caption(
-        "As alterações desta página agora são salvas no Supabase e permanecem após atualizar ou abrir o aplicativo novamente."
+        "As alterações desta página são persistidas no Supabase. "
+        "A página atual e a competência analisada permanecem na URL."
     )
 
     with st.container(border=True):
         st.markdown("#### Identidade do aplicativo")
-        title = st.text_input("Título principal", value=str(cfg.get("title") or DEFAULT_CONFIG["title"]))
-        subtitle = st.text_input("Subtítulo", value=str(cfg.get("subtitle") or DEFAULT_CONFIG["subtitle"]))
+        title = st.text_input(
+            "Título principal",
+            value=str(cfg.get("title") or DEFAULT_CONFIG["title"]),
+        )
+        subtitle = st.text_input(
+            "Subtítulo",
+            value=str(cfg.get("subtitle") or DEFAULT_CONFIG["subtitle"]),
+        )
         sidebar_title = st.text_input(
             "Título da barra lateral",
             value=str(cfg.get("sidebar_title") or DEFAULT_CONFIG["sidebar_title"]),
@@ -637,17 +712,22 @@ else:
                 st.error(f"Não foi possível salvar as configurações: {exc}")
 
     with st.container(border=True):
-        st.markdown("#### Navegação")
-        st.success(
-            "A página atual e a competência selecionada são mantidas na URL. "
-            "Ao atualizar o navegador, o aplicativo retorna ao mesmo ponto."
+        st.markdown("#### Regras obrigatórias do relatório")
+        st.markdown(
+            """
+            - CODIGO, TP, ARMZ, SALDO EM ESTOQUE e VALOR EM ESTOQUE são obrigatórios.
+            - Produto sem saldo não é aceito.
+            - Produto sem custo/valor não é aceito.
+            - Saldo ou valor negativo não é aceito.
+            - TP e ARMZ vazios não são aceitos.
+            - Código duplicado no mesmo armazém bloqueia a importação.
+            """
         )
 
     with st.container(border=True):
         st.markdown("#### Ícone do navegador")
         st.info(
-            "O favicon deste aplicativo está sincronizado diretamente com o ícone que está salvo no NFS Setta. "
-            "Assim os dois usam exatamente o mesmo arquivo e a mesma proporção visual."
+            "O favicon continua sincronizado com o ícone efetivamente salvo no aplicativo NFS Setta."
         )
 
 
