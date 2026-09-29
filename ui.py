@@ -87,21 +87,16 @@ section[data-testid="stSidebar"][aria-expanded="false"]{width:0!important;min-wi
 .summary-card-value{font-size:1.65rem;font-weight:900;letter-spacing:-.025em;color:#111827;line-height:1.05}
 .summary-card-value.negative{color:#b91c1c}
 .summary-card-value.positive{color:#166534}
-.tp-compare{background:#fff;border:1px solid #dfe3e8;border-radius:14px;box-shadow:0 4px 16px rgba(15,23,42,.045);overflow:hidden}
-.tp-compare-title{padding:.72rem 1rem;background:#e5e7eb;border-bottom:1px solid #d1d5db;text-align:center;font-weight:900;font-size:.8rem;text-transform:uppercase;letter-spacing:.035em;color:#111827}
-.tp-compare-row{display:grid;grid-template-columns:.8fr 1fr 1fr;min-height:44px;border-bottom:1px solid #e5e7eb}
-.tp-compare-row:last-child{border-bottom:0}
-.tp-compare-head{background:#f3f4f6}
-.tp-compare-cell{display:flex;align-items:center;padding:.62rem .8rem;border-right:1px solid #e5e7eb;font-size:.76rem;color:#374151}
-.tp-compare-cell:last-child{border-right:0}
-.tp-compare-head .tp-compare-cell{font-size:.68rem;font-weight:900;text-transform:uppercase;letter-spacing:.035em;color:#111827;justify-content:center}
-.tp-compare-type{font-weight:900;color:#111827;background:#f8fafc}
-.tp-compare-money{justify-content:flex-end;font-weight:800;color:#111827}
-.tp-compare-total .tp-compare-cell{background:#eef0f3;font-weight:900}
-.section-band{margin:1.65rem 0 .95rem;padding:.82rem 1rem;background:#fff;border:1px solid #e5e8ee;border-left:5px solid #111827;border-radius:12px;box-shadow:0 3px 12px rgba(15,23,42,.035)}
-.section-band-kicker{font-size:.66rem;font-weight:900;letter-spacing:.085em;text-transform:uppercase;color:#ef4444;margin-bottom:.18rem}
-.section-band-title{font-size:1.08rem;font-weight:900;color:#111827;letter-spacing:-.015em;line-height:1.2}
-.section-band-note{margin-top:.26rem;color:#667085;font-size:.78rem;line-height:1.45}
+.tp-table{background:#fff;border:1px solid #dfe3e8;border-radius:14px;box-shadow:0 4px 16px rgba(15,23,42,.045);overflow:hidden}
+.tp-table-row{display:grid;grid-template-columns:.72fr 1fr 1fr;min-height:44px;border-bottom:1px solid #e5e7eb;align-items:stretch}
+.tp-table-row:last-child{border-bottom:0}
+.tp-table-head{background:#e5e7eb;min-height:42px}
+.tp-table-cell{display:flex;align-items:center;padding:.65rem .78rem;border-right:1px solid #e5e7eb;color:#374151;font-size:.76rem}
+.tp-table-cell:last-child{border-right:0}
+.tp-table-head .tp-table-cell{font-size:.7rem;font-weight:900;text-transform:uppercase;letter-spacing:.035em;color:#111827;justify-content:center}
+.tp-table-type{font-weight:900;color:#111827;background:#f8fafc}
+.tp-table-money{justify-content:flex-end;font-weight:800;color:#111827}
+.tp-table-total .tp-table-cell{background:#eef0f3;font-weight:900}
 .history-wrap{background:#fff;border:1px solid #dfe3e8;border-radius:14px;box-shadow:0 4px 16px rgba(15,23,42,.045);overflow:hidden}
 .history-row{display:grid;grid-template-columns:1.15fr 1fr 1fr 1fr .9fr;min-height:44px;border-bottom:1px solid #e5e7eb;align-items:stretch}
 .history-row:last-child{border-bottom:0}
@@ -132,10 +127,10 @@ div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{min-width:100%!
 .inventory-row,.mov-row{grid-template-columns:1fr!important}
 .inventory-value,.mov-value{justify-content:flex-start!important;border-top:1px solid #eef0f3}
 .summary-grid{grid-template-columns:1fr!important}
-.tp-compare-row{grid-template-columns:1fr!important}
-.tp-compare-head{display:none!important}
-.tp-compare-cell{border-right:0!important;border-bottom:1px solid #eef0f3;justify-content:flex-start!important}
-.tp-compare-cell::before{content:attr(data-label);display:inline-block;min-width:115px;margin-right:.65rem;font-size:.65rem;font-weight:900;text-transform:uppercase;color:#64748b}
+.tp-table-row{grid-template-columns:1fr!important}
+.tp-table-head{display:none!important}
+.tp-table-cell{border-right:0!important;border-bottom:1px solid #eef0f3;justify-content:flex-start!important}
+.tp-table-cell::before{content:attr(data-label);display:inline-block;min-width:115px;margin-right:.65rem;font-size:.65rem;font-weight:900;text-transform:uppercase;color:#64748b}
 .history-row{grid-template-columns:1fr!important}
 .history-head{display:none!important}
 .history-cell{border-right:0!important;border-bottom:1px solid #eef0f3;justify-content:flex-start!important}
