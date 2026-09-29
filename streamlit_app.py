@@ -148,6 +148,81 @@ def stock_card(title: str, initial: float | None, final: float | None) -> str:
     )
 
 
+def section_band(kicker: str, title: str, note: str) -> None:
+    st.markdown(
+        f"""
+        <div class="section-band">
+            <div class="section-band-kicker">{kicker}</div>
+            <div class="section-band-title">{title}</div>
+            <div class="section-band-note">{note}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def validation_badge(info: dict) -> str:
+    status = str(info.get("status") or "").strip().upper()
+    invalid = int(info.get("linhas_invalidas") or 0)
+    if status == "VALIDO":
+        return '<span class="validation-badge validation-ok">VALIDADO</span>'
+    label = f"PENDÊNCIA · {invalid}" if invalid else "PENDÊNCIA"
+    return f'<span class="validation-badge validation-pending">{label}</span>'
+
+
+def history_table_html(
+    months: list[date],
+    lookup: dict[tuple[str, str, str], dict],
+    imports_map: dict[str, dict],
+) -> str:
+    rows = [
+        '<div class="history-wrap">',
+        '<div class="history-row history-head">',
+        '<div class="history-cell">Competência</div>',
+        '<div class="history-cell">Estoque inicial</div>',
+        '<div class="history-cell">Estoque final</div>',
+        '<div class="history-cell">Resumo</div>',
+        '<div class="history-cell">Validação</div>',
+        '</div>',
+    ]
+
+    for competencia in months:
+        current_value = dimension_value(
+            lookup,
+            competencia,
+            "TOTAL",
+            "TOTAL",
+        )
+        prev_comp = previous_month(competencia)
+        prev_exists = prev_comp.isoformat() in imports_map
+        initial_value = (
+            dimension_value(lookup, prev_comp, "TOTAL", "TOTAL")
+            if prev_exists
+            else None
+        )
+        summary = (
+            None
+            if initial_value is None
+            else current_value - initial_value
+        )
+        info = imports_map.get(competencia.isoformat(), {})
+
+        rows.extend(
+            [
+                '<div class="history-row">',
+                f'<div class="history-cell history-month" data-label="Competência">{month_label(competencia)}</div>',
+                f'<div class="history-cell history-money" data-label="Estoque inicial">{money_br(initial_value)}</div>',
+                f'<div class="history-cell history-money" data-label="Estoque final">{money_br(current_value)}</div>',
+                f'<div class="history-cell history-money{delta_class(summary)}" data-label="Resumo">{money_br(summary)}</div>',
+                f'<div class="history-cell" data-label="Validação">{validation_badge(info)}</div>',
+                '</div>',
+            ]
+        )
+
+    rows.append('</div>')
+    return "".join(rows)
+
+
 def parse_competencia(value: object) -> date | None:
     try:
         return date.fromisoformat(str(value)[:10])
@@ -459,9 +534,9 @@ if page == "Dashboard":
 
         if status != "VALIDO":
             st.error(
-                f"{month_label(selected_month)} possui pendência de validação "
+                f"{month_label(selected_month)} possui pendência de qualidade no relatório "
                 f"({int(import_info.get('linhas_invalidas') or 0)} item(ns)). "
-                "A análise desta competência fica bloqueada até a correção."
+                "A análise detalhada desta competência fica bloqueada até a correção."
             )
             historical_errors = db.list_import_errors(selected_month)
             if historical_errors:
@@ -476,13 +551,15 @@ if page == "Dashboard":
             )
             if previous_exists and previous_status != "VALIDO":
                 st.warning(
-                    f"O estoque inicial de {month_label(selected_month)} vem de "
-                    f"{month_label(previous)}, que possui pendência histórica de validação."
+                    f"O estoque inicial de {month_label(selected_month)} foi calculado a partir de "
+                    f"{month_label(previous)}, cuja base histórica possui pendência de qualidade. "
+                    "O valor exibido considera somente as linhas financeiramente válidas do relatório anterior."
                 )
 
-            st.markdown(
-                '<div class="section-title" style="margin-top:1.25rem!important;">Análise total</div>',
-                unsafe_allow_html=True,
+            section_band(
+                "01 · Visão geral",
+                "Análise total da competência",
+                "Compara o valor total do estoque do mês selecionado com o fechamento do mês imediatamente anterior.",
             )
 
             final_total = dimension_value(summary_map, selected_month, "TOTAL", "TOTAL")
@@ -500,9 +577,10 @@ if page == "Dashboard":
                 money_br(None if initial_total is None else final_total - initial_total),
             )
 
-            st.markdown(
-                '<div class="section-title" style="margin-top:1.4rem!important;">Por armazém</div>',
-                unsafe_allow_html=True,
+            section_band(
+                "02 · ARMZ",
+                "Estoque por armazém",
+                "ARMZ identifica o armazém do material. Cada cartão apresenta Estoque Inicial, Estoque Final e a variação do período.",
             )
 
             current_warehouses = {
@@ -549,9 +627,10 @@ if page == "Dashboard":
                                 unsafe_allow_html=True,
                             )
 
-            st.markdown(
-                '<div class="section-title" style="margin-top:1.4rem!important;">Por tipo de produto (TP)</div>',
-                unsafe_allow_html=True,
+            section_band(
+                "03 · TP",
+                "Estoque por tipo de produto",
+                "TP significa Tipo do Produto. A leitura segue o mesmo padrão dos armazéns: Inicial, Final e Resumo.",
             )
 
             current_types = {
@@ -568,83 +647,52 @@ if page == "Dashboard":
             )
             product_types = sorted(current_types | previous_types)
 
-            type_rows = []
-            for tp in product_types:
-                initial_value = (
-                    dimension_value(summary_map, previous, "TP", f"TP:{tp}")
-                    if previous_exists
-                    else None
-                )
-                final_value = dimension_value(
-                    summary_map,
-                    selected_month,
-                    "TP",
-                    f"TP:{tp}",
-                )
-                type_rows.append(
-                    {
-                        "TP": tp,
-                        "Estoque inicial": money_br(initial_value),
-                        "Estoque final": money_br(final_value),
-                        "Resumo": money_br(
-                            None
-                            if initial_value is None
-                            else final_value - initial_value
-                        ),
-                    }
-                )
+            if product_types:
+                for start in range(0, len(product_types), 3):
+                    columns = st.columns(3)
+                    for column, tp in zip(
+                        columns,
+                        product_types[start : start + 3],
+                    ):
+                        initial_value = (
+                            dimension_value(
+                                summary_map,
+                                previous,
+                                "TP",
+                                f"TP:{tp}",
+                            )
+                            if previous_exists
+                            else None
+                        )
+                        final_value = dimension_value(
+                            summary_map,
+                            selected_month,
+                            "TP",
+                            f"TP:{tp}",
+                        )
+                        with column:
+                            st.markdown(
+                                stock_card(
+                                    f"TP {tp}",
+                                    initial_value,
+                                    final_value,
+                                ),
+                                unsafe_allow_html=True,
+                            )
 
-            if type_rows:
-                st.dataframe(
-                    pd.DataFrame(type_rows),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-            st.markdown(
-                '<div class="section-title" style="margin-top:1.4rem!important;">Histórico mês a mês</div>',
-                unsafe_allow_html=True,
+            section_band(
+                "04 · Evolução mensal",
+                "Histórico dos fechamentos",
+                "Validação indica apenas a qualidade do relatório importado. VALIDADO = nenhuma inconsistência encontrada. PENDÊNCIA = existem itens sem custo, sem saldo, negativos ou com cadastro obrigatório ausente. Não é um status contábil ou de aprovação do fechamento.",
             )
 
-            history_rows = []
-            for competencia in available_months:
-                current_value = dimension_value(
+            st.markdown(
+                history_table_html(
+                    available_months,
                     summary_map,
-                    competencia,
-                    "TOTAL",
-                    "TOTAL",
-                )
-                prev_comp = previous_month(competencia)
-                prev_exists = prev_comp.isoformat() in imports_by_month
-                initial_value = (
-                    dimension_value(summary_map, prev_comp, "TOTAL", "TOTAL")
-                    if prev_exists
-                    else None
-                )
-                info = imports_by_month.get(competencia.isoformat(), {})
-                history_rows.append(
-                    {
-                        "Competência": month_label(competencia),
-                        "Inicial": money_br(initial_value),
-                        "Final": money_br(current_value),
-                        "Resumo": money_br(
-                            None
-                            if initial_value is None
-                            else current_value - initial_value
-                        ),
-                        "Status": (
-                            "OK"
-                            if str(info.get("status") or "") == "VALIDO"
-                            else "PENDÊNCIA"
-                        ),
-                        "Arquivo": str(info.get("arquivo_nome") or ""),
-                    }
-                )
-
-            st.dataframe(
-                pd.DataFrame(history_rows),
-                use_container_width=True,
-                hide_index=True,
+                    imports_by_month,
+                ),
+                unsafe_allow_html=True,
             )
 
 
