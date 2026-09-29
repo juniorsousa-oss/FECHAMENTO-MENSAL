@@ -288,7 +288,7 @@ def list_cb_catalog() -> list[dict]:
         f"{supabase_url()}/rest/v1/fm_cb_catalogo",
         headers=_headers(),
         params={
-            "select": "codigo,categoria,descricao,grupo,tp,unidade,ult_preco,status,origem,regra_detectada,ativo,atualizado_em",
+            "select": "codigo,categoria,descricao,referencia,unidade,ult_preco,status,origem,regra_detectada,ativo,atualizado_em",
             "ativo": "eq.true",
             "order": "status.asc,categoria.asc,codigo.asc",
         },
