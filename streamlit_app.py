@@ -12,6 +12,14 @@ from PIL import Image, ImageDraw, ImageFont
 
 import inventory_db as db
 from report_parser import parse_inventory_report
+from cb_parser import (
+    normalize_code,
+    parse_barramentos_excel,
+    parse_cadastros,
+    parse_chapas_eml,
+    parse_interno_excel,
+    resolve_chapa_rows,
+)
 from ui import inject_css, logo_html
 
 ROOT = Path(__file__).parent
@@ -682,35 +690,36 @@ def build_cb_reconciliation(
     catalog: list[dict],
     counts: list[dict],
 ) -> pd.DataFrame:
-    catalog_map = {
+    confirmed_catalog = {
         str(row.get("codigo") or "").strip(): row
         for row in catalog
         if bool(row.get("ativo", True))
+        and str(row.get("status") or "").upper() == "CONFIRMADO"
     }
 
-    stock_by_code: dict[str, dict] = {}
+    base_by_code: dict[str, dict] = {}
+    for codigo, item in confirmed_catalog.items():
+        base_by_code[codigo] = {
+            "codigo": codigo,
+            "descricao": str(item.get("descricao") or "").strip(),
+            "categoria": str(item.get("categoria") or "").strip(),
+            "unidade": str(item.get("unidade") or "").strip(),
+            "ult_preco": float(item.get("ult_preco") or 0),
+            "armz": set(),
+            "saldo_sistema": 0.0,
+            "valor_estoque": 0.0,
+        }
+
     for row in stock_items:
-        codigo = str(row.get("codigo") or "").strip()
-        if codigo not in catalog_map:
+        codigo = normalize_code(row.get("codigo"))
+        if codigo not in base_by_code:
             continue
 
-        current = stock_by_code.setdefault(
-            codigo,
-            {
-                "codigo": codigo,
-                "descricao": str(
-                    row.get("descricao")
-                    or catalog_map[codigo].get("descricao")
-                    or ""
-                ).strip(),
-                "categoria": str(
-                    catalog_map[codigo].get("categoria") or ""
-                ),
-                "armz": set(),
-                "saldo_sistema": 0.0,
-                "valor_estoque": 0.0,
-            },
-        )
+        current = base_by_code[codigo]
+        if not current["descricao"]:
+            current["descricao"] = str(
+                row.get("descricao") or ""
+            ).strip()
 
         armz = str(row.get("armz") or "").strip()
         if armz:
@@ -723,48 +732,73 @@ def build_cb_reconciliation(
 
     counts_by_code: dict[str, list[dict]] = {}
     for row in counts:
-        codigo = str(row.get("codigo") or "").strip()
+        codigo = normalize_code(row.get("codigo"))
+        if codigo not in confirmed_catalog:
+            continue
         counts_by_code.setdefault(codigo, []).append(row)
 
     result: list[dict] = []
 
-    for codigo, item in sorted(stock_by_code.items()):
+    for codigo, item in sorted(base_by_code.items()):
         item_counts = counts_by_code.get(codigo, [])
-        source_names = [
-            CB_SOURCE_LABELS.get(
-                str(row.get("fonte") or ""),
-                str(row.get("fonte") or ""),
-            )
-            for row in item_counts
-        ]
-
-        physical = None
-        status = "SEM CONTAGEM"
-
-        if len(item_counts) == 1:
-            physical = float(
-                item_counts[0].get("quantidade_fisica") or 0
-            )
-            status = "CONFERIDO"
-        elif len(item_counts) > 1:
-            status = "CONFLITO DE FONTES"
 
         saldo = float(item["saldo_sistema"] or 0)
         valor = float(item["valor_estoque"] or 0)
-        custo_unitario = valor / saldo if saldo > 0 else 0.0
+
+        if saldo > 0:
+            custo_unitario = valor / saldo
+            custo_origem = "ESTOQUE ANALÍTICO"
+        else:
+            custo_unitario = float(item["ult_preco"] or 0)
+            custo_origem = (
+                "CADASTROS · ÚLT. PREÇO"
+                if custo_unitario > 0
+                else "SEM CUSTO"
+            )
+
+        physical = (
+            sum(
+                float(row.get("quantidade_fisica") or 0)
+                for row in item_counts
+            )
+            if item_counts
+            else None
+        )
+
+        source_parts = []
+        for row in item_counts:
+            source_label = CB_SOURCE_LABELS.get(
+                str(row.get("fonte") or ""),
+                str(row.get("fonte") or ""),
+            )
+            source_parts.append(
+                f"{source_label}: "
+                + f"{float(row.get('quantidade_fisica') or 0):,.3f}"
+                .replace(",", "X")
+                .replace(".", ",")
+                .replace("X", ".")
+            )
 
         divergencia_qtd = (
             None if physical is None else physical - saldo
         )
         divergencia_rs = (
             None
-            if divergencia_qtd is None
+            if divergencia_qtd is None or custo_unitario <= 0
             else divergencia_qtd * custo_unitario
         )
 
+        if physical is None:
+            status = "SEM CONTAGEM"
+        elif abs(float(divergencia_qtd or 0)) <= 1e-9:
+            status = "CONFERIDO"
+        else:
+            status = "DIVERGÊNCIA"
+
         if (
             physical is not None
-            and abs(float(divergencia_qtd or 0)) > 1e-9
+            and saldo <= 0
+            and physical > 0
         ):
             status = "DIVERGÊNCIA"
 
@@ -777,23 +811,20 @@ def build_cb_reconciliation(
                 ),
                 "Código": codigo,
                 "Descrição": item["descricao"],
+                "U.M.": item["unidade"],
                 "ARMZ": ", ".join(sorted(item["armz"])),
                 "Saldo sistema": saldo,
                 "Físico": physical,
                 "Divergência Qtd": divergencia_qtd,
                 "Custo unitário": custo_unitario,
+                "Origem custo": custo_origem,
                 "Divergência R$": divergencia_rs,
-                "Fonte física": (
-                    " | ".join(source_names)
-                    if source_names
-                    else ""
-                ),
+                "Fontes físicas": " | ".join(source_parts),
                 "Status": status,
             }
         )
 
     return pd.DataFrame(result)
-
 
 def cb_kpi_html(
     total_items: int,
@@ -1283,10 +1314,11 @@ elif page == "Conferência de chapas e barramentos":
         <div class="module-hero">
             <strong>CONFERÊNCIA FÍSICO × SISTEMA</strong>
             <span>
-                A base sistêmica vem do Relatório Analítico de Estoque.
-                A quantidade do sistema é o SALDO EM ESTOQUE e o custo unitário
-                é calculado por VALOR EM ESTOQUE ÷ SALDO EM ESTOQUE.
-                As contagens físicas são rastreadas pela fonte de origem.
+                O CADASTROS define o universo de materiais. O Relatório Analítico
+                informa o saldo do sistema e o valor financeiro da competência.
+                O físico é formado pelas fontes de Chapas, Barramentos e Almoxarifado.
+                Materiais novos passam por validação e, depois de confirmados, permanecem
+                automaticamente na base dos próximos fechamentos.
             </span>
         </div>
         """,
@@ -1302,7 +1334,6 @@ elif page == "Conferência de chapas e barramentos":
             st.query_params.get("mes_cb", "") or ""
         ).strip()
         cb_query_date = None
-
         if len(query_cb_month) == 7:
             try:
                 cb_query_date = date.fromisoformat(
@@ -1330,11 +1361,15 @@ elif page == "Conferência de chapas e barramentos":
             cb_stock_items = db.list_inventory_items(cb_month)
             cb_catalog = db.list_cb_catalog()
             cb_counts = db.list_cb_counts(cb_month)
+            cb_mappings = db.list_cb_sheet_mappings()
+            cb_imports = db.list_cb_imports(cb_month)
             cb_error = ""
         except Exception as exc:
             cb_stock_items = []
             cb_catalog = []
             cb_counts = []
+            cb_mappings = []
+            cb_imports = []
             cb_error = str(exc)
 
         if cb_error:
@@ -1342,110 +1377,219 @@ elif page == "Conferência de chapas e barramentos":
                 f"Não foi possível carregar a conferência: {cb_error}"
             )
 
+        confirmed_catalog = [
+            row
+            for row in cb_catalog
+            if str(row.get("status") or "").upper() == "CONFIRMADO"
+        ]
+        candidate_catalog = [
+            row
+            for row in cb_catalog
+            if str(row.get("status") or "").upper() == "CANDIDATO"
+        ]
+
         st.markdown(
             '<div class="topic-divider"></div>',
             unsafe_allow_html=True,
         )
         section_band(
-            "01 · BASE",
-            "ITENS ANALISADOS",
-            "Somente códigos classificados como CHAPA ou BARRA DE COBRE entram nesta conferência.",
+            "01 · BASE MESTRE",
+            "CADASTRO DE CHAPAS E BARRAS DE COBRE",
+            "O CADASTROS é a base de referência. Códigos novos identificados pelas regras entram como CANDIDATOS e só passam a compor a conferência após validação.",
         )
+
+        base_col1, base_col2, base_col3 = st.columns(3)
+        base_col1.metric(
+            "ITENS CONFIRMADOS",
+            len(confirmed_catalog),
+        )
+        base_col2.metric(
+            "NOVOS CANDIDATOS",
+            len(candidate_catalog),
+        )
+        base_col3.metric(
+            "BASE SISTEMA DETALHADA",
+            "OK" if cb_stock_items else "PENDENTE",
+        )
+
+        cadastro_file = st.file_uploader(
+            "Atualizar base pelo relatório CADASTROS",
+            type=["xlsx", "xltx"],
+            key="cb_cadastros_file",
+            help=(
+                "O arquivo é reprocessado a cada fechamento. Novos códigos de chapa "
+                "ou barra de cobre entram como candidatos para validação."
+            ),
+        )
+
+        if cadastro_file is not None:
+            try:
+                parsed_cad = parse_cadastros(
+                    cadastro_file.getvalue(),
+                    cadastro_file.name,
+                )
+
+                ca, cb, cc = st.columns(3)
+                ca.metric(
+                    "Candidatos identificados",
+                    parsed_cad["total_candidates"],
+                )
+                cb.metric("Chapas", parsed_cad["chapas"])
+                cc.metric("Barras de cobre", parsed_cad["barras"])
+
+                if st.button(
+                    "SINCRONIZAR CADASTROS",
+                    type="primary",
+                    use_container_width=True,
+                    key="cb_sync_cad",
+                ):
+                    db.sync_cb_catalog(
+                        parsed_cad["candidates"]
+                    )
+                    st.session_state["_cb_base_flash"] = (
+                        "CADASTROS sincronizado. Novos materiais foram "
+                        "incluídos como candidatos."
+                    )
+                    st.rerun()
+            except Exception as exc:
+                st.error(
+                    f"Não foi possível ler o CADASTROS: {exc}"
+                )
+
+        flash_base = st.session_state.pop(
+            "_cb_base_flash",
+            None,
+        )
+        if flash_base:
+            st.success(flash_base)
+
+        if candidate_catalog:
+            with st.expander(
+                f"NOVOS MATERIAIS PARA VALIDAR ({len(candidate_catalog)})",
+                expanded=True,
+            ):
+                candidate_df = pd.DataFrame(
+                    [
+                        {
+                            "Selecionar": False,
+                            "Código": row.get("codigo"),
+                            "Categoria": (
+                                "CHAPA"
+                                if row.get("categoria") == "CHAPA"
+                                else "BARRA DE COBRE"
+                            ),
+                            "Descrição": row.get("descricao"),
+                            "U.M.": row.get("unidade"),
+                            "Grupo": row.get("grupo"),
+                            "Últ. preço": float(
+                                row.get("ult_preco") or 0
+                            ),
+                            "Regra": row.get("regra_detectada"),
+                        }
+                        for row in candidate_catalog
+                    ]
+                )
+
+                edited_candidates = st.data_editor(
+                    candidate_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    disabled=[
+                        "Código",
+                        "Descrição",
+                        "U.M.",
+                        "Grupo",
+                        "Últ. preço",
+                        "Regra",
+                    ],
+                    column_config={
+                        "Selecionar": st.column_config.CheckboxColumn(
+                            "Selecionar"
+                        ),
+                        "Categoria": st.column_config.SelectboxColumn(
+                            "Categoria",
+                            options=[
+                                "CHAPA",
+                                "BARRA DE COBRE",
+                            ],
+                        ),
+                    },
+                    key="cb_candidates_editor",
+                )
+
+                selected_candidates = edited_candidates[
+                    edited_candidates["Selecionar"] == True
+                ]
+
+                action_col1, action_col2 = st.columns(2)
+                if action_col1.button(
+                    "CONFIRMAR SELECIONADOS",
+                    type="primary",
+                    use_container_width=True,
+                    key="cb_confirm_candidates",
+                ):
+                    if selected_candidates.empty:
+                        st.warning(
+                            "Selecione pelo menos um material."
+                        )
+                    else:
+                        for _, row in selected_candidates.iterrows():
+                            db.update_cb_catalog_status(
+                                str(row["Código"]),
+                                (
+                                    "CHAPA"
+                                    if row["Categoria"] == "CHAPA"
+                                    else "BARRA_COBRE"
+                                ),
+                                "CONFIRMADO",
+                            )
+                        st.rerun()
+
+                if action_col2.button(
+                    "IGNORAR SELECIONADOS",
+                    use_container_width=True,
+                    key="cb_ignore_candidates",
+                ):
+                    if selected_candidates.empty:
+                        st.warning(
+                            "Selecione pelo menos um material."
+                        )
+                    else:
+                        catalog_lookup = {
+                            str(row.get("codigo")): row
+                            for row in candidate_catalog
+                        }
+                        for _, row in selected_candidates.iterrows():
+                            original = catalog_lookup.get(
+                                str(row["Código"]),
+                                {},
+                            )
+                            db.update_cb_catalog_status(
+                                str(row["Código"]),
+                                str(
+                                    original.get("categoria")
+                                    or "CHAPA"
+                                ),
+                                "IGNORADO",
+                            )
+                        st.rerun()
 
         if not cb_stock_items:
             st.warning(
-                "A competência selecionada ainda não possui os itens detalhados do "
-                "Relatório Analítico gravados na base. Reimporte o relatório dessa "
-                "competência pelo Dashboard para habilitar a conferência por código."
+                "A competência selecionada não possui a base detalhada do "
+                "Relatório Analítico em fm_estoque_itens. Reimporte o relatório "
+                "analítico dessa competência no Dashboard antes de concluir a conferência. "
+                "Sem essa base o aplicativo não assume que todos os saldos são zero."
             )
-
-        stock_codes = {
-            str(row.get("codigo") or "").strip(): row
-            for row in cb_stock_items
-        }
-
-        with st.expander("CADASTRO DE ITENS MONITORADOS"):
-            st.caption(
-                "Este cadastro evita classificar materiais por texto de forma insegura. "
-                "Depois que definirmos a regra oficial de identificação, ele poderá ser "
-                "alimentado automaticamente."
-            )
-
-            code_options = sorted(stock_codes.keys())
-            if code_options:
-                catalog_code = st.selectbox(
-                    "Código do material",
-                    code_options,
-                    format_func=lambda code: (
-                        f"{code} · "
-                        + str(
-                            stock_codes.get(code, {}).get(
-                                "descricao"
-                            )
-                            or ""
-                        )
-                    ),
-                    key="cb_catalog_code",
-                )
-            else:
-                catalog_code = st.text_input(
-                    "Código do material",
-                    key="cb_catalog_code_text",
-                )
-
-            catalog_category = st.selectbox(
-                "Categoria",
-                ["CHAPA", "BARRA_COBRE"],
-                format_func=lambda value: (
-                    "CHAPA"
-                    if value == "CHAPA"
-                    else "BARRA DE COBRE"
-                ),
-                key="cb_catalog_category",
-            )
-
-            if st.button(
-                "ADICIONAR À CONFERÊNCIA",
-                type="primary",
-                use_container_width=True,
-                key="cb_add_catalog",
-            ):
-                if not str(catalog_code or "").strip():
-                    st.error("Informe o código do material.")
-                else:
-                    try:
-                        description = str(
-                            stock_codes.get(
-                                str(catalog_code).strip(),
-                                {},
-                            ).get("descricao")
-                            or ""
-                        )
-                        db.save_cb_catalog_item(
-                            str(catalog_code).strip(),
-                            catalog_category,
-                            description,
-                        )
-                        st.session_state["_cb_flash"] = (
-                            "Item adicionado à conferência."
-                        )
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(
-                            f"Não foi possível salvar o item: {exc}"
-                        )
-
-        if st.session_state.pop("_cb_flash", None):
-            st.success("Item salvo com sucesso.")
 
         st.markdown(
             '<div class="topic-divider"></div>',
             unsafe_allow_html=True,
         )
         section_band(
-            "02 · FONTES",
-            "ALIMENTAÇÃO DA CONTAGEM FÍSICA",
-            "Cada origem permanece identificada. O mesmo código em mais de uma fonte é tratado como conflito, não como soma.",
+            "02 · ALIMENTAÇÃO FÍSICA",
+            "RECEBER CONTAGENS",
+            "CHAPAS usa o e-mail .EML; BARRAMENTOS usa o Excel da produção; o setor interno aceita Excel ou lançamento manual. As fontes são complementares e são somadas por código.",
         )
 
         st.markdown(
@@ -1454,26 +1598,26 @@ elif page == "Conferência de chapas e barramentos":
                 <div class="cb-source-card">
                     <div class="cb-source-title">CHAPAS · E-MAIL</div>
                     <div class="cb-source-text">
-                        Contagem recebida do setor de chapas por e-mail.
-                        O leitor automático será configurado a partir de um exemplo real do e-mail.
+                        Leitura automática da tabela DIMENSÃO / DESCRIÇÃO / CHAPAS / PESO TOTAL.
+                        O aplicativo usa PESO TOTAL para códigos em KG e CHAPAS para códigos em UN/PC.
                     </div>
-                    <div class="cb-source-tag">AGUARDANDO MODELO</div>
+                    <div class="cb-source-tag">.EML AUTOMÁTICO</div>
                 </div>
                 <div class="cb-source-card">
-                    <div class="cb-source-title">BARRAMENTOS · EXCEL</div>
+                    <div class="cb-source-title">BARRAMENTOS · PRODUÇÃO</div>
                     <div class="cb-source-text">
-                        Planilha enviada pelo setor de barramentos.
-                        O mapeamento das colunas será definido com um arquivo real do setor.
+                        Leitura automática de CODIGO, Barras (m) e Processado (m).
+                        Físico Produção = Barras + Processado.
                     </div>
-                    <div class="cb-source-tag">AGUARDANDO MODELO</div>
+                    <div class="cb-source-tag">EXCEL AUTOMÁTICO</div>
                 </div>
                 <div class="cb-source-card">
                     <div class="cb-source-title">SETOR INTERNO</div>
                     <div class="cb-source-text">
-                        Pode receber planilha ou lançamento manual.
-                        O lançamento manual já está habilitado nesta primeira versão.
+                        Excel flexível com CODIGO + MTS/METROS/QUANTIDADE ou lançamento manual.
+                        Essa parcela é somada às demais fontes do mesmo código.
                     </div>
-                    <div class="cb-source-tag">MANUAL ATIVO</div>
+                    <div class="cb-source-tag">EXCEL + MANUAL</div>
                 </div>
             </div>
             """,
@@ -1489,61 +1633,477 @@ elif page == "Conferência de chapas e barramentos":
         )
 
         with tab_email:
-            st.text_area(
-                "Conteúdo do e-mail",
-                height=160,
-                placeholder=(
-                    "Cole aqui um exemplo real do e-mail recebido do setor de chapas. "
-                    "Nesta etapa ele serve para definirmos a leitura automática."
+            email_file = st.file_uploader(
+                "E-mail do setor de chapas",
+                type=["eml"],
+                key="cb_chapas_eml",
+                help=(
+                    "Use preferencialmente o arquivo .EML. O leitor pega "
+                    "automaticamente a tabela mais recente da conversa."
                 ),
-                key="cb_email_sample",
-            )
-            st.info(
-                "Envie também um exemplo real desse e-mail na conversa para eu configurar "
-                "a extração de código e quantidade física."
             )
 
+            if email_file is not None:
+                try:
+                    parsed_email = parse_chapas_eml(
+                        email_file.getvalue(),
+                        email_file.name,
+                    )
+
+                    detected_comp = parsed_email.get(
+                        "competencia"
+                    )
+                    if detected_comp:
+                        st.caption(
+                            "Competência detectada no e-mail: "
+                            + month_label(detected_comp)
+                            + f" · {parsed_email['tables_found']} tabela(s) de histórico encontrada(s)"
+                        )
+
+                    resolved_email = resolve_chapa_rows(
+                        parsed_email["rows"],
+                        cb_mappings,
+                        cb_catalog,
+                    )
+
+                    em1, em2, em3 = st.columns(3)
+                    em1.metric(
+                        "Linhas do e-mail",
+                        len(parsed_email["rows"]),
+                    )
+                    em2.metric(
+                        "Vinculadas",
+                        len(resolved_email["resolved"]),
+                    )
+                    em3.metric(
+                        "Não vinculadas",
+                        len(resolved_email["unresolved"]),
+                    )
+
+                    if resolved_email["unresolved"]:
+                        st.warning(
+                            "Existem descrições de chapas ainda não vinculadas "
+                            "a um código Protheus. Resolva os vínculos abaixo; "
+                            "depois disso eles ficarão salvos para os próximos meses."
+                        )
+
+                        chapa_options = [
+                            row
+                            for row in cb_catalog
+                            if row.get("categoria") == "CHAPA"
+                            and row.get("status") == "CONFIRMADO"
+                        ]
+                        option_labels = [
+                            f"{row.get('codigo')} · {row.get('descricao')}"
+                            for row in chapa_options
+                        ]
+
+                        mapping_rows = []
+                        for index, row in enumerate(
+                            resolved_email["unresolved"]
+                        ):
+                            mapping_rows.append(
+                                {
+                                    "ID": index,
+                                    "Dimensão": row.get("dimensao"),
+                                    "Descrição": row.get("descricao"),
+                                    "Chapas": row.get("chapas"),
+                                    "Peso total": row.get("peso_total"),
+                                    "Código Protheus": (
+                                        option_labels[0]
+                                        if option_labels
+                                        else ""
+                                    ),
+                                }
+                            )
+
+                        mapping_df = pd.DataFrame(mapping_rows)
+                        edited_mapping = st.data_editor(
+                            mapping_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            disabled=[
+                                "ID",
+                                "Dimensão",
+                                "Descrição",
+                                "Chapas",
+                                "Peso total",
+                            ],
+                            column_config={
+                                "Código Protheus": st.column_config.SelectboxColumn(
+                                    "Código Protheus",
+                                    options=option_labels,
+                                    required=True,
+                                )
+                            },
+                            key="cb_mapping_editor",
+                        )
+
+                        if st.button(
+                            "SALVAR VÍNCULOS DE CHAPAS",
+                            type="primary",
+                            use_container_width=True,
+                            key="cb_save_sheet_maps",
+                        ):
+                            if not option_labels:
+                                st.error(
+                                    "Não há códigos de CHAPA confirmados na base mestre."
+                                )
+                            else:
+                                for _, edit_row in edited_mapping.iterrows():
+                                    source_row = resolved_email[
+                                        "unresolved"
+                                    ][int(edit_row["ID"])]
+                                    selected_label = str(
+                                        edit_row["Código Protheus"]
+                                    )
+                                    selected_code = selected_label.split(
+                                        " · ",
+                                        1,
+                                    )[0].strip()
+
+                                    db.save_cb_sheet_mapping(
+                                        source_row.get(
+                                            "dimensao_norm"
+                                        )
+                                        or "*",
+                                        source_row.get(
+                                            "descricao_norm"
+                                        )
+                                        or "",
+                                        source_row.get(
+                                            "dimensao"
+                                        )
+                                        or "",
+                                        source_row.get(
+                                            "descricao"
+                                        )
+                                        or "",
+                                        selected_code,
+                                        "CONFIRMADO",
+                                        "APP · E-MAIL CHAPAS",
+                                    )
+                                st.rerun()
+                    else:
+                        preview_email = pd.DataFrame(
+                            resolved_email["resolved"]
+                        )
+                        if not preview_email.empty:
+                            st.dataframe(
+                                preview_email.rename(
+                                    columns={
+                                        "codigo": "Código",
+                                        "quantidade_fisica": "Físico",
+                                        "observacao": "Origem",
+                                    }
+                                ),
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+
+                        mismatch = (
+                            detected_comp is not None
+                            and detected_comp != cb_month
+                        )
+                        if mismatch:
+                            st.error(
+                                "A competência do e-mail não corresponde à "
+                                "competência selecionada no módulo."
+                            )
+                        elif st.button(
+                            "IMPORTAR CONTAGEM DE CHAPAS",
+                            type="primary",
+                            use_container_width=True,
+                            key="cb_import_email",
+                        ):
+                            db.save_cb_counts_batch(
+                                cb_month,
+                                "CHAPAS_EMAIL",
+                                email_file.name,
+                                resolved_email["resolved"],
+                            )
+                            st.session_state["_cb_count_flash"] = (
+                                "Contagem de chapas importada."
+                            )
+                            st.rerun()
+                except Exception as exc:
+                    st.error(
+                        f"Não foi possível ler o e-mail de chapas: {exc}"
+                    )
+
         with tab_bar:
-            st.file_uploader(
-                "Planilha de barramentos",
+            bar_file = st.file_uploader(
+                "Planilha da produção de barramentos",
                 type=["xlsx", "xltx"],
                 key="cb_barramentos_file",
             )
-            st.info(
-                "O canal já está reservado. Preciso de uma planilha real do setor para "
-                "mapear corretamente código, quantidade e eventuais medidas."
-            )
+
+            if bar_file is not None:
+                try:
+                    parsed_bar = parse_barramentos_excel(
+                        bar_file.getvalue(),
+                        bar_file.name,
+                    )
+
+                    catalog_bar = {
+                        str(row.get("codigo")): row
+                        for row in cb_catalog
+                        if row.get("categoria") == "BARRA_COBRE"
+                        and row.get("status") == "CONFIRMADO"
+                    }
+
+                    valid_bar_rows = []
+                    bar_issues = []
+                    for row in parsed_bar["rows"]:
+                        code = normalize_code(row.get("codigo"))
+                        item = catalog_bar.get(code)
+                        if item is None:
+                            bar_issues.append(
+                                {
+                                    "Código": code,
+                                    "Modelo": row.get("modelo"),
+                                    "Motivo": "CÓDIGO NÃO CONFIRMADO NA BASE MESTRE",
+                                }
+                            )
+                            continue
+
+                        unidade = str(
+                            item.get("unidade") or ""
+                        ).upper()
+                        if unidade not in {"MT", "M"}:
+                            bar_issues.append(
+                                {
+                                    "Código": code,
+                                    "Modelo": row.get("modelo"),
+                                    "Motivo": (
+                                        "UNIDADE DO CADASTRO "
+                                        + unidade
+                                        + " NÃO É METRO"
+                                    ),
+                                }
+                            )
+                            continue
+
+                        valid_bar_rows.append(
+                            {
+                                "codigo": code,
+                                "quantidade_fisica": float(
+                                    row.get(
+                                        "quantidade_fisica"
+                                    )
+                                    or 0
+                                ),
+                                "observacao": (
+                                    f"{row.get('modelo') or ''} · "
+                                    f"Barras {float(row.get('barras') or 0):.3f} m · "
+                                    f"Processado {float(row.get('processado') or 0):.3f} m"
+                                ),
+                            }
+                        )
+
+                    br1, br2, br3 = st.columns(3)
+                    br1.metric(
+                        "Códigos encontrados",
+                        parsed_bar["total_rows"],
+                    )
+                    br2.metric(
+                        "Prontos para importar",
+                        len(valid_bar_rows),
+                    )
+                    br3.metric(
+                        "Pendências",
+                        len(bar_issues),
+                    )
+
+                    if valid_bar_rows:
+                        st.dataframe(
+                            pd.DataFrame(valid_bar_rows).rename(
+                                columns={
+                                    "codigo": "Código",
+                                    "quantidade_fisica": "Físico produção (m)",
+                                    "observacao": "Detalhe",
+                                }
+                            ),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                    if bar_issues:
+                        st.error(
+                            "Existem códigos novos/não confirmados ou com "
+                            "unidade incompatível. Atualize/valide a base mestre "
+                            "antes de importar esta fonte."
+                        )
+                        st.dataframe(
+                            pd.DataFrame(bar_issues),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+                    elif st.button(
+                        "IMPORTAR BARRAMENTOS DA PRODUÇÃO",
+                        type="primary",
+                        use_container_width=True,
+                        key="cb_import_bars",
+                    ):
+                        db.save_cb_counts_batch(
+                            cb_month,
+                            "BARRAMENTOS_EXCEL",
+                            bar_file.name,
+                            valid_bar_rows,
+                        )
+                        st.session_state["_cb_count_flash"] = (
+                            "Contagem da produção de barramentos importada."
+                        )
+                        st.rerun()
+                except Exception as exc:
+                    st.error(
+                        f"Não foi possível ler a planilha de barramentos: {exc}"
+                    )
 
         with tab_internal:
             internal_file = st.file_uploader(
                 "Planilha do setor interno",
                 type=["xlsx", "xltx"],
                 key="cb_internal_file",
+                help=(
+                    "O leitor procura automaticamente uma estrutura com "
+                    "CODIGO e MTS/METROS/QUANTIDADE."
+                ),
             )
+
             if internal_file is not None:
-                st.info(
-                    "Arquivo recebido na interface. A leitura automática será ligada "
-                    "quando definirmos o modelo da planilha."
-                )
+                try:
+                    parsed_internal = parse_interno_excel(
+                        internal_file.getvalue(),
+                        internal_file.name,
+                    )
+
+                    confirmed_codes = {
+                        str(row.get("codigo"))
+                        for row in confirmed_catalog
+                    }
+                    internal_valid = []
+                    internal_issues = []
+
+                    for row in parsed_internal["rows"]:
+                        code = normalize_code(row.get("codigo"))
+                        if code not in confirmed_codes:
+                            internal_issues.append(
+                                {
+                                    "Código": code,
+                                    "Motivo": "CÓDIGO NÃO CONFIRMADO NA BASE MESTRE",
+                                }
+                            )
+                        else:
+                            internal_valid.append(
+                                {
+                                    "codigo": code,
+                                    "quantidade_fisica": float(
+                                        row.get(
+                                            "quantidade_fisica"
+                                        )
+                                        or 0
+                                    ),
+                                    "observacao": (
+                                        f"{parsed_internal['sheet']} · "
+                                        f"coluna {parsed_internal['quantity_label']}"
+                                    ),
+                                }
+                            )
+
+                    in1, in2, in3 = st.columns(3)
+                    in1.metric(
+                        "Códigos encontrados",
+                        parsed_internal["total_rows"],
+                    )
+                    in2.metric(
+                        "Prontos para importar",
+                        len(internal_valid),
+                    )
+                    in3.metric(
+                        "Pendências",
+                        len(internal_issues),
+                    )
+
+                    if internal_valid:
+                        st.dataframe(
+                            pd.DataFrame(internal_valid).rename(
+                                columns={
+                                    "codigo": "Código",
+                                    "quantidade_fisica": "Físico interno",
+                                    "observacao": "Origem",
+                                }
+                            ),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                    if internal_issues:
+                        st.error(
+                            "Existem códigos ainda não confirmados na base mestre."
+                        )
+                        st.dataframe(
+                            pd.DataFrame(internal_issues),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+                    elif st.button(
+                        "IMPORTAR CONTAGEM INTERNA",
+                        type="primary",
+                        use_container_width=True,
+                        key="cb_import_internal",
+                    ):
+                        db.save_cb_counts_batch(
+                            cb_month,
+                            "INTERNO_EXCEL",
+                            internal_file.name,
+                            internal_valid,
+                        )
+                        st.session_state["_cb_count_flash"] = (
+                            "Contagem interna importada."
+                        )
+                        st.rerun()
+                except Exception as exc:
+                    st.error(
+                        f"Não foi possível ler a planilha interna: {exc}"
+                    )
 
             st.markdown("#### LANÇAMENTO MANUAL")
 
-            monitored_codes = sorted(
-                {
-                    str(row.get("codigo") or "").strip()
-                    for row in cb_catalog
-                    if str(row.get("codigo") or "").strip()
-                }
-            )
+            manual_options = [
+                (
+                    str(row.get("codigo")),
+                    str(row.get("descricao") or ""),
+                    str(row.get("unidade") or ""),
+                )
+                for row in confirmed_catalog
+            ]
+            manual_labels = [
+                f"{code} · {description} · {unit}"
+                for code, description, unit in manual_options
+            ]
 
-            if monitored_codes:
-                manual_code = st.selectbox(
-                    "Código",
-                    monitored_codes,
+            if manual_labels:
+                manual_selected = st.selectbox(
+                    "Material",
+                    manual_labels,
                     key="cb_manual_code",
                 )
+                manual_code = manual_selected.split(
+                    " · ",
+                    1,
+                )[0].strip()
+                manual_unit = next(
+                    (
+                        unit
+                        for code, _, unit in manual_options
+                        if code == manual_code
+                    ),
+                    "",
+                )
+
                 manual_qty = st.number_input(
-                    "Quantidade física",
+                    f"Quantidade física ({manual_unit or 'U.M.'})",
                     min_value=0.0,
                     value=0.0,
                     step=1.0,
@@ -1561,30 +2121,57 @@ elif page == "Conferência de chapas e barramentos":
                     use_container_width=True,
                     key="cb_save_manual",
                 ):
-                    try:
-                        db.save_cb_count(
-                            cb_month,
-                            "INTERNO_MANUAL",
-                            manual_code,
-                            manual_qty,
-                            manual_obs,
-                            "Lançamento manual no aplicativo",
-                        )
-                        st.session_state["_cb_count_flash"] = (
-                            "Contagem manual salva."
-                        )
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(
-                            f"Não foi possível salvar a contagem: {exc}"
-                        )
-            else:
-                st.warning(
-                    "Cadastre primeiro os códigos que fazem parte da conferência."
-                )
+                    db.save_cb_count(
+                        cb_month,
+                        "INTERNO_MANUAL",
+                        manual_code,
+                        manual_qty,
+                        manual_obs,
+                        "Lançamento manual no aplicativo",
+                    )
+                    st.session_state["_cb_count_flash"] = (
+                        "Contagem manual salva."
+                    )
+                    st.rerun()
 
-        if st.session_state.pop("_cb_count_flash", None):
-            st.success("Contagem física salva com sucesso.")
+        flash_count = st.session_state.pop(
+            "_cb_count_flash",
+            None,
+        )
+        if flash_count:
+            st.success(flash_count)
+
+        if cb_imports:
+            with st.expander("IMPORTAÇÕES DA COMPETÊNCIA"):
+                imports_view = pd.DataFrame(cb_imports)
+                if not imports_view.empty:
+                    imports_view["fonte"] = imports_view[
+                        "fonte"
+                    ].map(
+                        lambda value: CB_SOURCE_LABELS.get(
+                            str(value),
+                            str(value),
+                        )
+                    )
+                    st.dataframe(
+                        imports_view[
+                            [
+                                "fonte",
+                                "arquivo_nome",
+                                "linhas",
+                                "importado_em",
+                            ]
+                        ].rename(
+                            columns={
+                                "fonte": "Fonte",
+                                "arquivo_nome": "Arquivo",
+                                "linhas": "Linhas",
+                                "importado_em": "Importado em",
+                            }
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
 
         st.markdown(
             '<div class="topic-divider"></div>',
@@ -1593,108 +2180,149 @@ elif page == "Conferência de chapas e barramentos":
         section_band(
             "03 · CONFERÊNCIA",
             "CONSOLIDADO FÍSICO × SISTEMA",
-            "Divergência Qtd = Físico − Sistema. Divergência R$ = Divergência Qtd × custo unitário do estoque.",
+            "Divergência Qtd = Físico − Sistema. As fontes físicas são complementares e são somadas por código. Quando o saldo sistêmico é zero, o custo de referência vem do Últ. Preço do CADASTROS e fica identificado como estimado.",
         )
 
-        reconciliation = build_cb_reconciliation(
-            cb_stock_items,
-            cb_catalog,
-            cb_counts,
-        )
-
-        if reconciliation.empty:
+        if not cb_stock_items:
             st.info(
-                "Ainda não há itens classificados como CHAPA ou BARRA DE COBRE "
-                "disponíveis na base detalhada desta competência."
+                "A conferência será liberada após a base detalhada do "
+                "Relatório Analítico estar disponível nesta competência."
             )
         else:
-            counted_mask = reconciliation["Físico"].notna()
-            divergent_mask = (
-                reconciliation["Status"] == "DIVERGÊNCIA"
-            )
-            conflict_mask = (
-                reconciliation["Status"]
-                == "CONFLITO DE FONTES"
+            reconciliation = build_cb_reconciliation(
+                cb_stock_items,
+                cb_catalog,
+                cb_counts,
             )
 
-            divergence_total = float(
-                reconciliation.loc[
-                    divergent_mask,
+            if reconciliation.empty:
+                st.info(
+                    "Ainda não existem materiais confirmados na base mestre."
+                )
+            else:
+                counted_mask = reconciliation["Físico"].notna()
+                divergent_mask = (
+                    reconciliation["Status"] == "DIVERGÊNCIA"
+                )
+                divergence_total = float(
+                    reconciliation.loc[
+                        divergent_mask,
+                        "Divergência R$",
+                    ].fillna(0).sum()
+                )
+
+                st.markdown(
+                    cb_kpi_html(
+                        len(reconciliation),
+                        int(counted_mask.sum()),
+                        int(divergent_mask.sum()),
+                        divergence_total,
+                    ),
+                    unsafe_allow_html=True,
+                )
+
+                filter_category = st.multiselect(
+                    "Categoria",
+                    ["CHAPA", "BARRA DE COBRE"],
+                    default=["CHAPA", "BARRA DE COBRE"],
+                    key="cb_category_filter",
+                )
+                filter_status = st.multiselect(
+                    "Status",
+                    [
+                        "DIVERGÊNCIA",
+                        "CONFERIDO",
+                        "SEM CONTAGEM",
+                    ],
+                    default=[
+                        "DIVERGÊNCIA",
+                        "CONFERIDO",
+                        "SEM CONTAGEM",
+                    ],
+                    key="cb_status_filter",
+                )
+
+                shown = reconciliation[
+                    reconciliation["Categoria"].isin(
+                        filter_category
+                    )
+                    & reconciliation["Status"].isin(
+                        filter_status
+                    )
+                ].copy()
+
+                for col in [
+                    "Saldo sistema",
+                    "Físico",
+                    "Divergência Qtd",
+                ]:
+                    shown[col] = shown[col].map(
+                        lambda value: (
+                            ""
+                            if pd.isna(value)
+                            else f"{float(value):,.6f}"
+                            .replace(",", "X")
+                            .replace(".", ",")
+                            .replace("X", ".")
+                        )
+                    )
+
+                for col in [
+                    "Custo unitário",
                     "Divergência R$",
-                ].fillna(0).sum()
-            )
-
-            st.markdown(
-                cb_kpi_html(
-                    len(reconciliation),
-                    int(counted_mask.sum()),
-                    int(divergent_mask.sum()),
-                    divergence_total,
-                ),
-                unsafe_allow_html=True,
-            )
-
-            if bool(conflict_mask.any()):
-                st.error(
-                    f"{int(conflict_mask.sum())} código(s) aparecem em mais de uma "
-                    "fonte física. Eles não entram no cálculo até definirmos qual fonte prevalece."
-                )
-
-            filter_status = st.multiselect(
-                "Filtrar status",
-                [
-                    "DIVERGÊNCIA",
-                    "CONFERIDO",
-                    "SEM CONTAGEM",
-                    "CONFLITO DE FONTES",
-                ],
-                default=[
-                    "DIVERGÊNCIA",
-                    "CONFERIDO",
-                    "SEM CONTAGEM",
-                    "CONFLITO DE FONTES",
-                ],
-                key="cb_status_filter",
-            )
-
-            shown = reconciliation[
-                reconciliation["Status"].isin(filter_status)
-            ].copy()
-
-            for col in [
-                "Saldo sistema",
-                "Físico",
-                "Divergência Qtd",
-            ]:
-                shown[col] = shown[col].map(
-                    lambda value: (
-                        ""
-                        if pd.isna(value)
-                        else f"{float(value):,.6f}"
-                        .replace(",", "X")
-                        .replace(".", ",")
-                        .replace("X", ".")
+                ]:
+                    shown[col] = shown[col].map(
+                        lambda value: (
+                            ""
+                            if pd.isna(value)
+                            else money_br(value)
+                        )
                     )
+
+                st.dataframe(
+                    shown,
+                    use_container_width=True,
+                    hide_index=True,
                 )
 
-            for col in [
-                "Custo unitário",
-                "Divergência R$",
-            ]:
-                shown[col] = shown[col].map(
-                    lambda value: (
-                        ""
-                        if pd.isna(value)
-                        else money_br(value)
+                st.markdown(
+                    '<div class="topic-divider"></div>',
+                    unsafe_allow_html=True,
+                )
+                section_band(
+                    "04 · TRATATIVAS",
+                    "PENDÊNCIAS DO FECHAMENTO",
+                    "Exibe somente materiais com divergência ou sem contagem física para facilitar a correção antes do fechamento.",
+                )
+
+                pending = reconciliation[
+                    reconciliation["Status"].isin(
+                        ["DIVERGÊNCIA", "SEM CONTAGEM"]
                     )
-                )
+                ].copy()
 
-            st.dataframe(
-                shown,
-                use_container_width=True,
-                hide_index=True,
-            )
-
+                if pending.empty:
+                    st.success(
+                        "Nenhuma pendência de chapas ou barramentos nesta competência."
+                    )
+                else:
+                    st.dataframe(
+                        pending[
+                            [
+                                "Categoria",
+                                "Código",
+                                "Descrição",
+                                "U.M.",
+                                "Saldo sistema",
+                                "Físico",
+                                "Divergência Qtd",
+                                "Divergência R$",
+                                "Status",
+                            ]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
 
 elif page == "Conferência de baixas":
     st.markdown(
