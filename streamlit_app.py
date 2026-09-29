@@ -740,7 +740,29 @@ def build_cb_reconciliation(
     result: list[dict] = []
 
     for codigo, item in sorted(base_by_code.items()):
-        item_counts = counts_by_code.get(codigo, [])
+        raw_counts = counts_by_code.get(codigo, [])
+
+        # O setor interno é alimentado por Excel OU manual.
+        # Se houver lançamento manual para o mesmo código, ele substitui
+        # a parcela do Excel interno, evitando dupla contagem.
+        manual_internal = [
+            row for row in raw_counts
+            if str(row.get("fonte") or "") == "INTERNO_MANUAL"
+        ]
+        item_counts = [
+            row for row in raw_counts
+            if str(row.get("fonte") or "") not in {
+                "INTERNO_EXCEL",
+                "INTERNO_MANUAL",
+            }
+        ]
+        if manual_internal:
+            item_counts.extend(manual_internal)
+        else:
+            item_counts.extend(
+                row for row in raw_counts
+                if str(row.get("fonte") or "") == "INTERNO_EXCEL"
+            )
 
         saldo = float(item["saldo_sistema"] or 0)
         valor = float(item["valor_estoque"] or 0)
