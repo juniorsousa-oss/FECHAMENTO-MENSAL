@@ -49,6 +49,14 @@ MONTHS_PT = {
 }
 
 
+CB_SOURCE_LABELS = {
+    "CHAPAS_EMAIL": "CHAPAS · E-MAIL",
+    "BARRAMENTOS_EXCEL": "BARRAMENTOS · EXCEL",
+    "INTERNO_EXCEL": "SETOR INTERNO · EXCEL",
+    "INTERNO_MANUAL": "SETOR INTERNO · MANUAL",
+}
+
+
 st.set_page_config(
     page_title="FECHAMENTO MENSAL | SETTA",
     page_icon="📄",
@@ -669,6 +677,156 @@ def dimension_value(
     return float(row.get("valor_total") or 0)
 
 
+def build_cb_reconciliation(
+    stock_items: list[dict],
+    catalog: list[dict],
+    counts: list[dict],
+) -> pd.DataFrame:
+    catalog_map = {
+        str(row.get("codigo") or "").strip(): row
+        for row in catalog
+        if bool(row.get("ativo", True))
+    }
+
+    stock_by_code: dict[str, dict] = {}
+    for row in stock_items:
+        codigo = str(row.get("codigo") or "").strip()
+        if codigo not in catalog_map:
+            continue
+
+        current = stock_by_code.setdefault(
+            codigo,
+            {
+                "codigo": codigo,
+                "descricao": str(
+                    row.get("descricao")
+                    or catalog_map[codigo].get("descricao")
+                    or ""
+                ).strip(),
+                "categoria": str(
+                    catalog_map[codigo].get("categoria") or ""
+                ),
+                "armz": set(),
+                "saldo_sistema": 0.0,
+                "valor_estoque": 0.0,
+            },
+        )
+
+        armz = str(row.get("armz") or "").strip()
+        if armz:
+            current["armz"].add(armz)
+
+        current["saldo_sistema"] += float(row.get("saldo") or 0)
+        current["valor_estoque"] += float(
+            row.get("valor_estoque") or 0
+        )
+
+    counts_by_code: dict[str, list[dict]] = {}
+    for row in counts:
+        codigo = str(row.get("codigo") or "").strip()
+        counts_by_code.setdefault(codigo, []).append(row)
+
+    result: list[dict] = []
+
+    for codigo, item in sorted(stock_by_code.items()):
+        item_counts = counts_by_code.get(codigo, [])
+        source_names = [
+            CB_SOURCE_LABELS.get(
+                str(row.get("fonte") or ""),
+                str(row.get("fonte") or ""),
+            )
+            for row in item_counts
+        ]
+
+        physical = None
+        status = "SEM CONTAGEM"
+
+        if len(item_counts) == 1:
+            physical = float(
+                item_counts[0].get("quantidade_fisica") or 0
+            )
+            status = "CONFERIDO"
+        elif len(item_counts) > 1:
+            status = "CONFLITO DE FONTES"
+
+        saldo = float(item["saldo_sistema"] or 0)
+        valor = float(item["valor_estoque"] or 0)
+        custo_unitario = valor / saldo if saldo > 0 else 0.0
+
+        divergencia_qtd = (
+            None if physical is None else physical - saldo
+        )
+        divergencia_rs = (
+            None
+            if divergencia_qtd is None
+            else divergencia_qtd * custo_unitario
+        )
+
+        if (
+            physical is not None
+            and abs(float(divergencia_qtd or 0)) > 1e-9
+        ):
+            status = "DIVERGÊNCIA"
+
+        result.append(
+            {
+                "Categoria": (
+                    "CHAPA"
+                    if item["categoria"] == "CHAPA"
+                    else "BARRA DE COBRE"
+                ),
+                "Código": codigo,
+                "Descrição": item["descricao"],
+                "ARMZ": ", ".join(sorted(item["armz"])),
+                "Saldo sistema": saldo,
+                "Físico": physical,
+                "Divergência Qtd": divergencia_qtd,
+                "Custo unitário": custo_unitario,
+                "Divergência R$": divergencia_rs,
+                "Fonte física": (
+                    " | ".join(source_names)
+                    if source_names
+                    else ""
+                ),
+                "Status": status,
+            }
+        )
+
+    return pd.DataFrame(result)
+
+
+def cb_kpi_html(
+    total_items: int,
+    counted_items: int,
+    divergent_items: int,
+    divergence_rs: float,
+) -> str:
+    return f"""
+    <div class="cb-kpi-grid">
+        <div class="cb-kpi" style="--cb-accent:#2563eb">
+            <div class="cb-kpi-label">ITENS DA BASE</div>
+            <div class="cb-kpi-value">{total_items}</div>
+            <div class="cb-kpi-note">Chapas e barras monitoradas</div>
+        </div>
+        <div class="cb-kpi" style="--cb-accent:#16a34a">
+            <div class="cb-kpi-label">ITENS CONTADOS</div>
+            <div class="cb-kpi-value">{counted_items}</div>
+            <div class="cb-kpi-note">Com uma fonte física definida</div>
+        </div>
+        <div class="cb-kpi" style="--cb-accent:#dc2626">
+            <div class="cb-kpi-label">DIVERGÊNCIAS</div>
+            <div class="cb-kpi-value">{divergent_items}</div>
+            <div class="cb-kpi-note">Quantidade física ≠ sistema</div>
+        </div>
+        <div class="cb-kpi" style="--cb-accent:#d97706">
+            <div class="cb-kpi-label">DIVERGÊNCIA EM R$</div>
+            <div class="cb-kpi-value">{money_br(divergence_rs)}</div>
+            <div class="cb-kpi-note">Físico − sistema × custo unitário</div>
+        </div>
+    </div>
+    """
+
+
 if "app_cfg" not in st.session_state:
     try:
         remote_cfg = db.load_config()
@@ -1116,19 +1274,426 @@ if page == "Dashboard":
 
 elif page == "Conferência de chapas e barramentos":
     st.markdown(
-        '<div class="section-title">Conferência de chapas e barramentos</div>',
+        '<div class="section-title">CONFERÊNCIA DE CHAPAS E BARRAMENTOS</div>',
         unsafe_allow_html=True,
     )
+
     st.markdown(
         """
         <div class="module-hero">
-            <strong>Módulo preparado para a conferência física e sistêmica de chapas e barramentos.</strong>
-            <span>As regras específicas serão definidas na próxima etapa.</span>
+            <strong>CONFERÊNCIA FÍSICO × SISTEMA</strong>
+            <span>
+                A base sistêmica vem do Relatório Analítico de Estoque.
+                A quantidade do sistema é o SALDO EM ESTOQUE e o custo unitário
+                é calculado por VALOR EM ESTOQUE ÷ SALDO EM ESTOQUE.
+                As contagens físicas são rastreadas pela fonte de origem.
+            </span>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    st.info("Estrutura criada. Ainda não há regra de conferência aplicada.")
+
+    if not visible_months:
+        st.info(
+            "Importe primeiro uma competência no Dashboard para utilizar esta conferência."
+        )
+    else:
+        query_cb_month = str(
+            st.query_params.get("mes_cb", "") or ""
+        ).strip()
+        cb_query_date = None
+
+        if len(query_cb_month) == 7:
+            try:
+                cb_query_date = date.fromisoformat(
+                    query_cb_month + "-01"
+                )
+            except Exception:
+                cb_query_date = None
+
+        cb_default_month = (
+            cb_query_date
+            if cb_query_date in visible_months
+            else visible_months[-1]
+        )
+
+        cb_month = st.selectbox(
+            "Competência da conferência",
+            visible_months,
+            index=visible_months.index(cb_default_month),
+            format_func=month_label,
+            key="cb_month",
+        )
+        st.query_params["mes_cb"] = cb_month.strftime("%Y-%m")
+
+        try:
+            cb_stock_items = db.list_inventory_items(cb_month)
+            cb_catalog = db.list_cb_catalog()
+            cb_counts = db.list_cb_counts(cb_month)
+            cb_error = ""
+        except Exception as exc:
+            cb_stock_items = []
+            cb_catalog = []
+            cb_counts = []
+            cb_error = str(exc)
+
+        if cb_error:
+            st.error(
+                f"Não foi possível carregar a conferência: {cb_error}"
+            )
+
+        st.markdown(
+            '<div class="topic-divider"></div>',
+            unsafe_allow_html=True,
+        )
+        section_band(
+            "01 · BASE",
+            "ITENS ANALISADOS",
+            "Somente códigos classificados como CHAPA ou BARRA DE COBRE entram nesta conferência.",
+        )
+
+        if not cb_stock_items:
+            st.warning(
+                "A competência selecionada ainda não possui os itens detalhados do "
+                "Relatório Analítico gravados na base. Reimporte o relatório dessa "
+                "competência pelo Dashboard para habilitar a conferência por código."
+            )
+
+        stock_codes = {
+            str(row.get("codigo") or "").strip(): row
+            for row in cb_stock_items
+        }
+
+        with st.expander("CADASTRO DE ITENS MONITORADOS"):
+            st.caption(
+                "Este cadastro evita classificar materiais por texto de forma insegura. "
+                "Depois que definirmos a regra oficial de identificação, ele poderá ser "
+                "alimentado automaticamente."
+            )
+
+            code_options = sorted(stock_codes.keys())
+            if code_options:
+                catalog_code = st.selectbox(
+                    "Código do material",
+                    code_options,
+                    format_func=lambda code: (
+                        f"{code} · "
+                        + str(
+                            stock_codes.get(code, {}).get(
+                                "descricao"
+                            )
+                            or ""
+                        )
+                    ),
+                    key="cb_catalog_code",
+                )
+            else:
+                catalog_code = st.text_input(
+                    "Código do material",
+                    key="cb_catalog_code_text",
+                )
+
+            catalog_category = st.selectbox(
+                "Categoria",
+                ["CHAPA", "BARRA_COBRE"],
+                format_func=lambda value: (
+                    "CHAPA"
+                    if value == "CHAPA"
+                    else "BARRA DE COBRE"
+                ),
+                key="cb_catalog_category",
+            )
+
+            if st.button(
+                "ADICIONAR À CONFERÊNCIA",
+                type="primary",
+                use_container_width=True,
+                key="cb_add_catalog",
+            ):
+                if not str(catalog_code or "").strip():
+                    st.error("Informe o código do material.")
+                else:
+                    try:
+                        description = str(
+                            stock_codes.get(
+                                str(catalog_code).strip(),
+                                {},
+                            ).get("descricao")
+                            or ""
+                        )
+                        db.save_cb_catalog_item(
+                            str(catalog_code).strip(),
+                            catalog_category,
+                            description,
+                        )
+                        st.session_state["_cb_flash"] = (
+                            "Item adicionado à conferência."
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(
+                            f"Não foi possível salvar o item: {exc}"
+                        )
+
+        if st.session_state.pop("_cb_flash", None):
+            st.success("Item salvo com sucesso.")
+
+        st.markdown(
+            '<div class="topic-divider"></div>',
+            unsafe_allow_html=True,
+        )
+        section_band(
+            "02 · FONTES",
+            "ALIMENTAÇÃO DA CONTAGEM FÍSICA",
+            "Cada origem permanece identificada. O mesmo código em mais de uma fonte é tratado como conflito, não como soma.",
+        )
+
+        st.markdown(
+            """
+            <div class="cb-source-grid">
+                <div class="cb-source-card">
+                    <div class="cb-source-title">CHAPAS · E-MAIL</div>
+                    <div class="cb-source-text">
+                        Contagem recebida do setor de chapas por e-mail.
+                        O leitor automático será configurado a partir de um exemplo real do e-mail.
+                    </div>
+                    <div class="cb-source-tag">AGUARDANDO MODELO</div>
+                </div>
+                <div class="cb-source-card">
+                    <div class="cb-source-title">BARRAMENTOS · EXCEL</div>
+                    <div class="cb-source-text">
+                        Planilha enviada pelo setor de barramentos.
+                        O mapeamento das colunas será definido com um arquivo real do setor.
+                    </div>
+                    <div class="cb-source-tag">AGUARDANDO MODELO</div>
+                </div>
+                <div class="cb-source-card">
+                    <div class="cb-source-title">SETOR INTERNO</div>
+                    <div class="cb-source-text">
+                        Pode receber planilha ou lançamento manual.
+                        O lançamento manual já está habilitado nesta primeira versão.
+                    </div>
+                    <div class="cb-source-tag">MANUAL ATIVO</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        tab_email, tab_bar, tab_internal = st.tabs(
+            [
+                "CHAPAS · E-MAIL",
+                "BARRAMENTOS · EXCEL",
+                "SETOR INTERNO",
+            ]
+        )
+
+        with tab_email:
+            st.text_area(
+                "Conteúdo do e-mail",
+                height=160,
+                placeholder=(
+                    "Cole aqui um exemplo real do e-mail recebido do setor de chapas. "
+                    "Nesta etapa ele serve para definirmos a leitura automática."
+                ),
+                key="cb_email_sample",
+            )
+            st.info(
+                "Envie também um exemplo real desse e-mail na conversa para eu configurar "
+                "a extração de código e quantidade física."
+            )
+
+        with tab_bar:
+            st.file_uploader(
+                "Planilha de barramentos",
+                type=["xlsx", "xltx"],
+                key="cb_barramentos_file",
+            )
+            st.info(
+                "O canal já está reservado. Preciso de uma planilha real do setor para "
+                "mapear corretamente código, quantidade e eventuais medidas."
+            )
+
+        with tab_internal:
+            internal_file = st.file_uploader(
+                "Planilha do setor interno",
+                type=["xlsx", "xltx"],
+                key="cb_internal_file",
+            )
+            if internal_file is not None:
+                st.info(
+                    "Arquivo recebido na interface. A leitura automática será ligada "
+                    "quando definirmos o modelo da planilha."
+                )
+
+            st.markdown("#### LANÇAMENTO MANUAL")
+
+            monitored_codes = sorted(
+                {
+                    str(row.get("codigo") or "").strip()
+                    for row in cb_catalog
+                    if str(row.get("codigo") or "").strip()
+                }
+            )
+
+            if monitored_codes:
+                manual_code = st.selectbox(
+                    "Código",
+                    monitored_codes,
+                    key="cb_manual_code",
+                )
+                manual_qty = st.number_input(
+                    "Quantidade física",
+                    min_value=0.0,
+                    value=0.0,
+                    step=1.0,
+                    format="%.6f",
+                    key="cb_manual_qty",
+                )
+                manual_obs = st.text_input(
+                    "Observação",
+                    key="cb_manual_obs",
+                )
+
+                if st.button(
+                    "SALVAR CONTAGEM MANUAL",
+                    type="primary",
+                    use_container_width=True,
+                    key="cb_save_manual",
+                ):
+                    try:
+                        db.save_cb_count(
+                            cb_month,
+                            "INTERNO_MANUAL",
+                            manual_code,
+                            manual_qty,
+                            manual_obs,
+                            "Lançamento manual no aplicativo",
+                        )
+                        st.session_state["_cb_count_flash"] = (
+                            "Contagem manual salva."
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(
+                            f"Não foi possível salvar a contagem: {exc}"
+                        )
+            else:
+                st.warning(
+                    "Cadastre primeiro os códigos que fazem parte da conferência."
+                )
+
+        if st.session_state.pop("_cb_count_flash", None):
+            st.success("Contagem física salva com sucesso.")
+
+        st.markdown(
+            '<div class="topic-divider"></div>',
+            unsafe_allow_html=True,
+        )
+        section_band(
+            "03 · CONFERÊNCIA",
+            "CONSOLIDADO FÍSICO × SISTEMA",
+            "Divergência Qtd = Físico − Sistema. Divergência R$ = Divergência Qtd × custo unitário do estoque.",
+        )
+
+        reconciliation = build_cb_reconciliation(
+            cb_stock_items,
+            cb_catalog,
+            cb_counts,
+        )
+
+        if reconciliation.empty:
+            st.info(
+                "Ainda não há itens classificados como CHAPA ou BARRA DE COBRE "
+                "disponíveis na base detalhada desta competência."
+            )
+        else:
+            counted_mask = reconciliation["Físico"].notna()
+            divergent_mask = (
+                reconciliation["Status"] == "DIVERGÊNCIA"
+            )
+            conflict_mask = (
+                reconciliation["Status"]
+                == "CONFLITO DE FONTES"
+            )
+
+            divergence_total = float(
+                reconciliation.loc[
+                    divergent_mask,
+                    "Divergência R$",
+                ].fillna(0).sum()
+            )
+
+            st.markdown(
+                cb_kpi_html(
+                    len(reconciliation),
+                    int(counted_mask.sum()),
+                    int(divergent_mask.sum()),
+                    divergence_total,
+                ),
+                unsafe_allow_html=True,
+            )
+
+            if bool(conflict_mask.any()):
+                st.error(
+                    f"{int(conflict_mask.sum())} código(s) aparecem em mais de uma "
+                    "fonte física. Eles não entram no cálculo até definirmos qual fonte prevalece."
+                )
+
+            filter_status = st.multiselect(
+                "Filtrar status",
+                [
+                    "DIVERGÊNCIA",
+                    "CONFERIDO",
+                    "SEM CONTAGEM",
+                    "CONFLITO DE FONTES",
+                ],
+                default=[
+                    "DIVERGÊNCIA",
+                    "CONFERIDO",
+                    "SEM CONTAGEM",
+                    "CONFLITO DE FONTES",
+                ],
+                key="cb_status_filter",
+            )
+
+            shown = reconciliation[
+                reconciliation["Status"].isin(filter_status)
+            ].copy()
+
+            for col in [
+                "Saldo sistema",
+                "Físico",
+                "Divergência Qtd",
+            ]:
+                shown[col] = shown[col].map(
+                    lambda value: (
+                        ""
+                        if pd.isna(value)
+                        else f"{float(value):,.6f}"
+                        .replace(",", "X")
+                        .replace(".", ",")
+                        .replace("X", ".")
+                    )
+                )
+
+            for col in [
+                "Custo unitário",
+                "Divergência R$",
+            ]:
+                shown[col] = shown[col].map(
+                    lambda value: (
+                        ""
+                        if pd.isna(value)
+                        else money_br(value)
+                    )
+                )
+
+            st.dataframe(
+                shown,
+                use_container_width=True,
+                hide_index=True,
+            )
 
 
 elif page == "Conferência de baixas":
