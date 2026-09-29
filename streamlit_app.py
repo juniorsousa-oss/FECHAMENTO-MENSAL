@@ -107,6 +107,12 @@ st.set_page_config(
 inject_css()
 
 
+@st.cache_data(show_spinner=False, max_entries=4)
+def cached_parse_cadastros(raw: bytes, file_name: str) -> dict:
+    return parse_cadastros(raw, file_name)
+
+
+
 def month_start(value: date | datetime) -> date:
     return date(value.year, value.month, 1)
 
@@ -1446,18 +1452,26 @@ elif page == "Conferência de chapas e barramentos":
 
         if cadastro_file is not None:
             try:
-                parsed_cad = parse_cadastros(
-                    cadastro_file.getvalue(),
-                    cadastro_file.name,
-                )
+                cadastro_bytes = cadastro_file.getvalue()
+                with st.spinner(
+                    "Lendo somente os materiais candidatos a chapas e barras..."
+                ):
+                    parsed_cad = cached_parse_cadastros(
+                        cadastro_bytes,
+                        cadastro_file.name,
+                    )
 
-                ca, cb, cc = st.columns(3)
+                ca, cb, cc, cd = st.columns(4)
                 ca.metric(
                     "Candidatos identificados",
                     parsed_cad["total_candidates"],
                 )
                 cb.metric("Chapas", parsed_cad["chapas"])
                 cc.metric("Barras de cobre", parsed_cad["barras"])
+                cd.metric(
+                    "Linhas descartadas",
+                    parsed_cad.get("rows_discarded", 0),
+                )
 
                 if st.button(
                     "SINCRONIZAR CADASTROS",
