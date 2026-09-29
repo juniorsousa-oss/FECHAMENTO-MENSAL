@@ -31,7 +31,7 @@ def browser_icon():
 
 
 st.set_page_config(
-    page_title="Fechamento Mensal | Setta",
+    page_title="FECHAMENTO MENSAL | SETTA",
     page_icon=browser_icon(),
     layout="wide",
     initial_sidebar_state="expanded",
