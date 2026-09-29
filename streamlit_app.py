@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 import inventory_db as db
 from report_parser import parse_inventory_report
@@ -258,12 +258,11 @@ def tp_comparison_html(
     lookup: dict[tuple[str, str, str], dict],
 ) -> str:
     rows = [
-        '<div class="tp-compare">',
-        '<div class="tp-compare-title">VALOR EM ESTOQUE POR TIPO DE PRODUTO</div>',
-        '<div class="tp-compare-row tp-compare-head">',
-        '<div class="tp-compare-cell">TP</div>',
-        f'<div class="tp-compare-cell">{month_label(previous) if previous_exists else "ESTOQUE INICIAL"}</div>',
-        f'<div class="tp-compare-cell">{month_label(selected)}</div>',
+        '<div class="tp-table">',
+        '<div class="tp-table-row tp-table-head">',
+        '<div class="tp-table-cell">TIPO</div>',
+        f'<div class="tp-table-cell">{MONTHS_PT[previous.month] if previous_exists else "ESTOQUE INICIAL"}</div>',
+        f'<div class="tp-table-cell">{MONTHS_PT[selected.month]}</div>',
         '</div>',
     ]
 
@@ -288,25 +287,249 @@ def tp_comparison_html(
 
         rows.extend(
             [
-                '<div class="tp-compare-row">',
-                f'<div class="tp-compare-cell tp-compare-type" data-label="TP">{tp}</div>',
-                f'<div class="tp-compare-cell tp-compare-money" data-label="Inicial">{money_br(initial_value)}</div>',
-                f'<div class="tp-compare-cell tp-compare-money" data-label="Final">{money_br(final_value)}</div>',
+                '<div class="tp-table-row">',
+                f'<div class="tp-table-cell tp-table-type" data-label="TIPO">{tp}</div>',
+                f'<div class="tp-table-cell tp-table-money" data-label="ANTERIOR">{money_br(initial_value)}</div>',
+                f'<div class="tp-table-cell tp-table-money" data-label="ATUAL">{money_br(final_value)}</div>',
                 '</div>',
             ]
         )
 
     rows.extend(
         [
-            '<div class="tp-compare-row tp-compare-total">',
-            '<div class="tp-compare-cell tp-compare-type" data-label="TP">TOTAL</div>',
-            f'<div class="tp-compare-cell tp-compare-money" data-label="Inicial">{money_br(initial_total if previous_exists else None)}</div>',
-            f'<div class="tp-compare-cell tp-compare-money" data-label="Final">{money_br(final_total)}</div>',
+            '<div class="tp-table-row tp-table-total">',
+            '<div class="tp-table-cell tp-table-type" data-label="TIPO">TOTAL</div>',
+            f'<div class="tp-table-cell tp-table-money" data-label="ANTERIOR">{money_br(initial_total if previous_exists else None)}</div>',
+            f'<div class="tp-table-cell tp-table-money" data-label="ATUAL">{money_br(final_total)}</div>',
             '</div>',
             '</div>',
         ]
     )
     return "".join(rows)
+
+
+def _export_font(size: int, bold: bool = False):
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        if bold
+        else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"
+        if bold
+        else "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    ]
+    for candidate in candidates:
+        try:
+            return ImageFont.truetype(candidate, size=size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+def export_tp_png(
+    product_types: list[str],
+    previous: date,
+    selected: date,
+    previous_exists: bool,
+    lookup: dict[tuple[str, str, str], dict],
+    config: dict,
+) -> bytes:
+    width = 1240
+    left = 60
+    right = width - 60
+    top = 55
+    header_h = 125
+    month_h = 72
+    row_h = 72
+    total_h = 80
+    rows_count = len(product_types)
+    height = top + header_h + month_h + rows_count * row_h + total_h + 55
+
+    canvas = Image.new("RGB", (width, height), "#ffffff")
+    draw = ImageDraw.Draw(canvas)
+
+    border = "#c7cdd4"
+    dark = "#17191c"
+    muted = "#5f6772"
+    header_bg = "#f1f3f5"
+    month_bg = "#666b72"
+    type_bg = "#f5f6f7"
+    total_bg = "#e5e7eb"
+
+    title_font = _export_font(40, True)
+    logo_font = _export_font(44, True)
+    month_font = _export_font(25, True)
+    type_font = _export_font(24, True)
+    value_font = _export_font(23, False)
+    total_font = _export_font(24, True)
+
+    draw.rounded_rectangle(
+        (left, top, right, height - 35),
+        radius=18,
+        fill="#ffffff",
+        outline=border,
+        width=2,
+    )
+
+    header_bottom = top + header_h
+    draw.rectangle((left, top, right, header_bottom), fill=header_bg)
+
+    logo_data = str(config.get("logo_data") or "").strip()
+    logo_mime = str(config.get("logo_mime") or "").lower()
+    logo_drawn = False
+
+    if logo_data and "svg" not in logo_mime:
+        try:
+            raw = base64.b64decode(logo_data)
+            logo = Image.open(io.BytesIO(raw)).convert("RGBA")
+            logo.thumbnail((230, 82))
+            x = left + 38
+            y = top + (header_h - logo.height) // 2
+            canvas.paste(logo, (x, y), logo)
+            logo_drawn = True
+        except Exception:
+            logo_drawn = False
+
+    if not logo_drawn:
+        draw.text(
+            (left + 42, top + 34),
+            "Setta",
+            font=logo_font,
+            fill=dark,
+        )
+
+    draw.line(
+        (left + 310, top + 20, left + 310, header_bottom - 20),
+        fill=border,
+        width=2,
+    )
+
+    title = "VALOR EM ESTOQUE"
+    title_box = draw.textbbox((0, 0), title, font=title_font)
+    title_w = title_box[2] - title_box[0]
+    title_x = left + 310 + ((right - (left + 310)) - title_w) / 2
+    draw.text((title_x, top + 35), title, font=title_font, fill=dark)
+
+    col1 = left
+    col2 = left + 300
+    col3 = left + 745
+    col4 = right
+
+    month_top = header_bottom
+    month_bottom = month_top + month_h
+    draw.rectangle((col1, month_top, col2, month_bottom), fill=month_bg)
+    draw.rectangle((col2, month_top, col3, month_bottom), fill=month_bg)
+    draw.rectangle((col3, month_top, col4, month_bottom), fill=month_bg)
+
+    draw.text(
+        (col1 + 105, month_top + 20),
+        "TIPO",
+        font=month_font,
+        fill="#ffffff",
+    )
+    previous_label = MONTHS_PT[previous.month] if previous_exists else "INICIAL"
+    selected_label = MONTHS_PT[selected.month]
+
+    for x0, x1, label in [
+        (col2, col3, previous_label),
+        (col3, col4, selected_label),
+    ]:
+        box = draw.textbbox((0, 0), label, font=month_font)
+        w = box[2] - box[0]
+        draw.text(
+            (x0 + (x1 - x0 - w) / 2, month_top + 20),
+            label,
+            font=month_font,
+            fill="#ffffff",
+        )
+
+    initial_total = 0.0
+    final_total = 0.0
+    y = month_bottom
+
+    for tp in product_types:
+        initial_value = (
+            dimension_value(lookup, previous, "TP", f"TP:{tp}")
+            if previous_exists
+            else None
+        )
+        final_value = dimension_value(
+            lookup,
+            selected,
+            "TP",
+            f"TP:{tp}",
+        )
+        if initial_value is not None:
+            initial_total += float(initial_value)
+        final_total += float(final_value)
+
+        draw.rectangle((col1, y, col2, y + row_h), fill=type_bg)
+        draw.rectangle((col2, y, col4, y + row_h), fill="#ffffff")
+
+        tp_box = draw.textbbox((0, 0), tp, font=type_font)
+        tp_w = tp_box[2] - tp_box[0]
+        draw.text(
+            (col1 + (col2 - col1 - tp_w) / 2, y + 21),
+            tp,
+            font=type_font,
+            fill=dark,
+        )
+
+        for x0, x1, value in [
+            (col2, col3, money_br(initial_value)),
+            (col3, col4, money_br(final_value)),
+        ]:
+            box = draw.textbbox((0, 0), value, font=value_font)
+            w = box[2] - box[0]
+            draw.text(
+                (x1 - w - 22, y + 22),
+                value,
+                font=value_font,
+                fill=dark,
+            )
+
+        y += row_h
+
+    draw.rectangle((col1, y, col4, y + total_h), fill=total_bg)
+
+    draw.text(
+        (col1 + 95, y + 23),
+        "TOTAL",
+        font=total_font,
+        fill=dark,
+    )
+
+    for x0, x1, value in [
+        (
+            col2,
+            col3,
+            money_br(initial_total if previous_exists else None),
+        ),
+        (col3, col4, money_br(final_total)),
+    ]:
+        box = draw.textbbox((0, 0), value, font=total_font)
+        w = box[2] - box[0]
+        draw.text(
+            (x1 - w - 22, y + 23),
+            value,
+            font=total_font,
+            fill=dark,
+        )
+
+    grid_top = month_top
+    grid_bottom = y + total_h
+
+    for x in [col1, col2, col3, col4]:
+        draw.line((x, grid_top, x, grid_bottom), fill=border, width=1)
+
+    line_y = month_bottom
+    for _ in range(rows_count + 1):
+        draw.line((col1, line_y, col4, line_y), fill=border, width=1)
+        line_y += row_h
+    draw.line((col1, grid_bottom, col4, grid_bottom), fill=border, width=1)
+
+    output = io.BytesIO()
+    canvas.save(output, format="PNG", optimize=True)
+    return output.getvalue()
 
 
 def parse_competencia(value: object) -> date | None:
