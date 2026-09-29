@@ -260,3 +260,97 @@ def import_inventory_report(
         timeout=120,
     )
     return result or {}
+
+
+
+def list_inventory_items(competencia: date | str) -> list[dict]:
+    if isinstance(competencia, date):
+        key = competencia.replace(day=1).isoformat()
+    else:
+        key = str(competencia)[:10]
+
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/fm_estoque_itens",
+        headers=_headers(),
+        params={
+            "select": "codigo,tp,armz,saldo,valor_estoque,descricao,descricao_armazem",
+            "competencia": f"eq.{key}",
+            "order": "codigo.asc,armz.asc",
+        },
+        timeout=45,
+    )
+    _raise(response)
+    return response.json() or []
+
+
+def list_cb_catalog() -> list[dict]:
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/fm_cb_catalogo",
+        headers=_headers(),
+        params={
+            "select": "codigo,categoria,descricao,ativo,atualizado_em",
+            "ativo": "eq.true",
+            "order": "categoria.asc,codigo.asc",
+        },
+        timeout=30,
+    )
+    _raise(response)
+    return response.json() or []
+
+
+def save_cb_catalog_item(
+    codigo: str,
+    categoria: str,
+    descricao: str = "",
+) -> None:
+    rpc(
+        "fm_cb_salvar_item_catalogo",
+        {
+            "p_codigo": str(codigo).strip(),
+            "p_categoria": str(categoria).strip(),
+            "p_descricao": str(descricao or "").strip(),
+        },
+        timeout=30,
+    )
+
+
+def list_cb_counts(competencia: date | str) -> list[dict]:
+    if isinstance(competencia, date):
+        key = competencia.replace(day=1).isoformat()
+    else:
+        key = str(competencia)[:10]
+
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/fm_cb_contagens",
+        headers=_headers(),
+        params={
+            "select": "id,competencia,fonte,codigo,quantidade_fisica,observacao,origem_ref,atualizado_em",
+            "competencia": f"eq.{key}",
+            "order": "fonte.asc,codigo.asc",
+        },
+        timeout=30,
+    )
+    _raise(response)
+    return response.json() or []
+
+
+def save_cb_count(
+    competencia: date,
+    fonte: str,
+    codigo: str,
+    quantidade_fisica: float,
+    observacao: str = "",
+    origem_ref: str = "",
+) -> None:
+    rpc(
+        "fm_cb_salvar_contagem",
+        {
+            "p_competencia": competencia.replace(day=1).isoformat(),
+            "p_fonte": str(fonte).strip(),
+            "p_codigo": str(codigo).strip(),
+            "p_quantidade_fisica": float(quantidade_fisica),
+            "p_observacao": str(observacao or "").strip(),
+            "p_origem_ref": str(origem_ref or "").strip(),
+        },
+        timeout=30,
+    )
