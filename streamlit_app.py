@@ -1576,11 +1576,55 @@ elif page == "Conferência de chapas e barramentos":
 
         if not cb_stock_items:
             st.warning(
-                "A competência selecionada não possui a base detalhada do "
-                "Relatório Analítico em fm_estoque_itens. Reimporte o relatório "
-                "analítico dessa competência no Dashboard antes de concluir a conferência. "
+                "A competência selecionada ainda não possui a base detalhada do "
+                "Relatório Analítico. Carregue abaixo o mesmo relatório usado no fechamento. "
                 "Sem essa base o aplicativo não assume que todos os saldos são zero."
             )
+
+            cb_analytic_file = st.file_uploader(
+                "Carregar Relatório Analítico da competência",
+                type=["xlsx", "xltx"],
+                key="cb_analytic_file",
+            )
+
+            if cb_analytic_file is not None:
+                try:
+                    parsed_cb_analytic = parse_inventory_report(
+                        cb_analytic_file.getvalue(),
+                        cb_analytic_file.name,
+                    )
+
+                    if parsed_cb_analytic["errors"]:
+                        st.error(
+                            "O Relatório Analítico possui inconsistências e não pode "
+                            "ser usado como base da conferência."
+                        )
+                        st.dataframe(
+                            pd.DataFrame(
+                                parsed_cb_analytic["errors"]
+                            ),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+                    elif st.button(
+                        "SALVAR BASE ANALÍTICA DESTA COMPETÊNCIA",
+                        type="primary",
+                        use_container_width=True,
+                        key="cb_save_analytic",
+                    ):
+                        db.import_inventory_report(
+                            cb_month,
+                            cb_analytic_file.name,
+                            parsed_cb_analytic["rows"],
+                        )
+                        st.session_state["_cb_base_flash"] = (
+                            "Base analítica detalhada salva."
+                        )
+                        st.rerun()
+                except Exception as exc:
+                    st.error(
+                        f"Não foi possível ler o Relatório Analítico: {exc}"
+                    )
 
         st.markdown(
             '<div class="topic-divider"></div>',
