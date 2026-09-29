@@ -311,3 +311,123 @@ def parse_inventory_report(raw: bytes, file_name: str) -> dict:
         "warehouses": warehouses,
         "product_types": product_types,
     }
+
+
+
+def parse_inventory_balance_report(
+    raw: bytes,
+    file_name: str,
+) -> dict:
+    """Parser simplificado para chapas e barramentos.
+
+    Usa somente CODIGO e SALDO EM ESTOQUE como campos obrigatórios.
+    Saldos negativos são ajustados para zero.
+    ARMZ e DESCRICAO são aproveitados apenas quando existirem.
+    """
+    sheet_name, rows = _parse_rows(raw)
+
+    header_index = next(
+        (
+            index
+            for index, row in enumerate(rows)
+            if str(row.get("A") or "").strip().upper() == "CODIGO"
+        ),
+        None,
+    )
+    if header_index is None:
+        raise ValueError(
+            "Cabeçalho CODIGO não encontrado no relatório."
+        )
+
+    header = rows[header_index]
+    columns: dict[str, str] = {}
+
+    for column, value in header.items():
+        if value is None:
+            continue
+        normalized = re.sub(
+            r"\s+",
+            " ",
+            str(value).strip().upper(),
+        )
+        columns[normalized] = column
+
+    def find_column(*names: str) -> str | None:
+        for name in names:
+            normalized = re.sub(
+                r"\s+",
+                " ",
+                name.strip().upper(),
+            )
+            if normalized in columns:
+                return columns[normalized]
+        return None
+
+    code_col = find_column("CODIGO")
+    saldo_col = find_column("SALDO EM ESTOQUE")
+    armz_col = find_column("ARMZ")
+    desc_col = find_column("DESCRICAO")
+
+    missing = []
+    if not code_col:
+        missing.append("CODIGO")
+    if not saldo_col:
+        missing.append("SALDO EM ESTOQUE")
+
+    if missing:
+        raise ValueError(
+            "Colunas obrigatórias ausentes: "
+            + ", ".join(missing)
+        )
+
+    parsed: list[dict[str, Any]] = []
+    adjusted_negative = 0
+    invalid_balance = 0
+
+    for row_number, row in enumerate(
+        rows[header_index + 1 :],
+        start=header_index + 2,
+    ):
+        code_value = row.get(code_col)
+        if code_value is None or str(code_value).strip() == "":
+            continue
+
+        saldo_raw = _to_number(row.get(saldo_col))
+        if saldo_raw is None:
+            saldo = 0.0
+            invalid_balance += 1
+        else:
+            saldo = float(saldo_raw)
+
+        if saldo < 0:
+            saldo = 0.0
+            adjusted_negative += 1
+
+        parsed.append(
+            {
+                "linha": row_number,
+                "codigo": str(code_value).strip(),
+                "armz": str(
+                    row.get(armz_col) if armz_col else ""
+                    or ""
+                ).strip(),
+                "saldo": saldo,
+                "descricao": str(
+                    row.get(desc_col) if desc_col else ""
+                    or ""
+                ).strip(),
+            }
+        )
+
+    return {
+        "file_name": file_name,
+        "sheet_name": sheet_name,
+        "rows": parsed,
+        "total_rows": len(parsed),
+        "adjusted_negative": adjusted_negative,
+        "invalid_balance": invalid_balance,
+        "total_balance": sum(
+            float(item["saldo"] or 0)
+            for item in parsed
+        ),
+    }
