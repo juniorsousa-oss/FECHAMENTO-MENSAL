@@ -1,17 +1,38 @@
 from __future__ import annotations
 
+import base64
+import io
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import streamlit as st
+from PIL import Image
 
 from ui import inject_css, kpi, logo_html, panel
 
+ROOT = Path(__file__).parent
+FAVICON_FILE = ROOT / "config" / "favicon_setta.b64"
 TZ = ZoneInfo("America/Sao_Paulo")
+
+
+def browser_icon():
+    """Carrega o mesmo favicon utilizado no aplicativo NFS Setta."""
+    try:
+        raw = base64.b64decode(
+            FAVICON_FILE.read_text(encoding="utf-8").strip(),
+            validate=True,
+        )
+        image = Image.open(io.BytesIO(raw))
+        image.load()
+        return image
+    except Exception:
+        return "📄"
+
 
 st.set_page_config(
     page_title="Fechamento Mensal | Setta",
-    page_icon="📦",
+    page_icon=browser_icon(),
     layout="wide",
     initial_sidebar_state="expanded",
 )
