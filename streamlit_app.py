@@ -11,7 +11,7 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 
 import inventory_db as db
-from report_parser import parse_inventory_report
+from report_parser import parse_inventory_report, parse_inventory_balance_report
 from cb_parser import (
     normalize_code,
     parse_barramentos_excel,
@@ -713,7 +713,6 @@ def build_cb_reconciliation(
             "ult_preco": float(item.get("ult_preco") or 0),
             "armz": set(),
             "saldo_sistema": 0.0,
-            "valor_estoque": 0.0,
         }
 
     for row in stock_items:
@@ -732,9 +731,6 @@ def build_cb_reconciliation(
             current["armz"].add(armz)
 
         current["saldo_sistema"] += float(row.get("saldo") or 0)
-        current["valor_estoque"] += float(
-            row.get("valor_estoque") or 0
-        )
 
     counts_by_code: dict[str, list[dict]] = {}
     for row in counts:
@@ -770,19 +766,13 @@ def build_cb_reconciliation(
                 if str(row.get("fonte") or "") == "INTERNO_EXCEL"
             )
 
-        saldo = float(item["saldo_sistema"] or 0)
-        valor = float(item["valor_estoque"] or 0)
-
-        if saldo > 0:
-            custo_unitario = valor / saldo
-            custo_origem = "ESTOQUE ANALÍTICO"
-        else:
-            custo_unitario = float(item["ult_preco"] or 0)
-            custo_origem = (
-                "CADASTROS · ÚLT. PREÇO"
-                if custo_unitario > 0
-                else "SEM CUSTO"
-            )
+        saldo = max(float(item["saldo_sistema"] or 0), 0.0)
+        custo_unitario = float(item["ult_preco"] or 0)
+        custo_origem = (
+            "CADASTROS · ÚLT. PREÇO"
+            if custo_unitario > 0
+            else "SEM CUSTO"
+        )
 
         physical = (
             sum(
@@ -1342,8 +1332,8 @@ elif page == "Conferência de chapas e barramentos":
         <div class="module-hero">
             <strong>CONFERÊNCIA FÍSICO × SISTEMA</strong>
             <span>
-                O CADASTROS define o universo de materiais. O Relatório Analítico
-                informa o saldo do sistema e o valor financeiro da competência.
+                O CADASTROS define o universo de materiais. Neste módulo, o Relatório
+                Analítico fornece somente o SALDO EM ESTOQUE da competência.
                 O físico é formado pelas fontes de Chapas, Barramentos e Almoxarifado.
                 Materiais novos passam por validação e, depois de confirmados, permanecem
                 automaticamente na base dos próximos fechamentos.
@@ -1386,7 +1376,7 @@ elif page == "Conferência de chapas e barramentos":
         st.query_params["mes_cb"] = cb_month.strftime("%Y-%m")
 
         try:
-            cb_stock_items = db.list_inventory_items(cb_month)
+            cb_stock_items = db.list_cb_system_balances(cb_month)
             cb_catalog = db.list_cb_catalog()
             cb_counts = db.list_cb_counts(cb_month)
             cb_mappings = db.list_cb_sheet_mappings()
@@ -1436,7 +1426,7 @@ elif page == "Conferência de chapas e barramentos":
             len(candidate_catalog),
         )
         base_col3.metric(
-            "BASE SISTEMA DETALHADA",
+            "SALDO SISTEMA",
             "OK" if cb_stock_items else "PENDENTE",
         )
 
@@ -1628,49 +1618,60 @@ elif page == "Conferência de chapas e barramentos":
 
         if not cb_stock_items:
             st.warning(
-                "A competência selecionada ainda não possui a base detalhada do "
-                "Relatório Analítico. Carregue abaixo o mesmo relatório usado no fechamento. "
-                "Sem essa base o aplicativo não assume que todos os saldos são zero."
+                "A competência selecionada ainda não possui o SALDO SISTÊMICO "
+                "da conferência de chapas e barramentos. Carregue abaixo o Relatório "
+                "Analítico. Esta carga é independente do fechamento geral."
             )
 
             cb_analytic_file = st.file_uploader(
-                "Carregar Relatório Analítico da competência",
+                "Carregar Relatório Analítico para saldo sistêmico",
                 type=["xlsx", "xltx"],
                 key="cb_analytic_file",
+                help=(
+                    "Neste módulo são usados apenas CODIGO e SALDO EM ESTOQUE. "
+                    "Saldo negativo é convertido para zero. Valor/custo não bloqueia a carga."
+                ),
             )
 
             if cb_analytic_file is not None:
                 try:
-                    parsed_cb_analytic = parse_inventory_report(
+                    parsed_cb_analytic = parse_inventory_balance_report(
                         cb_analytic_file.getvalue(),
                         cb_analytic_file.name,
                     )
 
-                    if parsed_cb_analytic["errors"]:
-                        st.error(
-                            "O Relatório Analítico possui inconsistências e não pode "
-                            "ser usado como base da conferência."
-                        )
-                        st.dataframe(
-                            pd.DataFrame(
-                                parsed_cb_analytic["errors"]
-                            ),
-                            use_container_width=True,
-                            hide_index=True,
-                        )
-                    elif st.button(
-                        "SALVAR BASE ANALÍTICA DESTA COMPETÊNCIA",
+                    sa, sb, sc = st.columns(3)
+                    sa.metric(
+                        "Linhas lidas",
+                        parsed_cb_analytic["total_rows"],
+                    )
+                    sb.metric(
+                        "Saldos negativos → 0",
+                        parsed_cb_analytic["adjusted_negative"],
+                    )
+                    sc.metric(
+                        "Saldos inválidos → 0",
+                        parsed_cb_analytic["invalid_balance"],
+                    )
+
+                    st.caption(
+                        "Nesta carga não são validados TP, custo, valor em estoque "
+                        "ou regras do fechamento geral."
+                    )
+
+                    if st.button(
+                        "SALVAR SALDO SISTÊMICO DESTA COMPETÊNCIA",
                         type="primary",
                         use_container_width=True,
                         key="cb_save_analytic",
                     ):
-                        db.import_inventory_report(
+                        db.save_cb_system_balances(
                             cb_month,
                             cb_analytic_file.name,
                             parsed_cb_analytic["rows"],
                         )
                         st.session_state["_cb_base_flash"] = (
-                            "Base analítica detalhada salva."
+                            "Saldo sistêmico da conferência salvo."
                         )
                         st.rerun()
                 except Exception as exc:
@@ -2263,13 +2264,13 @@ elif page == "Conferência de chapas e barramentos":
         section_band(
             "03 · CONFERÊNCIA",
             "CONSOLIDADO FÍSICO × SISTEMA",
-            "Divergência Qtd = Físico − Sistema. As fontes físicas são complementares e são somadas por código. Quando o saldo sistêmico é zero, o custo de referência vem do Últ. Preço do CADASTROS e fica identificado como estimado.",
+            "Divergência Qtd = Físico − Sistema. O saldo sistêmico vem exclusivamente de SALDO EM ESTOQUE e valores negativos são tratados como zero. As fontes físicas são complementares e somadas por código. A estimativa em R$ usa o Últ. Preço do CADASTROS.",
         )
 
         if not cb_stock_items:
             st.info(
-                "A conferência será liberada após a base detalhada do "
-                "Relatório Analítico estar disponível nesta competência."
+                "A conferência será liberada após o SALDO EM ESTOQUE "
+                "do Relatório Analítico estar disponível nesta competência."
             )
         else:
             reconciliation = build_cb_reconciliation(
