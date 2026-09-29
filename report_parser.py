@@ -224,13 +224,14 @@ def parse_inventory_report(raw: bytes, file_name: str) -> dict:
             "saldo": _to_number(row.get(mapping["saldo"])),
             "valor_estoque": _to_number(row.get(mapping["valor_estoque"])),
             "descricao": str(
-                row.get(mapping["descricao"]) if mapping["descricao"] else ""
-                or ""
+                (row.get(mapping["descricao"]) if mapping["descricao"] else "") or ""
             ).strip(),
             "descricao_armazem": str(
-                row.get(mapping["descricao_armazem"])
-                if mapping["descricao_armazem"]
-                else ""
+                (
+                    row.get(mapping["descricao_armazem"])
+                    if mapping["descricao_armazem"]
+                    else ""
+                )
                 or ""
             ).strip(),
         }
