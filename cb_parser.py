@@ -120,10 +120,17 @@ def _find_header_row(
 
 
 def parse_cadastros(raw: bytes, file_name: str) -> dict:
-    """Lê apenas as colunas úteis do CADASTROS em modo streaming.
+    """Lê o CADASTROS usando apenas os campos úteis para este módulo.
 
-    Evita acesso aleatório célula a célula, que é muito lento em planilhas
-    grandes quando o openpyxl está em read_only.
+    Campos principais:
+    - CODIGO
+    - DESCRICAO
+    Campos opcionais:
+    - REFERENCIA
+    - ULT. PRECO
+
+    CHAPA é sempre tratada em KG e BARRA DE COBRE em MT,
+    portanto GRUPO, TP e UNIDADE não participam da conferência.
     """
     wb = openpyxl.load_workbook(
         io.BytesIO(raw),
@@ -132,18 +139,11 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
     )
     ws = wb[wb.sheetnames[0]]
 
-    required_headers = {
-        "GRUPO",
-        "CODIGO",
-        "DESCRICAO",
-        "TIPO",
-        "UNIDADE",
-    }
+    required_headers = {"CODIGO", "DESCRICAO"}
 
     header_row = None
     header_map: dict[str, int] = {}
 
-    # Localiza o cabeçalho lendo somente as primeiras linhas.
     for row_index, values in enumerate(
         ws.iter_rows(
             min_row=1,
@@ -166,34 +166,50 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
     if header_row is None:
         wb.close()
         raise ValueError(
-            "Não encontrei o cabeçalho esperado do relatório CADASTROS."
+            "Não encontrei as colunas CODIGO e DESCRICAO no CADASTROS."
         )
 
     code_idx = header_map["CODIGO"]
-    group_idx = header_map["GRUPO"]
     desc_idx = header_map["DESCRICAO"]
-    type_idx = header_map["TIPO"]
-    unit_idx = header_map["UNIDADE"]
-    price_idx = header_map.get("ULT. PRECO")
 
-    required_indexes = [
-        code_idx,
-        group_idx,
-        desc_idx,
-        type_idx,
-        unit_idx,
-    ]
+    reference_idx = None
+    for possible in (
+        "REFERENCIA",
+        "REF.",
+        "REF",
+        "REFERÊNCIA",
+    ):
+        normalized = normalize_text(possible)
+        if normalized in header_map:
+            reference_idx = header_map[normalized]
+            break
+
+    price_idx = None
+    for possible in (
+        "ULT. PRECO",
+        "ULT PRECO",
+        "ULTIMO PRECO",
+        "ULT. PREÇO",
+    ):
+        normalized = normalize_text(possible)
+        if normalized in header_map:
+            price_idx = header_map[normalized]
+            break
+
+    indexes = [code_idx, desc_idx]
+    if reference_idx is not None:
+        indexes.append(reference_idx)
     if price_idx is not None:
-        required_indexes.append(price_idx)
+        indexes.append(price_idx)
 
-    max_col = max(required_indexes) + 1
+    max_col = max(indexes) + 1
 
     candidates: list[dict] = []
     total_rows_read = 0
     rows_discarded = 0
+    known_codes_found = 0
+    new_candidates_found = 0
 
-    # Uma única passagem pelas linhas de dados e somente até a última
-    # coluna realmente necessária.
     for values in ws.iter_rows(
         min_row=header_row + 1,
         max_col=max_col,
@@ -201,39 +217,12 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
     ):
         total_rows_read += 1
 
-        codigo_raw = values[code_idx] if code_idx < len(values) else None
+        codigo_raw = (
+            values[code_idx]
+            if code_idx < len(values)
+            else None
+        )
         if codigo_raw is None or str(codigo_raw).strip() == "":
-            rows_discarded += 1
-            continue
-
-        grupo = str(
-            values[group_idx] if group_idx < len(values) else ""
-            or ""
-        ).strip()
-        descricao = str(
-            values[desc_idx] if desc_idx < len(values) else ""
-            or ""
-        ).strip()
-        tp = str(
-            values[type_idx] if type_idx < len(values) else ""
-            or ""
-        ).strip()
-
-        # Filtro barato antes das demais conversões.
-        # Os candidatos conhecidos hoje estão concentrados em:
-        # - grupo 0600 + MP + descrição iniciando por CHAPA;
-        # - descrição iniciando por BARRA DE COBRE ELETROLITICO NU.
-        desc_upper = descricao.upper()
-        possible_chapa = (
-            grupo == "0600"
-            and tp.upper() == "MP"
-            and desc_upper.startswith("CHAPA")
-        )
-        possible_barra = desc_upper.startswith(
-            "BARRA DE COBRE"
-        )
-
-        if not possible_chapa and not possible_barra:
             rows_discarded += 1
             continue
 
@@ -242,31 +231,20 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
             rows_discarded += 1
             continue
 
-        desc_norm = normalize_text(descricao)
-        categoria = ""
-        regra = ""
-
-        if desc_norm.startswith(
-            "BARRA DE COBRE ELETROLITICO NU"
-        ):
-            categoria = "BARRA_COBRE"
-            regra = "DESCRICAO_BARRA_COBRE"
-        elif (
-            grupo == "0600"
-            and tp.upper() == "MP"
-            and desc_norm.startswith("CHAPA ")
-        ):
-            categoria = "CHAPA"
-            regra = "GRUPO_0600_MP_DESCRICAO_CHAPA"
-
-        if not categoria:
-            rows_discarded += 1
-            continue
-
-        unidade = str(
-            values[unit_idx] if unit_idx < len(values) else ""
+        descricao = str(
+            values[desc_idx]
+            if desc_idx < len(values)
+            else ""
             or ""
         ).strip()
+
+        referencia = (
+            str(values[reference_idx] or "").strip()
+            if reference_idx is not None
+            and reference_idx < len(values)
+            else ""
+        )
+
         ult_preco = (
             to_number(values[price_idx])
             if price_idx is not None
@@ -274,26 +252,63 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
             else 0.0
         )
 
+        desc_norm = normalize_text(descricao)
+        ref_norm = normalize_text(referencia)
+
+        categoria = ""
+        regra = ""
+        status = "CANDIDATO"
+
+        # A base inicial já conhecida permanece confirmada,
+        # independentemente de mudanças de descrição no CADASTROS.
+        if codigo in INITIAL_CONFIRMED_CODES:
+            if codigo.startswith("0011"):
+                categoria = "BARRA_COBRE"
+            else:
+                categoria = "CHAPA"
+            regra = "BASE_INICIAL_VALIDADA"
+            status = "CONFIRMADO"
+            known_codes_found += 1
+
+        # Novos códigos entram como candidato apenas quando a descrição
+        # ou referência indicar claramente chapa ou barra de cobre.
+        elif (
+            desc_norm.startswith("BARRA DE COBRE")
+            or "BARRA DE COBRE" in ref_norm
+        ):
+            categoria = "BARRA_COBRE"
+            regra = "DESCRICAO_OU_REFERENCIA_BARRA_COBRE"
+            new_candidates_found += 1
+
+        elif (
+            desc_norm.startswith("CHAPA ")
+            or ref_norm.startswith("CHAPA ")
+        ):
+            categoria = "CHAPA"
+            regra = "DESCRICAO_OU_REFERENCIA_CHAPA"
+            new_candidates_found += 1
+
+        if not categoria:
+            rows_discarded += 1
+            continue
+
         candidates.append(
             {
                 "codigo": codigo,
                 "categoria": categoria,
                 "descricao": descricao,
-                "grupo": grupo,
-                "tp": tp,
-                "unidade": unidade,
+                "referencia": referencia,
+                "grupo": "",
+                "tp": "",
+                "unidade": (
+                    "KG"
+                    if categoria == "CHAPA"
+                    else "MT"
+                ),
                 "ult_preco": ult_preco,
-                "status": (
-                    "CONFIRMADO"
-                    if codigo in INITIAL_CONFIRMED_CODES
-                    else "CANDIDATO"
-                ),
+                "status": status,
                 "origem": file_name,
-                "regra_detectada": (
-                    "BASE_INICIAL_VALIDADA"
-                    if codigo in INITIAL_CONFIRMED_CODES
-                    else regra
-                ),
+                "regra_detectada": regra,
             }
         )
 
@@ -313,6 +328,8 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
             for row in candidates
             if row["categoria"] == "BARRA_COBRE"
         ),
+        "known_codes_found": known_codes_found,
+        "new_candidates_found": new_candidates_found,
         "rows_read": total_rows_read,
         "rows_discarded": rows_discarded,
     }
@@ -754,24 +771,8 @@ def resolve_chapa_rows(
             unresolved.append(source_row)
             continue
 
-        unidade = normalize_text(catalog_item.get("unidade"))
-        if unidade in {"KG", "KILO", "QUILOGRAMA"}:
-            quantidade = float(source_row.get("peso_total") or 0)
-            criterio = "PESO TOTAL"
-        elif unidade in {"UN", "PC", "PÇ", "PCA"}:
-            quantidade = float(source_row.get("chapas") or 0)
-            criterio = "CHAPAS"
-        else:
-            unresolved.append(
-                {
-                    **source_row,
-                    "motivo": (
-                        "UNIDADE DO CADASTRO NÃO SUPORTADA "
-                        f"PARA CHAPAS: {catalog_item.get('unidade') or '-'}"
-                    ),
-                }
-            )
-            continue
+        quantidade = float(source_row.get("peso_total") or 0)
+        criterio = "PESO TOTAL · KG"
 
         resolved.append(
             {
