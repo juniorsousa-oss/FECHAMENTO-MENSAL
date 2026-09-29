@@ -1510,10 +1510,22 @@ elif page == "Conferência de chapas e barramentos":
                 f"NOVOS MATERIAIS PARA VALIDAR ({len(candidate_catalog)})",
                 expanded=True,
             ):
+                select_all_candidates = st.checkbox(
+                    "SELECIONAR TODOS",
+                    value=True,
+                    key="cb_select_all_candidates",
+                    help=(
+                        "Marcado por padrão. Desmarque para limpar a seleção "
+                        "e escolher somente os materiais desejados."
+                    ),
+                )
+
                 candidate_df = pd.DataFrame(
                     [
                         {
-                            "Selecionar": False,
+                            "Selecionar": bool(
+                                select_all_candidates
+                            ),
                             "Código": row.get("codigo"),
                             "Categoria": (
                                 "CHAPA"
