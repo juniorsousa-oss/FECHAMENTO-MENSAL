@@ -121,3 +121,52 @@ $$;
 
 grant execute on function public.fm_salvar_configuracao(text, jsonb) to anon, authenticated;
 grant execute on function public.fm_salvar_fechamento(date, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, text) to anon, authenticated;
+
+
+-- Histórico alimentado por relatório analítico de estoque.
+create table if not exists public.fm_importacoes (
+  competencia date primary key,
+  arquivo_nome text not null,
+  total_linhas integer not null default 0,
+  linhas_validas integer not null default 0,
+  linhas_invalidas integer not null default 0,
+  valor_total numeric(18,2) not null default 0,
+  status text not null default 'VALIDO',
+  importado_em timestamptz not null default now()
+);
+
+create table if not exists public.fm_estoque_itens (
+  competencia date not null,
+  codigo text not null,
+  tp text not null,
+  armz text not null,
+  saldo numeric(20,6) not null,
+  valor_estoque numeric(18,2) not null,
+  descricao text not null default '',
+  descricao_armazem text not null default '',
+  primary key (competencia, codigo, armz)
+);
+
+create table if not exists public.fm_estoque_resumos (
+  competencia date not null,
+  dimensao text not null,
+  chave text not null,
+  armz text,
+  tp text,
+  valor_total numeric(18,2) not null default 0,
+  itens integer not null default 0,
+  primary key (competencia, dimensao, chave)
+);
+
+create table if not exists public.fm_importacao_erros (
+  id bigserial primary key,
+  competencia date not null,
+  codigo text,
+  tp text,
+  armz text,
+  saldo numeric(20,6),
+  valor_estoque numeric(18,2),
+  descricao text not null default '',
+  motivo text not null,
+  criado_em timestamptz not null default now()
+);
