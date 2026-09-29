@@ -481,3 +481,59 @@ def list_cb_imports(
     )
     _raise(response)
     return response.json() or []
+
+
+
+def list_cb_system_balances(
+    competencia: date | str,
+) -> list[dict]:
+    if isinstance(competencia, date):
+        key = competencia.replace(day=1).isoformat()
+    else:
+        key = str(competencia)[:10]
+
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/fm_cb_saldos_sistema",
+        headers=_headers(),
+        params={
+            "select": "competencia,codigo,armz,saldo,descricao,arquivo_nome,importado_em",
+            "competencia": f"eq.{key}",
+            "order": "codigo.asc,armz.asc",
+        },
+        timeout=30,
+    )
+    _raise(response)
+    return response.json() or []
+
+
+def save_cb_system_balances(
+    competencia: date,
+    arquivo_nome: str,
+    rows: list[dict],
+) -> dict:
+    payload = []
+    for row in rows:
+        payload.append(
+            {
+                "codigo": str(row.get("codigo") or "").strip(),
+                "armz": str(row.get("armz") or "").strip(),
+                "saldo": max(
+                    float(row.get("saldo") or 0),
+                    0.0,
+                ),
+                "descricao": str(
+                    row.get("descricao") or ""
+                ).strip(),
+            }
+        )
+
+    result = rpc(
+        "fm_cb_salvar_saldos_sistema",
+        {
+            "p_competencia": competencia.replace(day=1).isoformat(),
+            "p_arquivo_nome": str(arquivo_nome or "").strip(),
+            "p_rows": payload,
+        },
+        timeout=120,
+    )
+    return result or {}
