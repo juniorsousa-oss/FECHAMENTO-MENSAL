@@ -1423,7 +1423,7 @@ elif page == "Conferência de chapas e barramentos":
         section_band(
             "01 · BASE MESTRE",
             "CADASTRO DE CHAPAS E BARRAS DE COBRE",
-            "O CADASTROS é a base de referência. Códigos novos identificados pelas regras entram como CANDIDATOS e só passam a compor a conferência após validação.",
+            "O CADASTROS fornece principalmente CÓDIGO e DESCRIÇÃO, com REFERÊNCIA e ÚLT. PREÇO quando disponíveis. CHAPA é sempre KG e BARRAMENTO é sempre MT. Novos candidatos só entram na base após validação.",
         )
 
         base_col1, base_col2, base_col3 = st.columns(3)
@@ -1463,11 +1463,17 @@ elif page == "Conferência de chapas e barramentos":
 
                 ca, cb, cc, cd = st.columns(4)
                 ca.metric(
-                    "Candidatos identificados",
+                    "Base conhecida",
+                    parsed_cad.get("known_codes_found", 0),
+                )
+                cb.metric(
+                    "Novos candidatos",
+                    parsed_cad.get("new_candidates_found", 0),
+                )
+                cc.metric(
+                    "Total chapa/barra",
                     parsed_cad["total_candidates"],
                 )
-                cb.metric("Chapas", parsed_cad["chapas"])
-                cc.metric("Barras de cobre", parsed_cad["barras"])
                 cd.metric(
                     "Linhas descartadas",
                     parsed_cad.get("rows_discarded", 0),
@@ -1515,8 +1521,7 @@ elif page == "Conferência de chapas e barramentos":
                                 else "BARRA DE COBRE"
                             ),
                             "Descrição": row.get("descricao"),
-                            "U.M.": row.get("unidade"),
-                            "Grupo": row.get("grupo"),
+                            "Referência": row.get("referencia") or "",
                             "Últ. preço": float(
                                 row.get("ult_preco") or 0
                             ),
@@ -1533,8 +1538,7 @@ elif page == "Conferência de chapas e barramentos":
                     disabled=[
                         "Código",
                         "Descrição",
-                        "U.M.",
-                        "Grupo",
+                        "Referência",
                         "Últ. preço",
                         "Regra",
                     ],
@@ -1679,7 +1683,7 @@ elif page == "Conferência de chapas e barramentos":
                     <div class="cb-source-title">CHAPAS · E-MAIL</div>
                     <div class="cb-source-text">
                         Leitura automática da tabela DIMENSÃO / DESCRIÇÃO / CHAPAS / PESO TOTAL.
-                        O aplicativo usa PESO TOTAL para códigos em KG e CHAPAS para códigos em UN/PC.
+                        CHAPAS são sempre conferidas em KG, usando diretamente o PESO TOTAL informado no e-mail.
                     </div>
                     <div class="cb-source-tag">.EML AUTOMÁTICO</div>
                 </div>
@@ -1947,23 +1951,6 @@ elif page == "Conferência de chapas e barramentos":
                             )
                             continue
 
-                        unidade = str(
-                            item.get("unidade") or ""
-                        ).upper()
-                        if unidade not in {"MT", "M"}:
-                            bar_issues.append(
-                                {
-                                    "Código": code,
-                                    "Modelo": row.get("modelo"),
-                                    "Motivo": (
-                                        "UNIDADE DO CADASTRO "
-                                        + unidade
-                                        + " NÃO É METRO"
-                                    ),
-                                }
-                            )
-                            continue
-
                         valid_bar_rows.append(
                             {
                                 "codigo": code,
@@ -2154,7 +2141,11 @@ elif page == "Conferência de chapas e barramentos":
                 (
                     str(row.get("codigo")),
                     str(row.get("descricao") or ""),
-                    str(row.get("unidade") or ""),
+                    (
+                        "KG"
+                        if row.get("categoria") == "CHAPA"
+                        else "MT"
+                    ),
                 )
                 for row in confirmed_catalog
             ]
