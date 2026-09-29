@@ -870,6 +870,8 @@ if page == "Dashboard":
                     "O valor exibido considera somente as linhas financeiramente válidas do relatório anterior."
                 )
 
+            st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
+
             section_band(
                 "01 · VISÃO GERAL",
                 "ANÁLISE TOTAL DA COMPETÊNCIA",
@@ -890,6 +892,8 @@ if page == "Dashboard":
                 ),
                 unsafe_allow_html=True,
             )
+
+            st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
 
             section_band(
                 "02 · ARMZ",
@@ -941,6 +945,8 @@ if page == "Dashboard":
                                 unsafe_allow_html=True,
                             )
 
+            st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
+
             section_band(
                 "03 · TP",
                 "ESTOQUE POR TIPO DE PRODUTO",
@@ -972,6 +978,31 @@ if page == "Dashboard":
                     ),
                     unsafe_allow_html=True,
                 )
+
+                png_data = export_tp_png(
+                    product_types,
+                    previous,
+                    selected_month,
+                    previous_exists,
+                    summary_map,
+                    cfg,
+                )
+                download_left, download_right = st.columns([3.3, 1])
+                with download_right:
+                    st.download_button(
+                        "EXPORTAR RESUMO PNG",
+                        data=png_data,
+                        file_name=(
+                            "valor_em_estoque_"
+                            + selected_month.strftime("%Y_%m")
+                            + ".png"
+                        ),
+                        mime="image/png",
+                        use_container_width=True,
+                        key=f"download_tp_png_{selected_month.isoformat()}",
+                    )
+
+            st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
 
             section_band(
                 "04 · EVOLUÇÃO MENSAL",
