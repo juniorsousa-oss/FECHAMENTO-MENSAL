@@ -288,9 +288,9 @@ def list_cb_catalog() -> list[dict]:
         f"{supabase_url()}/rest/v1/fm_cb_catalogo",
         headers=_headers(),
         params={
-            "select": "codigo,categoria,descricao,ativo,atualizado_em",
+            "select": "codigo,categoria,descricao,grupo,tp,unidade,ult_preco,status,origem,regra_detectada,ativo,atualizado_em",
             "ativo": "eq.true",
-            "order": "categoria.asc,codigo.asc",
+            "order": "status.asc,categoria.asc,codigo.asc",
         },
         timeout=30,
     )
@@ -354,3 +354,130 @@ def save_cb_count(
         },
         timeout=30,
     )
+
+
+
+def sync_cb_catalog(rows: list[dict]) -> dict:
+    result = rpc(
+        "fm_cb_sincronizar_catalogo",
+        {"p_rows": rows},
+        timeout=120,
+    )
+    return result or {}
+
+
+def update_cb_catalog_status(
+    codigo: str,
+    categoria: str,
+    status: str,
+) -> None:
+    rpc(
+        "fm_cb_atualizar_catalogo",
+        {
+            "p_codigo": str(codigo).strip(),
+            "p_categoria": str(categoria).strip(),
+            "p_status": str(status).strip(),
+        },
+        timeout=30,
+    )
+
+
+def list_cb_sheet_mappings() -> list[dict]:
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/fm_cb_chapa_mapeamentos",
+        headers=_headers(),
+        params={
+            "select": "id,dimensao_norm,descricao_norm,dimensao_origem,descricao_origem,codigo,status,origem,atualizado_em",
+            "order": "descricao_norm.asc,dimensao_norm.asc",
+        },
+        timeout=30,
+    )
+    _raise(response)
+    return response.json() or []
+
+
+def save_cb_sheet_mapping(
+    dimensao_norm: str,
+    descricao_norm: str,
+    dimensao_origem: str,
+    descricao_origem: str,
+    codigo: str,
+    status: str = "CONFIRMADO",
+    origem: str = "APP",
+) -> None:
+    rpc(
+        "fm_cb_salvar_mapeamento_chapa",
+        {
+            "p_dimensao_norm": str(dimensao_norm or "*").strip(),
+            "p_descricao_norm": str(descricao_norm or "").strip(),
+            "p_dimensao_origem": str(dimensao_origem or "").strip(),
+            "p_descricao_origem": str(descricao_origem or "").strip(),
+            "p_codigo": str(codigo or "").strip(),
+            "p_status": str(status or "CONFIRMADO").strip(),
+            "p_origem": str(origem or "APP").strip(),
+        },
+        timeout=30,
+    )
+
+
+def save_cb_counts_batch(
+    competencia: date,
+    fonte: str,
+    arquivo_nome: str,
+    rows: list[dict],
+) -> dict:
+    payload = []
+    for row in rows:
+        payload.append(
+            {
+                "codigo": str(row.get("codigo") or "").strip(),
+                "quantidade_fisica": float(
+                    row.get("quantidade_fisica") or 0
+                ),
+                "observacao": str(
+                    row.get("observacao") or ""
+                ).strip(),
+                "origem_ref": str(
+                    row.get("origem_ref")
+                    or arquivo_nome
+                    or ""
+                ).strip(),
+            }
+        )
+
+    result = rpc(
+        "fm_cb_salvar_contagens_lote",
+        {
+            "p_competencia": competencia.replace(day=1).isoformat(),
+            "p_fonte": str(fonte).strip(),
+            "p_arquivo_nome": str(arquivo_nome or "").strip(),
+            "p_rows": payload,
+        },
+        timeout=120,
+    )
+    return result or {}
+
+
+def list_cb_imports(
+    competencia: date | str | None = None,
+) -> list[dict]:
+    params = {
+        "select": "id,competencia,fonte,arquivo_nome,linhas,valor_fisico,pendencias,status,importado_em",
+        "order": "importado_em.desc",
+    }
+
+    if competencia is not None:
+        if isinstance(competencia, date):
+            key = competencia.replace(day=1).isoformat()
+        else:
+            key = str(competencia)[:10]
+        params["competencia"] = f"eq.{key}"
+
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/fm_cb_importacoes",
+        headers=_headers(),
+        params=params,
+        timeout=30,
+    )
+    _raise(response)
+    return response.json() or []
