@@ -178,3 +178,85 @@ def save_month(data: dict) -> None:
         "p_observacao": str(data.get("observacao") or ""),
     }
     rpc("fm_salvar_fechamento", payload, timeout=45)
+
+
+
+def list_inventory_imports() -> list[dict]:
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/fm_importacoes",
+        headers=_headers(),
+        params={
+            "select": "competencia,arquivo_nome,total_linhas,linhas_validas,linhas_invalidas,valor_total,status,importado_em",
+            "order": "competencia.desc",
+        },
+        timeout=30,
+    )
+    _raise(response)
+    return response.json() or []
+
+
+def list_inventory_summaries() -> list[dict]:
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/fm_estoque_resumos",
+        headers=_headers(),
+        params={
+            "select": "competencia,dimensao,chave,armz,tp,valor_total,itens",
+            "order": "competencia.asc,dimensao.asc,chave.asc",
+        },
+        timeout=30,
+    )
+    _raise(response)
+    return response.json() or []
+
+
+def list_import_errors(competencia: date | str) -> list[dict]:
+    if isinstance(competencia, date):
+        key = competencia.replace(day=1).isoformat()
+    else:
+        key = str(competencia)[:10]
+
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/fm_importacao_erros",
+        headers=_headers(),
+        params={
+            "select": "codigo,tp,armz,saldo,valor_estoque,descricao,motivo",
+            "competencia": f"eq.{key}",
+            "order": "codigo.asc",
+        },
+        timeout=20,
+    )
+    _raise(response)
+    return response.json() or []
+
+
+def import_inventory_report(
+    competencia: date,
+    file_name: str,
+    rows: list[dict],
+) -> dict:
+    payload_rows = []
+    for row in rows:
+        payload_rows.append(
+            {
+                "codigo": str(row.get("codigo") or "").strip(),
+                "tp": str(row.get("tp") or "").strip(),
+                "armz": str(row.get("armz") or "").strip(),
+                "saldo": float(row.get("saldo") or 0),
+                "valor_estoque": float(row.get("valor_estoque") or 0),
+                "descricao": str(row.get("descricao") or "").strip(),
+                "descricao_armazem": str(
+                    row.get("descricao_armazem") or ""
+                ).strip(),
+            }
+        )
+
+    result = rpc(
+        "fm_importar_estoque",
+        {
+            "p_competencia": competencia.replace(day=1).isoformat(),
+            "p_arquivo_nome": file_name,
+            "p_rows": payload_rows,
+        },
+        timeout=120,
+    )
+    return result or {}
