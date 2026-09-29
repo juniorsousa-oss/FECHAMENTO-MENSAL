@@ -385,7 +385,7 @@ def parse_barramentos_excel(raw: bytes, file_name: str) -> dict:
             values = set(headers.values())
             has_code = "CODIGO" in values
             has_barras = any(
-                "BARRAS" in value and "METR" in value
+                value.startswith("BARRAS")
                 for value in values
             )
             has_processado = any(
@@ -411,7 +411,7 @@ def parse_barramentos_excel(raw: bytes, file_name: str) -> dict:
     )
     bars_col = next(
         col for col, value in headers.items()
-        if "BARRAS" in value and "METR" in value
+        if value.startswith("BARRAS")
     )
     processed_col = next(
         col for col, value in headers.items()
