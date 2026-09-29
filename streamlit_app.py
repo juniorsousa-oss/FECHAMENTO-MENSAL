@@ -309,20 +309,29 @@ def tp_comparison_html(
 
 
 def _export_font(size: int, bold: bool = False):
+    """Fonte escalável robusta para o PNG exportado no Streamlit Cloud."""
     candidates = [
+        "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
         if bold
         else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"
         if bold
-        else "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        else "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"
+        if bold
+        else "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
     ]
     for candidate in candidates:
         try:
             return ImageFont.truetype(candidate, size=size)
         except Exception:
             continue
-    return ImageFont.load_default()
+
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
 
 
 def export_tp_png(
@@ -333,46 +342,98 @@ def export_tp_png(
     lookup: dict[tuple[str, str, str], dict],
     config: dict,
 ) -> bytes:
-    width = 1240
-    left = 60
-    right = width - 60
-    top = 55
-    header_h = 125
-    month_h = 72
-    row_h = 72
-    total_h = 80
-    rows_count = len(product_types)
-    height = top + header_h + month_h + rows_count * row_h + total_h + 55
+    """Gera um resumo mensal compacto e pronto para envio à contabilidade."""
+    width = 1100
+    outer = 24
+    header_h = 96
+    month_h = 58
+    row_h = 54
+    total_h = 62
+    footer_gap = 24
 
-    canvas = Image.new("RGB", (width, height), "#ffffff")
+    ordered_types = [
+        tp for tp in ["EP", "II", "MP", "PA", "PI"]
+        if tp in product_types
+    ]
+    ordered_types += [
+        tp for tp in product_types
+        if tp not in ordered_types
+    ]
+
+    rows_count = len(ordered_types)
+    height = (
+        outer
+        + header_h
+        + month_h
+        + rows_count * row_h
+        + total_h
+        + footer_gap
+    )
+
+    canvas = Image.new("RGB", (width, height), "#f7f8fa")
     draw = ImageDraw.Draw(canvas)
 
-    border = "#c7cdd4"
-    dark = "#17191c"
-    muted = "#5f6772"
-    header_bg = "#f1f3f5"
-    month_bg = "#666b72"
-    type_bg = "#f5f6f7"
+    x0 = outer
+    x3 = width - outer
+    table_w = x3 - x0
+
+    type_w = 230
+    month_w = (table_w - type_w) / 2
+
+    x1 = x0 + type_w
+    x2 = x1 + month_w
+
+    y0 = outer
+    y1 = y0 + header_h
+    y2 = y1 + month_h
+    body_bottom = y2 + rows_count * row_h
+    y3 = body_bottom + total_h
+
+    border = "#c9ced6"
+    dark = "#111827"
+    muted = "#667085"
+    header_bg = "#f0f2f5"
+    month_bg = "#5f6670"
+    type_bg = "#f6f7f9"
+    row_bg = "#ffffff"
     total_bg = "#e5e7eb"
+    red = "#ef4444"
 
-    title_font = _export_font(40, True)
-    logo_font = _export_font(44, True)
-    month_font = _export_font(25, True)
-    type_font = _export_font(24, True)
-    value_font = _export_font(23, False)
-    total_font = _export_font(24, True)
+    title_font = _export_font(34, True)
+    month_font = _export_font(20, True)
+    type_font = _export_font(19, True)
+    value_font = _export_font(19, False)
+    total_font = _export_font(20, True)
+    fallback_logo_font = _export_font(50, True)
 
+    # Cartão principal
     draw.rounded_rectangle(
-        (left, top, right, height - 35),
-        radius=18,
+        (x0, y0, x3, y3),
+        radius=14,
         fill="#ffffff",
         outline=border,
         width=2,
     )
 
-    header_bottom = top + header_h
-    draw.rectangle((left, top, right, header_bottom), fill=header_bg)
+    # Cabeçalho
+    draw.rounded_rectangle(
+        (x0, y0, x3, y1),
+        radius=14,
+        fill=header_bg,
+    )
+    draw.rectangle((x0, y1 - 14, x3, y1), fill=header_bg)
 
+    # Detalhe da marca
+    draw.rectangle((x0, y0, x0 + 5, y1), fill=red)
+
+    logo_area_right = x0 + 285
+    draw.line(
+        (logo_area_right, y0 + 18, logo_area_right, y1 - 18),
+        fill=border,
+        width=2,
+    )
+
+    # Logo configurada
     logo_data = str(config.get("logo_data") or "").strip()
     logo_mime = str(config.get("logo_mime") or "").lower()
     logo_drawn = False
@@ -381,62 +442,62 @@ def export_tp_png(
         try:
             raw = base64.b64decode(logo_data)
             logo = Image.open(io.BytesIO(raw)).convert("RGBA")
-            logo.thumbnail((230, 82))
-            x = left + 38
-            y = top + (header_h - logo.height) // 2
-            canvas.paste(logo, (x, y), logo)
+            logo.thumbnail((205, 64))
+            logo_x = int(x0 + 28)
+            logo_y = int(y0 + (header_h - logo.height) / 2)
+            canvas.paste(logo, (logo_x, logo_y), logo)
             logo_drawn = True
         except Exception:
             logo_drawn = False
 
     if not logo_drawn:
+        label = "Setta"
+        bbox = draw.textbbox((0, 0), label, font=fallback_logo_font)
+        label_h = bbox[3] - bbox[1]
         draw.text(
-            (left + 42, top + 34),
-            "Setta",
-            font=logo_font,
-            fill=dark,
+            (x0 + 34, y0 + (header_h - label_h) / 2 - 4),
+            label,
+            font=fallback_logo_font,
+            fill="#2f3135",
         )
 
-    draw.line(
-        (left + 310, top + 20, left + 310, header_bottom - 20),
-        fill=border,
-        width=2,
-    )
-
+    # Título do relatório
     title = "VALOR EM ESTOQUE"
-    title_box = draw.textbbox((0, 0), title, font=title_font)
-    title_w = title_box[2] - title_box[0]
-    title_x = left + 310 + ((right - (left + 310)) - title_w) / 2
-    draw.text((title_x, top + 35), title, font=title_font, fill=dark)
-
-    col1 = left
-    col2 = left + 300
-    col3 = left + 745
-    col4 = right
-
-    month_top = header_bottom
-    month_bottom = month_top + month_h
-    draw.rectangle((col1, month_top, col2, month_bottom), fill=month_bg)
-    draw.rectangle((col2, month_top, col3, month_bottom), fill=month_bg)
-    draw.rectangle((col3, month_top, col4, month_bottom), fill=month_bg)
-
+    bbox = draw.textbbox((0, 0), title, font=title_font)
+    title_w = bbox[2] - bbox[0]
+    title_h = bbox[3] - bbox[1]
+    title_x = logo_area_right + ((x3 - logo_area_right) - title_w) / 2
+    title_y = y0 + (header_h - title_h) / 2 - 3
     draw.text(
-        (col1 + 105, month_top + 20),
-        "TIPO",
-        font=month_font,
-        fill="#ffffff",
+        (title_x, title_y),
+        title,
+        font=title_font,
+        fill=dark,
     )
-    previous_label = MONTHS_PT[previous.month] if previous_exists else "INICIAL"
+
+    # Cabeçalho da tabela
+    draw.rectangle((x0, y1, x3, y2), fill=month_bg)
+
+    previous_label = (
+        MONTHS_PT[previous.month]
+        if previous_exists
+        else "ESTOQUE INICIAL"
+    )
     selected_label = MONTHS_PT[selected.month]
 
-    for x0, x1, label in [
-        (col2, col3, previous_label),
-        (col3, col4, selected_label),
+    for label, left, right in [
+        ("TIPO", x0, x1),
+        (previous_label, x1, x2),
+        (selected_label, x2, x3),
     ]:
-        box = draw.textbbox((0, 0), label, font=month_font)
-        w = box[2] - box[0]
+        bbox = draw.textbbox((0, 0), label, font=month_font)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
         draw.text(
-            (x0 + (x1 - x0 - w) / 2, month_top + 20),
+            (
+                left + (right - left - tw) / 2,
+                y1 + (month_h - th) / 2 - 2,
+            ),
             label,
             font=month_font,
             fill="#ffffff",
@@ -444,11 +505,16 @@ def export_tp_png(
 
     initial_total = 0.0
     final_total = 0.0
-    y = month_bottom
 
-    for tp in product_types:
+    y = y2
+    for tp in ordered_types:
         initial_value = (
-            dimension_value(lookup, previous, "TP", f"TP:{tp}")
+            dimension_value(
+                lookup,
+                previous,
+                "TP",
+                f"TP:{tp}",
+            )
             if previous_exists
             else None
         )
@@ -458,30 +524,41 @@ def export_tp_png(
             "TP",
             f"TP:{tp}",
         )
+
         if initial_value is not None:
             initial_total += float(initial_value)
         final_total += float(final_value)
 
-        draw.rectangle((col1, y, col2, y + row_h), fill=type_bg)
-        draw.rectangle((col2, y, col4, y + row_h), fill="#ffffff")
+        draw.rectangle((x0, y, x1, y + row_h), fill=type_bg)
+        draw.rectangle((x1, y, x3, y + row_h), fill=row_bg)
 
-        tp_box = draw.textbbox((0, 0), tp, font=type_font)
-        tp_w = tp_box[2] - tp_box[0]
+        # TP centralizado
+        bbox = draw.textbbox((0, 0), tp, font=type_font)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
         draw.text(
-            (col1 + (col2 - col1 - tp_w) / 2, y + 21),
+            (
+                x0 + (x1 - x0 - tw) / 2,
+                y + (row_h - th) / 2 - 2,
+            ),
             tp,
             font=type_font,
             fill=dark,
         )
 
-        for x0, x1, value in [
-            (col2, col3, money_br(initial_value)),
-            (col3, col4, money_br(final_value)),
+        # Valores alinhados à direita
+        for value, left, right in [
+            (money_br(initial_value), x1, x2),
+            (money_br(final_value), x2, x3),
         ]:
-            box = draw.textbbox((0, 0), value, font=value_font)
-            w = box[2] - box[0]
+            bbox = draw.textbbox((0, 0), value, font=value_font)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
             draw.text(
-                (x1 - w - 22, y + 22),
+                (
+                    right - tw - 24,
+                    y + (row_h - th) / 2 - 2,
+                ),
                 value,
                 font=value_font,
                 fill=dark,
@@ -489,48 +566,65 @@ def export_tp_png(
 
         y += row_h
 
-    draw.rectangle((col1, y, col4, y + total_h), fill=total_bg)
+    # Total
+    draw.rectangle((x0, body_bottom, x3, y3), fill=total_bg)
 
+    bbox = draw.textbbox((0, 0), "TOTAL", font=total_font)
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
     draw.text(
-        (col1 + 95, y + 23),
+        (
+            x0 + (x1 - x0 - tw) / 2,
+            body_bottom + (total_h - th) / 2 - 2,
+        ),
         "TOTAL",
         font=total_font,
         fill=dark,
     )
 
-    for x0, x1, value in [
+    for value, left, right in [
         (
-            col2,
-            col3,
             money_br(initial_total if previous_exists else None),
+            x1,
+            x2,
         ),
-        (col3, col4, money_br(final_total)),
+        (money_br(final_total), x2, x3),
     ]:
-        box = draw.textbbox((0, 0), value, font=total_font)
-        w = box[2] - box[0]
+        bbox = draw.textbbox((0, 0), value, font=total_font)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
         draw.text(
-            (x1 - w - 22, y + 23),
+            (
+                right - tw - 24,
+                body_bottom + (total_h - th) / 2 - 2,
+            ),
             value,
             font=total_font,
             fill=dark,
         )
 
-    grid_top = month_top
-    grid_bottom = y + total_h
+    # Grade da tabela
+    for x in [x0, x1, x2, x3]:
+        draw.line((x, y1, x, y3), fill=border, width=1)
 
-    for x in [col1, col2, col3, col4]:
-        draw.line((x, grid_top, x, grid_bottom), fill=border, width=1)
+    draw.line((x0, y1, x3, y1), fill=border, width=1)
+    draw.line((x0, y2, x3, y2), fill=border, width=1)
 
-    line_y = month_bottom
-    for _ in range(rows_count + 1):
-        draw.line((col1, line_y, col4, line_y), fill=border, width=1)
+    line_y = y2
+    for _ in range(rows_count):
         line_y += row_h
-    draw.line((col1, grid_bottom, col4, grid_bottom), fill=border, width=1)
+        draw.line((x0, line_y, x3, line_y), fill=border, width=1)
+
+    draw.line((x0, body_bottom, x3, body_bottom), fill=border, width=1)
+    draw.line((x0, y3, x3, y3), fill=border, width=1)
 
     output = io.BytesIO()
-    canvas.save(output, format="PNG", optimize=True)
+    canvas.save(
+        output,
+        format="PNG",
+        optimize=True,
+    )
     return output.getvalue()
-
 
 def parse_competencia(value: object) -> date | None:
     try:
