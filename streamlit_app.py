@@ -223,6 +223,92 @@ def history_table_html(
     return "".join(rows)
 
 
+def summary_cards_html(
+    initial_value: float | None,
+    final_value: float | None,
+) -> str:
+    summary = (
+        None
+        if initial_value is None or final_value is None
+        else final_value - initial_value
+    )
+    return (
+        '<div class="summary-grid">'
+        '<div class="summary-card">'
+        '<div class="summary-card-label">ESTOQUE INICIAL TOTAL</div>'
+        f'<div class="summary-card-value">{money_br(initial_value)}</div>'
+        '</div>'
+        '<div class="summary-card">'
+        '<div class="summary-card-label">ESTOQUE FINAL TOTAL</div>'
+        f'<div class="summary-card-value">{money_br(final_value)}</div>'
+        '</div>'
+        '<div class="summary-card">'
+        '<div class="summary-card-label">RESUMO TOTAL</div>'
+        f'<div class="summary-card-value{delta_class(summary)}">{money_br(summary)}</div>'
+        '</div>'
+        '</div>'
+    )
+
+
+def tp_comparison_html(
+    product_types: list[str],
+    previous: date,
+    selected: date,
+    previous_exists: bool,
+    lookup: dict[tuple[str, str, str], dict],
+) -> str:
+    rows = [
+        '<div class="tp-compare">',
+        '<div class="tp-compare-title">VALOR EM ESTOQUE POR TIPO DE PRODUTO</div>',
+        '<div class="tp-compare-row tp-compare-head">',
+        '<div class="tp-compare-cell">TP</div>',
+        f'<div class="tp-compare-cell">{month_label(previous) if previous_exists else "ESTOQUE INICIAL"}</div>',
+        f'<div class="tp-compare-cell">{month_label(selected)}</div>',
+        '</div>',
+    ]
+
+    initial_total = 0.0
+    final_total = 0.0
+
+    for tp in product_types:
+        initial_value = (
+            dimension_value(lookup, previous, "TP", f"TP:{tp}")
+            if previous_exists
+            else None
+        )
+        final_value = dimension_value(
+            lookup,
+            selected,
+            "TP",
+            f"TP:{tp}",
+        )
+        if initial_value is not None:
+            initial_total += float(initial_value)
+        final_total += float(final_value)
+
+        rows.extend(
+            [
+                '<div class="tp-compare-row">',
+                f'<div class="tp-compare-cell tp-compare-type" data-label="TP">{tp}</div>',
+                f'<div class="tp-compare-cell tp-compare-money" data-label="Inicial">{money_br(initial_value)}</div>',
+                f'<div class="tp-compare-cell tp-compare-money" data-label="Final">{money_br(final_value)}</div>',
+                '</div>',
+            ]
+        )
+
+    rows.extend(
+        [
+            '<div class="tp-compare-row tp-compare-total">',
+            '<div class="tp-compare-cell tp-compare-type" data-label="TP">TOTAL</div>',
+            f'<div class="tp-compare-cell tp-compare-money" data-label="Inicial">{money_br(initial_total if previous_exists else None)}</div>',
+            f'<div class="tp-compare-cell tp-compare-money" data-label="Final">{money_br(final_total)}</div>',
+            '</div>',
+            '</div>',
+        ]
+    )
+    return "".join(rows)
+
+
 def parse_competencia(value: object) -> date | None:
     try:
         return date.fromisoformat(str(value)[:10])
@@ -395,24 +481,29 @@ available_months = sorted(
     ]
 )
 
+# Dezembro/2025 é mantido somente como base de abertura de janeiro/2026.
+# Ele não aparece como competência analisável nem no histórico visual.
+visible_months = [
+    competencia
+    for competencia in available_months
+    if competencia >= date(2026, 1, 1)
+]
+
 
 if page == "Dashboard":
     st.markdown('<div class="section-title">Dashboard de estoque mensal</div>', unsafe_allow_html=True)
-    st.markdown(
-        """
-        <div class="intro">
-            O histórico é alimentado exclusivamente pelo relatório analítico de estoque.
-            Para cada competência, o sistema usa ARMZ para os armazéns, TP para o tipo do produto
-            e VALOR EM ESTOQUE para o valor financeiro.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
     if data_error:
         st.error(f"Não foi possível carregar a base do fechamento: {data_error}")
 
-    with st.expander("IMPORTAR NOVO FECHAMENTO", expanded=not available_months):
+    with st.expander("IMPORTAR NOVO FECHAMENTO", expanded=not visible_months):
+        st.caption(
+            "ALIMENTAÇÃO: o histórico é abastecido pelo relatório analítico de estoque. "
+            "O sistema utiliza ARMZ para identificar o armazém, TP para o tipo do produto "
+            "e VALOR EM ESTOQUE para o valor financeiro. O relatório deve conter também "
+            "CODIGO e SALDO EM ESTOQUE e será bloqueado se houver saldo/custo zerado, "
+            "negativo ou campos obrigatórios ausentes."
+        )
+
         col_a, col_b = st.columns([0.8, 1.8])
         with col_a:
             competencia_input = st.date_input(
@@ -506,8 +597,8 @@ if page == "Dashboard":
     if flash:
         st.success(flash)
 
-    if not available_months:
-        st.info("Nenhum fechamento mensal foi importado ainda.")
+    if not visible_months:
+        st.info("Nenhum fechamento mensal visível foi importado ainda.")
     else:
         query_month = str(st.query_params.get("mes", "") or "").strip()
         query_date = None
@@ -517,12 +608,12 @@ if page == "Dashboard":
             except Exception:
                 query_date = None
 
-        default_month = query_date if query_date in available_months else available_months[-1]
+        default_month = query_date if query_date in visible_months else visible_months[-1]
 
         selected_month = st.selectbox(
             "Competência analisada",
-            available_months,
-            index=available_months.index(default_month),
+            visible_months,
+            index=visible_months.index(default_month),
             format_func=month_label,
         )
         st.query_params["mes"] = selected_month.strftime("%Y-%m")
@@ -557,8 +648,8 @@ if page == "Dashboard":
                 )
 
             section_band(
-                "01 · Visão geral",
-                "Análise total da competência",
+                "01 · VISÃO GERAL",
+                "ANÁLISE TOTAL DA COMPETÊNCIA",
                 "Compara o valor total do estoque do mês selecionado com o fechamento do mês imediatamente anterior.",
             )
 
@@ -569,17 +660,17 @@ if page == "Dashboard":
                 else None
             )
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Estoque inicial total", money_br(initial_total))
-            c2.metric("Estoque final total", money_br(final_total))
-            c3.metric(
-                "Resumo total",
-                money_br(None if initial_total is None else final_total - initial_total),
+            st.markdown(
+                summary_cards_html(
+                    initial_total,
+                    final_total,
+                ),
+                unsafe_allow_html=True,
             )
 
             section_band(
                 "02 · ARMZ",
-                "Estoque por armazém",
+                "ESTOQUE POR ARMAZÉM",
                 "ARMZ identifica o armazém do material. Cada cartão apresenta Estoque Inicial, Estoque Final e a variação do período.",
             )
 
@@ -629,8 +720,8 @@ if page == "Dashboard":
 
             section_band(
                 "03 · TP",
-                "Estoque por tipo de produto",
-                "TP significa Tipo do Produto. A leitura segue o mesmo padrão dos armazéns: Inicial, Final e Resumo.",
+                "ESTOQUE POR TIPO DE PRODUTO",
+                "Comparação financeira do estoque por TP entre a competência anterior e a competência selecionada.",
             )
 
             current_types = {
@@ -648,47 +739,26 @@ if page == "Dashboard":
             product_types = sorted(current_types | previous_types)
 
             if product_types:
-                for start in range(0, len(product_types), 3):
-                    columns = st.columns(3)
-                    for column, tp in zip(
-                        columns,
-                        product_types[start : start + 3],
-                    ):
-                        initial_value = (
-                            dimension_value(
-                                summary_map,
-                                previous,
-                                "TP",
-                                f"TP:{tp}",
-                            )
-                            if previous_exists
-                            else None
-                        )
-                        final_value = dimension_value(
-                            summary_map,
-                            selected_month,
-                            "TP",
-                            f"TP:{tp}",
-                        )
-                        with column:
-                            st.markdown(
-                                stock_card(
-                                    f"TP {tp}",
-                                    initial_value,
-                                    final_value,
-                                ),
-                                unsafe_allow_html=True,
-                            )
+                st.markdown(
+                    tp_comparison_html(
+                        product_types,
+                        previous,
+                        selected_month,
+                        previous_exists,
+                        summary_map,
+                    ),
+                    unsafe_allow_html=True,
+                )
 
             section_band(
-                "04 · Evolução mensal",
-                "Histórico dos fechamentos",
+                "04 · EVOLUÇÃO MENSAL",
+                "HISTÓRICO DOS FECHAMENTOS",
                 "Validação indica apenas a qualidade do relatório importado. VALIDADO = nenhuma inconsistência encontrada. PENDÊNCIA = existem itens sem custo, sem saldo, negativos ou com cadastro obrigatório ausente. Não é um status contábil ou de aprovação do fechamento.",
             )
 
             st.markdown(
                 history_table_html(
-                    available_months,
+                    visible_months,
                     summary_map,
                     imports_by_month,
                 ),
