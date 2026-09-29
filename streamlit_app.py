@@ -198,16 +198,28 @@ if "app_cfg" not in st.session_state:
         remote_cfg = {}
 
     try:
-        default_logo_data = base64.b64encode(
+        nfs_visual = db.load_nfs_visual_config()
+    except Exception:
+        nfs_visual = {}
+
+    try:
+        fallback_logo_data = base64.b64encode(
             (ROOT / "config" / "logo_setta.svg").read_bytes()
         ).decode()
     except Exception:
-        default_logo_data = ""
+        fallback_logo_data = ""
+
+    default_logo_data = str(
+        nfs_visual.get("logo_data") or fallback_logo_data
+    )
+    default_logo_mime = str(
+        nfs_visual.get("logo_mime") or "image/svg+xml"
+    )
 
     st.session_state.app_cfg = {
         **DEFAULT_CONFIG,
         "logo_data": default_logo_data,
-        "logo_mime": "image/svg+xml",
+        "logo_mime": default_logo_mime,
         **remote_cfg,
     }
 
