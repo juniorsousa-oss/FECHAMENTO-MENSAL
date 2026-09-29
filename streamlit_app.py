@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 from PIL import Image
 
-import db
+import inventory_db as db
 from report_parser import parse_inventory_report
 from ui import inject_css, logo_html
 
@@ -196,7 +196,20 @@ if "app_cfg" not in st.session_state:
         remote_cfg = db.load_config()
     except Exception:
         remote_cfg = {}
-    st.session_state.app_cfg = {**DEFAULT_CONFIG, **remote_cfg}
+
+    try:
+        default_logo_data = base64.b64encode(
+            (ROOT / "config" / "logo_setta.svg").read_bytes()
+        ).decode()
+    except Exception:
+        default_logo_data = ""
+
+    st.session_state.app_cfg = {
+        **DEFAULT_CONFIG,
+        "logo_data": default_logo_data,
+        "logo_mime": "image/svg+xml",
+        **remote_cfg,
+    }
 
 if "operator" not in st.session_state:
     st.session_state.operator = ""
@@ -243,7 +256,7 @@ with st.sidebar:
     st.divider()
     st.markdown('<div class="sidebar-section-label">Identidade visual</div>', unsafe_allow_html=True)
     st.markdown(
-        f'<div class="sidebar-logo-preview">{logo_html()}</div>',
+        f'<div class="sidebar-logo-preview">{logo_html(str(cfg.get("logo_data") or ""), str(cfg.get("logo_mime") or "image/svg+xml"))}</div>',
         unsafe_allow_html=True,
     )
     st.caption("Padrão visual Setta / NFS.")
@@ -263,7 +276,10 @@ with st.sidebar:
     )
 
 
-st.markdown(f'<div class="setta-logo-card">{logo_html()}</div>', unsafe_allow_html=True)
+st.markdown(
+    f'<div class="setta-logo-card">{logo_html(str(cfg.get("logo_data") or ""), str(cfg.get("logo_mime") or "image/svg+xml"))}</div>',
+    unsafe_allow_html=True,
+)
 st.markdown(
     f'<h1 class="app-title">{cfg["title"]} | SETTA</h1>',
     unsafe_allow_html=True,
@@ -697,19 +713,110 @@ else:
         )
 
         if st.button("SALVAR CONFIGURAÇÕES", type="primary", use_container_width=True):
-            new_cfg = {
-                "title": title.strip() or DEFAULT_CONFIG["title"],
-                "subtitle": subtitle.strip() or DEFAULT_CONFIG["subtitle"],
-                "sidebar_title": sidebar_title.strip() or DEFAULT_CONFIG["sidebar_title"],
-                "sidebar_subtitle": sidebar_subtitle.strip() or DEFAULT_CONFIG["sidebar_subtitle"],
-            }
+            new_cfg = dict(cfg)
+            new_cfg.update(
+                {
+                    "title": title.strip() or DEFAULT_CONFIG["title"],
+                    "subtitle": subtitle.strip() or DEFAULT_CONFIG["subtitle"],
+                    "sidebar_title": sidebar_title.strip() or DEFAULT_CONFIG["sidebar_title"],
+                    "sidebar_subtitle": sidebar_subtitle.strip() or DEFAULT_CONFIG["sidebar_subtitle"],
+                }
+            )
             try:
                 db.save_config(new_cfg)
-                st.session_state.app_cfg = {**DEFAULT_CONFIG, **new_cfg}
+                st.session_state.app_cfg = {
+                    **DEFAULT_CONFIG,
+                    **new_cfg,
+                }
                 st.success("Configurações salvas permanentemente.")
                 st.rerun()
             except Exception as exc:
                 st.error(f"Não foi possível salvar as configurações: {exc}")
+
+    with st.container(border=True):
+        st.markdown("#### Logo da empresa")
+        st.caption(
+            "A logo é exibida nas mesmas dimensões utilizadas no aplicativo de NFs. "
+            "Ao trocar a imagem, o tamanho do card e o limite visual da logo permanecem fixos."
+        )
+
+        current_logo = str(cfg.get("logo_data") or "").strip()
+        current_logo_mime = str(cfg.get("logo_mime") or "image/svg+xml")
+        if current_logo:
+            st.markdown(
+                f'<div class="logo-preview"><img src="data:{current_logo_mime};base64,{current_logo}"></div>',
+                unsafe_allow_html=True,
+            )
+
+        logo_upload = st.file_uploader(
+            "Selecionar nova logo",
+            type=["png", "jpg", "jpeg", "svg"],
+            key="fm_logo_upload",
+        )
+
+        if logo_upload is not None:
+            raw_logo = logo_upload.getvalue()
+            if len(raw_logo) > 1_500_000:
+                st.error("Logo acima de 1,5 MB.")
+            else:
+                mime = (
+                    logo_upload.type
+                    or (
+                        "image/svg+xml"
+                        if logo_upload.name.lower().endswith(".svg")
+                        else "image/png"
+                    )
+                )
+                encoded = base64.b64encode(raw_logo).decode()
+                st.markdown(
+                    f'<div class="logo-preview"><img src="data:{mime};base64,{encoded}"></div>',
+                    unsafe_allow_html=True,
+                )
+
+                if st.button(
+                    "SALVAR NOVA LOGO",
+                    type="primary",
+                    use_container_width=True,
+                    key="save_fm_logo",
+                ):
+                    new_cfg = dict(cfg)
+                    new_cfg.update(
+                        logo_data=encoded,
+                        logo_mime=mime,
+                    )
+                    try:
+                        db.save_config(new_cfg)
+                        st.session_state.app_cfg = {
+                            **DEFAULT_CONFIG,
+                            **new_cfg,
+                        }
+                        st.success("Nova logo salva permanentemente.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Não foi possível salvar a logo: {exc}")
+
+        if st.button(
+            "RESTAURAR LOGO PADRÃO SETTA",
+            use_container_width=True,
+            key="restore_fm_logo",
+        ):
+            try:
+                default_logo = base64.b64encode(
+                    (ROOT / "config" / "logo_setta.svg").read_bytes()
+                ).decode()
+                new_cfg = dict(cfg)
+                new_cfg.update(
+                    logo_data=default_logo,
+                    logo_mime="image/svg+xml",
+                )
+                db.save_config(new_cfg)
+                st.session_state.app_cfg = {
+                    **DEFAULT_CONFIG,
+                    **new_cfg,
+                }
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Não foi possível restaurar a logo padrão: {exc}")
 
     with st.container(border=True):
         st.markdown("#### Regras obrigatórias do relatório")
