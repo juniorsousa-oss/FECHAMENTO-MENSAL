@@ -180,6 +180,230 @@ def section_band(kicker: str, title: str, note: str) -> None:
     )
 
 
+
+@st.cache_data(show_spinner=False, ttl=60, max_entries=4)
+def load_central_analitico(version_token: str) -> tuple[dict, dict, dict]:
+    del version_token
+    raw, meta = central_data.download_analitico()
+    file_name = str(meta.get("last_file_name") or "ANALITICO.xltx")
+    parsed = parse_inventory_report(raw, file_name)
+    balance = parse_inventory_balance_report(raw, file_name)
+    return parsed, balance, meta
+
+
+def build_preview_summaries(competencia: date, rows: list[dict]) -> list[dict]:
+    if not rows:
+        return []
+
+    frame = pd.DataFrame(rows).copy()
+    frame["valor_estoque"] = pd.to_numeric(
+        frame.get("valor_estoque"), errors="coerce"
+    ).fillna(0.0)
+    frame["armz"] = frame.get("armz", "").fillna("").astype(str).str.strip()
+    frame["tp"] = frame.get("tp", "").fillna("").astype(str).str.strip()
+    key = competencia.replace(day=1).isoformat()
+
+    output = [
+        {
+            "competencia": key,
+            "dimensao": "TOTAL",
+            "chave": "TOTAL",
+            "armz": None,
+            "tp": None,
+            "valor_total": float(frame["valor_estoque"].sum()),
+            "itens": int(len(frame)),
+        }
+    ]
+
+    for armz, group in frame.groupby("armz", dropna=False):
+        if not str(armz).strip():
+            continue
+        output.append(
+            {
+                "competencia": key,
+                "dimensao": "ARMZ",
+                "chave": f"ARMZ:{armz}",
+                "armz": str(armz),
+                "tp": None,
+                "valor_total": float(group["valor_estoque"].sum()),
+                "itens": int(len(group)),
+            }
+        )
+
+    for tp, group in frame.groupby("tp", dropna=False):
+        if not str(tp).strip():
+            continue
+        output.append(
+            {
+                "competencia": key,
+                "dimensao": "TP",
+                "chave": f"TP:{tp}",
+                "armz": None,
+                "tp": str(tp),
+                "valor_total": float(group["valor_estoque"].sum()),
+                "itens": int(len(group)),
+            }
+        )
+
+    for (armz, tp), group in frame.groupby(["armz", "tp"], dropna=False):
+        if not str(armz).strip() or not str(tp).strip():
+            continue
+        output.append(
+            {
+                "competencia": key,
+                "dimensao": "ARMZ_TP",
+                "chave": f"ARMZ_TP:{armz}|{tp}",
+                "armz": str(armz),
+                "tp": str(tp),
+                "valor_total": float(group["valor_estoque"].sum()),
+                "itens": int(len(group)),
+            }
+        )
+
+    return output
+
+
+def central_analitico_context(force: bool = False) -> dict:
+    try:
+        meta = central_data.source_state()
+    except Exception as exc:
+        return {"available": False, "error": str(exc)}
+
+    if not meta or not bool(meta.get("available", True)):
+        return {"available": False, "meta": meta, "error": "ANALÍTICO indisponível."}
+
+    token = central_data.source_token(meta)
+    if force:
+        load_central_analitico.clear()
+
+    try:
+        parsed, balance, download_meta = load_central_analitico(token)
+        status = "ATUALIZADO" if not parsed.get("errors") else "ATENÇÃO"
+        sync = central_data.sync_state()
+        if (
+            str(sync.get("version_token") or "") != token
+            or str(sync.get("status") or "").upper() != status
+        ):
+            central_data.commit_sync(
+                token,
+                meta.get("last_update_at"),
+                int(parsed.get("valid_rows") or 0),
+                status=status,
+                error_message=(
+                    None
+                    if status == "ATUALIZADO"
+                    else f"{int(parsed.get('invalid_rows') or 0)} inconsistência(s)"
+                ),
+            )
+        return {
+            "available": True,
+            "meta": {**meta, **download_meta},
+            "token": token,
+            "parsed": parsed,
+            "balance": balance,
+            "status": status,
+        }
+    except Exception as exc:
+        try:
+            central_data.commit_sync(
+                token,
+                meta.get("last_update_at"),
+                0,
+                status="ERRO",
+                error_message=str(exc)[:1500],
+            )
+        except Exception:
+            pass
+        return {
+            "available": False,
+            "meta": meta,
+            "token": token,
+            "status": "ERRO",
+            "error": str(exc),
+        }
+
+
+def render_central_status(context: dict) -> None:
+    meta = context.get("meta") or {}
+    parsed = context.get("parsed") or {}
+    status = str(context.get("status") or "INDISPONÍVEL").upper()
+    cols = st.columns(4)
+    cols[0].metric("FONTE", "ANALÍTICO")
+    cols[1].metric("STATUS", status)
+    cols[2].metric("VERSÃO", f"V{int(meta.get('version') or 0)}")
+    cols[3].metric(
+        "REGISTROS",
+        f"{int(parsed.get('valid_rows') or meta.get('rows_count') or 0):,}".replace(",", "."),
+    )
+    st.caption(
+        "ÚLTIMA ATUALIZAÇÃO · "
+        + central_data.format_dt(meta.get("last_update_at"))
+    )
+
+
+def render_manual_contingency(imports_by_month: dict[str, dict]) -> None:
+    with st.expander("CONTINGÊNCIA MANUAL", expanded=False):
+        col_a, col_b = st.columns([0.8, 1.8])
+        with col_a:
+            competencia_input = st.date_input(
+                "COMPETÊNCIA",
+                value=month_start(datetime.now(TZ).date()),
+                format="DD/MM/YYYY",
+                key="fm_contingencia_competencia",
+            )
+            competencia_input = month_start(competencia_input)
+        with col_b:
+            uploaded = st.file_uploader(
+                "RELATÓRIO ANALÍTICO",
+                type=["xlsx", "xltx"],
+                accept_multiple_files=False,
+                key="fm_contingencia_analitico",
+            )
+
+        if uploaded is None:
+            return
+
+        try:
+            parsed = parse_inventory_report(uploaded.getvalue(), uploaded.name)
+        except Exception as exc:
+            st.error(f"RELATÓRIO INVÁLIDO: {exc}")
+            return
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("LINHAS VÁLIDAS", f"{parsed['valid_rows']:,}".replace(",", "."))
+        m2.metric("ERROS", parsed["invalid_rows"])
+        m3.metric("VALOR", money_br(parsed["total_value"]))
+
+        if parsed["errors"]:
+            st.error("IMPORTAÇÃO BLOQUEADA.")
+            st.dataframe(
+                pd.DataFrame(parsed["errors"]),
+                use_container_width=True,
+                hide_index=True,
+            )
+            return
+
+        if imports_by_month.get(competencia_input.isoformat()):
+            st.warning(f"{month_label(competencia_input)} JÁ POSSUI FECHAMENTO SALVO.")
+
+        if st.button(
+            "PROCESSAR CONTINGÊNCIA",
+            type="primary",
+            use_container_width=True,
+            key="fm_processar_contingencia",
+        ):
+            db.import_inventory_report(
+                competencia_input,
+                uploaded.name,
+                parsed["rows"],
+            )
+            st.session_state["_import_ok"] = (
+                f"{month_label(competencia_input)} importado com sucesso."
+            )
+            st.query_params["mes"] = competencia_input.strftime("%Y-%m")
+            st.rerun()
+
+
 def validation_badge(info: dict) -> str:
     status = str(info.get("status") or "").strip().upper()
     invalid = int(info.get("linhas_invalidas") or 0)
