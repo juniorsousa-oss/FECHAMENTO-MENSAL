@@ -1207,6 +1207,10 @@ except Exception as exc:
     summaries = []
     data_error = str(exc)
 
+persisted_import_keys = {
+    str(row.get("competencia") or "")[:10]
+    for row in imports
+}
 central_parsed = central_context.get("parsed") or {}
 if (
     central_context.get("available")
@@ -1271,104 +1275,6 @@ if page == "Dashboard":
     st.markdown('<div class="section-title">Dashboard de estoque mensal</div>', unsafe_allow_html=True)
     if data_error:
         st.error(f"Não foi possível carregar a base do fechamento: {data_error}")
-
-    with st.expander("IMPORTAR NOVO FECHAMENTO", expanded=not visible_months):
-        st.caption(
-            "ALIMENTAÇÃO: o histórico é abastecido pelo relatório analítico de estoque. "
-            "O sistema utiliza ARMZ para identificar o armazém, TP para o tipo do produto "
-            "e VALOR EM ESTOQUE para o valor financeiro. O relatório deve conter também "
-            "CODIGO e SALDO EM ESTOQUE e será bloqueado se houver saldo/custo zerado, "
-            "negativo ou campos obrigatórios ausentes."
-        )
-
-        col_a, col_b = st.columns([0.8, 1.8])
-        with col_a:
-            competencia_input = st.date_input(
-                "Competência",
-                value=month_start(datetime.now(TZ).date()),
-                format="DD/MM/YYYY",
-                help="O dia é desconsiderado; a competência é gravada pelo mês/ano.",
-            )
-            competencia_input = month_start(competencia_input)
-        with col_b:
-            uploaded = st.file_uploader(
-                "Relatório analítico",
-                type=["xlsx", "xltx"],
-                accept_multiple_files=False,
-                help="O relatório deve conter CODIGO, TP, ARMZ, SALDO EM ESTOQUE e VALOR EM ESTOQUE.",
-            )
-
-        if uploaded is not None:
-            try:
-                parsed = parse_inventory_report(uploaded.getvalue(), uploaded.name)
-
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Linhas válidas", f"{parsed['valid_rows']:,}".replace(",", "."))
-                m2.metric("Erros", parsed["invalid_rows"])
-                m3.metric("Armazéns", len(parsed["warehouses"]))
-                m4.metric("Valor válido", money_br(parsed["total_value"]))
-
-                st.caption(
-                    "Armazéns identificados: "
-                    + ", ".join(parsed["warehouses"])
-                    + " | Tipos identificados: "
-                    + ", ".join(parsed["product_types"])
-                )
-
-                if parsed["errors"]:
-                    st.error(
-                        "IMPORTAÇÃO BLOQUEADA. O relatório possui produto sem saldo, sem custo, "
-                        "valor/saldo negativo, TP/ARMZ ausente ou duplicidade. Corrija o relatório "
-                        "antes de continuar a análise."
-                    )
-                    error_df = pd.DataFrame(parsed["errors"])
-                    columns = [
-                        column
-                        for column in [
-                            "linha",
-                            "codigo",
-                            "tp",
-                            "armz",
-                            "saldo",
-                            "valor_estoque",
-                            "descricao",
-                            "motivo",
-                        ]
-                        if column in error_df.columns
-                    ]
-                    st.dataframe(
-                        error_df[columns],
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-                else:
-                    existing = imports_by_month.get(competencia_input.isoformat())
-                    if existing:
-                        st.warning(
-                            f"Já existe fechamento para {month_label(competencia_input)}. "
-                            "Ao confirmar, o relatório anterior será substituído."
-                        )
-
-                    if st.button(
-                        "VALIDAR E IMPORTAR FECHAMENTO",
-                        type="primary",
-                        use_container_width=True,
-                    ):
-                        try:
-                            db.import_inventory_report(
-                                competencia_input,
-                                uploaded.name,
-                                parsed["rows"],
-                            )
-                            st.session_state["_import_ok"] = (
-                                f"{month_label(competencia_input)} importado com sucesso."
-                            )
-                            st.query_params["mes"] = competencia_input.strftime("%Y-%m")
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f"Não foi possível importar o fechamento: {exc}")
-            except Exception as exc:
-                st.error(f"Relatório inválido: {exc}")
 
     flash = st.session_state.pop("_import_ok", None)
     if flash:
@@ -1574,6 +1480,62 @@ if page == "Dashboard":
             )
 
 
+    st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
+    section_band(
+        "05 · FECHAMENTO",
+        "GRAVAR COMPETÊNCIA",
+        "",
+    )
+
+    if (
+        central_context.get("available")
+        and central_parsed.get("rows")
+        and not central_parsed.get("errors")
+    ):
+        _is_saved_current = current_competencia.isoformat() in persisted_import_keys
+        _save_label = (
+            "ATUALIZAR FECHAMENTO DA COMPETÊNCIA"
+            if _is_saved_current
+            else "GRAVAR FECHAMENTO DA COMPETÊNCIA"
+        )
+        if st.button(
+            _save_label,
+            type="primary",
+            use_container_width=True,
+            key="fm_save_current_central",
+        ):
+            try:
+                _source_name = str(
+                    (central_context.get("meta") or {}).get("last_file_name")
+                    or "ANALITICO.xltx"
+                )
+                db.import_inventory_report(
+                    current_competencia,
+                    _source_name,
+                    central_parsed["rows"],
+                )
+                st.session_state["_import_ok"] = (
+                    f"{month_label(current_competencia)} gravado com sucesso."
+                )
+                st.query_params["mes"] = current_competencia.strftime("%Y-%m")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"NÃO FOI POSSÍVEL GRAVAR O FECHAMENTO: {exc}")
+    else:
+        st.warning("ANALÍTICO DA CENTRAL INDISPONÍVEL OU COM PENDÊNCIA.")
+
+    st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
+    section_band(
+        "06 · FONTES",
+        "CENTRAL DE DADOS",
+        "",
+    )
+    render_central_status(central_context)
+    if central_context.get("error"):
+        st.warning(str(central_context.get("error")))
+
+
+
 elif page == "Conferência de chapas e barramentos":
     st.markdown(
         '<div class="section-title">CONFERÊNCIA DE CHAPAS E BARRAMENTOS</div>',
@@ -1647,6 +1609,9 @@ elif page == "Conferência de chapas e barramentos":
             st.error(
                 f"Não foi possível carregar a conferência: {cb_error}"
             )
+
+        if cb_month == current_competencia and central_balance_preview:
+            cb_stock_items = central_balance_preview
 
         confirmed_catalog = [
             row
