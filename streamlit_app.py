@@ -374,14 +374,17 @@ def render_manual_contingency(imports_by_month: dict[str, dict]) -> None:
         m2.metric("ERROS", parsed["invalid_rows"])
         m3.metric("VALOR", money_br(parsed["total_value"]))
 
-        if parsed["errors"]:
-            st.error("IMPORTAÇÃO BLOQUEADA.")
+        has_errors = bool(parsed["errors"])
+        if has_errors:
+            st.warning(
+                "INCONSISTÊNCIAS IDENTIFICADAS. A ANÁLISE PODE CONTINUAR, "
+                "MAS O FECHAMENTO NÃO PODE SER GRAVADO."
+            )
             st.dataframe(
                 pd.DataFrame(parsed["errors"]),
                 use_container_width=True,
                 hide_index=True,
             )
-            return
 
         if imports_by_month.get(competencia_input.isoformat()):
             st.warning(f"{month_label(competencia_input)} JÁ POSSUI FECHAMENTO SALVO.")
@@ -391,6 +394,7 @@ def render_manual_contingency(imports_by_month: dict[str, dict]) -> None:
             type="primary",
             use_container_width=True,
             key="fm_processar_contingencia",
+            disabled=has_errors,
         ):
             db.import_inventory_report(
                 competencia_input,
@@ -1214,10 +1218,10 @@ persisted_import_keys = {
 central_parsed = central_context.get("parsed") or {}
 if (
     central_context.get("available")
-    and not central_parsed.get("errors")
     and central_parsed.get("rows")
 ):
     current_key = current_competencia.isoformat()
+    preview_errors = list(central_parsed.get("errors") or [])
     imports = [
         row for row in imports
         if str(row.get("competencia") or "")[:10] != current_key
@@ -1235,9 +1239,9 @@ if (
             ),
             "total_linhas": int(central_parsed.get("total_rows") or 0),
             "linhas_validas": int(central_parsed.get("valid_rows") or 0),
-            "linhas_invalidas": 0,
+            "linhas_invalidas": int(central_parsed.get("invalid_rows") or len(preview_errors)),
             "valor_total": float(central_parsed.get("total_value") or 0),
-            "status": "VALIDO",
+            "status": "PENDENCIA" if preview_errors else "VALIDO",
             "importado_em": (central_context.get("meta") or {}).get("last_update_at"),
             "preview": True,
         }
@@ -1307,177 +1311,180 @@ if page == "Dashboard":
         previous_exists = previous.isoformat() in imports_by_month
 
         if status != "VALIDO":
-            st.error(
+            st.warning(
                 f"{month_label(selected_month)} possui pendência de qualidade no relatório "
                 f"({int(import_info.get('linhas_invalidas') or 0)} item(ns)). "
-                "A análise detalhada desta competência fica bloqueada até a correção."
+                "A análise permanece disponível com as linhas válidas; apenas a gravação do fechamento fica bloqueada."
             )
-            historical_errors = db.list_import_errors(selected_month)
+            if bool(import_info.get("preview")) and selected_month == current_competencia:
+                historical_errors = list(central_parsed.get("errors") or [])
+            else:
+                historical_errors = db.list_import_errors(selected_month)
             if historical_errors:
                 st.dataframe(
                     pd.DataFrame(historical_errors),
                     use_container_width=True,
                     hide_index=True,
                 )
-        else:
-            previous_status = str(
-                imports_by_month.get(previous.isoformat(), {}).get("status") or ""
-            )
-            if previous_exists and previous_status != "VALIDO":
-                st.warning(
-                    f"O estoque inicial de {month_label(selected_month)} foi calculado a partir de "
-                    f"{month_label(previous)}, cuja base histórica possui pendência de qualidade. "
-                    "O valor exibido considera somente as linhas financeiramente válidas do relatório anterior."
-                )
 
-            st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
-
-            section_band(
-                "01 · VISÃO GERAL",
-                "ANÁLISE TOTAL DA COMPETÊNCIA",
-                "Compara o valor total do estoque do mês selecionado com o fechamento do mês imediatamente anterior.",
+        previous_status = str(
+            imports_by_month.get(previous.isoformat(), {}).get("status") or ""
+        )
+        if previous_exists and previous_status != "VALIDO":
+            st.warning(
+                f"O estoque inicial de {month_label(selected_month)} foi calculado a partir de "
+                f"{month_label(previous)}, cuja base histórica possui pendência de qualidade. "
+                "O valor exibido considera somente as linhas financeiramente válidas do relatório anterior."
             )
 
-            final_total = dimension_value(summary_map, selected_month, "TOTAL", "TOTAL")
-            initial_total = (
-                dimension_value(summary_map, previous, "TOTAL", "TOTAL")
-                if previous_exists
-                else None
-            )
+        st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
 
-            st.markdown(
-                summary_cards_html(
-                    initial_total,
-                    final_total,
-                ),
-                unsafe_allow_html=True,
-            )
+        section_band(
+            "01 · VISÃO GERAL",
+            "ANÁLISE TOTAL DA COMPETÊNCIA",
+            "Compara o valor total do estoque do mês selecionado com o fechamento do mês imediatamente anterior.",
+        )
 
-            st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
+        final_total = dimension_value(summary_map, selected_month, "TOTAL", "TOTAL")
+        initial_total = (
+            dimension_value(summary_map, previous, "TOTAL", "TOTAL")
+            if previous_exists
+            else None
+        )
 
-            section_band(
-                "02 · ARMZ",
-                "ESTOQUE POR ARMAZÉM",
-                "ARMZ identifica o armazém do material. Cada cartão apresenta Estoque Inicial, Estoque Final e a variação do período.",
-            )
+        st.markdown(
+            summary_cards_html(
+                initial_total,
+                final_total,
+            ),
+            unsafe_allow_html=True,
+        )
 
-            current_warehouses = {
+        st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
+
+        section_band(
+            "02 · ARMZ",
+            "ESTOQUE POR ARMAZÉM",
+            "ARMZ identifica o armazém do material. Cada cartão apresenta Estoque Inicial, Estoque Final e a variação do período.",
+        )
+
+        current_warehouses = {
+            str(row.get("armz") or "")
+            for row in dimension_rows(summaries, selected_month, "ARMZ")
+        }
+        previous_warehouses = (
+            {
                 str(row.get("armz") or "")
-                for row in dimension_rows(summaries, selected_month, "ARMZ")
+                for row in dimension_rows(summaries, previous, "ARMZ")
             }
-            previous_warehouses = (
-                {
-                    str(row.get("armz") or "")
-                    for row in dimension_rows(summaries, previous, "ARMZ")
-                }
-                if previous_exists
-                else set()
-            )
-            warehouses = sorted(current_warehouses | previous_warehouses)
+            if previous_exists
+            else set()
+        )
+        warehouses = sorted(current_warehouses | previous_warehouses)
 
-            if warehouses:
-                for start in range(0, len(warehouses), 3):
-                    columns = st.columns(3)
-                    for column, armz in zip(columns, warehouses[start : start + 3]):
-                        initial_value = (
-                            dimension_value(
-                                summary_map,
-                                previous,
-                                "ARMZ",
-                                f"ARMZ:{armz}",
-                            )
-                            if previous_exists
-                            else None
-                        )
-                        final_value = dimension_value(
+        if warehouses:
+            for start in range(0, len(warehouses), 3):
+                columns = st.columns(3)
+                for column, armz in zip(columns, warehouses[start : start + 3]):
+                    initial_value = (
+                        dimension_value(
                             summary_map,
-                            selected_month,
+                            previous,
                             "ARMZ",
                             f"ARMZ:{armz}",
                         )
-                        with column:
-                            st.markdown(
-                                stock_card(
-                                    f"ARMAZÉM {armz}",
-                                    initial_value,
-                                    final_value,
-                                ),
-                                unsafe_allow_html=True,
-                            )
-
-            st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
-
-            section_band(
-                "03 · TP",
-                "ESTOQUE POR TIPO DE PRODUTO",
-                "Comparação financeira do estoque por TP entre a competência anterior e a competência selecionada.",
-            )
-
-            current_types = {
-                str(row.get("tp") or "")
-                for row in dimension_rows(summaries, selected_month, "TP")
-            }
-            previous_types = (
-                {
-                    str(row.get("tp") or "")
-                    for row in dimension_rows(summaries, previous, "TP")
-                }
-                if previous_exists
-                else set()
-            )
-            product_types = sorted(current_types | previous_types)
-
-            if product_types:
-                st.markdown(
-                    tp_comparison_html(
-                        product_types,
-                        previous,
-                        selected_month,
-                        previous_exists,
+                        if previous_exists
+                        else None
+                    )
+                    final_value = dimension_value(
                         summary_map,
-                    ),
-                    unsafe_allow_html=True,
-                )
+                        selected_month,
+                        "ARMZ",
+                        f"ARMZ:{armz}",
+                    )
+                    with column:
+                        st.markdown(
+                            stock_card(
+                                f"ARMAZÉM {armz}",
+                                initial_value,
+                                final_value,
+                            ),
+                            unsafe_allow_html=True,
+                        )
 
-                png_data = export_tp_png(
+        st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
+
+        section_band(
+            "03 · TP",
+            "ESTOQUE POR TIPO DE PRODUTO",
+            "Comparação financeira do estoque por TP entre a competência anterior e a competência selecionada.",
+        )
+
+        current_types = {
+            str(row.get("tp") or "")
+            for row in dimension_rows(summaries, selected_month, "TP")
+        }
+        previous_types = (
+            {
+                str(row.get("tp") or "")
+                for row in dimension_rows(summaries, previous, "TP")
+            }
+            if previous_exists
+            else set()
+        )
+        product_types = sorted(current_types | previous_types)
+
+        if product_types:
+            st.markdown(
+                tp_comparison_html(
                     product_types,
                     previous,
                     selected_month,
                     previous_exists,
                     summary_map,
-                    cfg,
-                )
-                download_left, download_right = st.columns([3.3, 1])
-                with download_right:
-                    st.download_button(
-                        "EXPORTAR RESUMO PNG",
-                        data=png_data,
-                        file_name=(
-                            "valor_em_estoque_"
-                            + selected_month.strftime("%Y_%m")
-                            + ".png"
-                        ),
-                        mime="image/png",
-                        use_container_width=True,
-                        key=f"download_tp_png_{selected_month.isoformat()}",
-                    )
-
-            st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
-
-            section_band(
-                "04 · EVOLUÇÃO MENSAL",
-                "HISTÓRICO DOS FECHAMENTOS",
-                "Validação indica apenas a qualidade do relatório importado. VALIDADO = nenhuma inconsistência encontrada. PENDÊNCIA = existem itens sem custo, sem saldo, negativos ou com cadastro obrigatório ausente. Não é um status contábil ou de aprovação do fechamento.",
-            )
-
-            st.markdown(
-                history_table_html(
-                    visible_months,
-                    summary_map,
-                    imports_by_month,
                 ),
                 unsafe_allow_html=True,
             )
+
+            png_data = export_tp_png(
+                product_types,
+                previous,
+                selected_month,
+                previous_exists,
+                summary_map,
+                cfg,
+            )
+            download_left, download_right = st.columns([3.3, 1])
+            with download_right:
+                st.download_button(
+                    "EXPORTAR RESUMO PNG",
+                    data=png_data,
+                    file_name=(
+                        "valor_em_estoque_"
+                        + selected_month.strftime("%Y_%m")
+                        + ".png"
+                    ),
+                    mime="image/png",
+                    use_container_width=True,
+                    key=f"download_tp_png_{selected_month.isoformat()}",
+                )
+
+        st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
+
+        section_band(
+            "04 · EVOLUÇÃO MENSAL",
+            "HISTÓRICO DOS FECHAMENTOS",
+            "Validação indica apenas a qualidade do relatório importado. VALIDADO = nenhuma inconsistência encontrada. PENDÊNCIA = existem itens sem custo, sem saldo, negativos ou com cadastro obrigatório ausente. Não é um status contábil ou de aprovação do fechamento.",
+        )
+
+        st.markdown(
+            history_table_html(
+                visible_months,
+                summary_map,
+                imports_by_month,
+            ),
+            unsafe_allow_html=True,
+        )
 
 
     st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
@@ -1490,19 +1497,27 @@ if page == "Dashboard":
     if (
         central_context.get("available")
         and central_parsed.get("rows")
-        and not central_parsed.get("errors")
     ):
+        _has_closing_errors = bool(central_parsed.get("errors"))
         _is_saved_current = current_competencia.isoformat() in persisted_import_keys
         _save_label = (
             "ATUALIZAR FECHAMENTO DA COMPETÊNCIA"
             if _is_saved_current
             else "GRAVAR FECHAMENTO DA COMPETÊNCIA"
         )
+
+        if _has_closing_errors:
+            st.warning(
+                "FECHAMENTO NÃO PODE SER GRAVADO ENQUANTO EXISTIREM INCONSISTÊNCIAS NO ANALÍTICO. "
+                "TODAS AS ETAPAS DE ANÁLISE E CONFERÊNCIA PERMANECEM LIBERADAS."
+            )
+
         if st.button(
             _save_label,
             type="primary",
             use_container_width=True,
             key="fm_save_current_central",
+            disabled=_has_closing_errors,
         ):
             try:
                 _source_name = str(
@@ -1522,7 +1537,7 @@ if page == "Dashboard":
             except Exception as exc:
                 st.error(f"NÃO FOI POSSÍVEL GRAVAR O FECHAMENTO: {exc}")
     else:
-        st.warning("ANALÍTICO DA CENTRAL INDISPONÍVEL OU COM PENDÊNCIA.")
+        st.warning("ANALÍTICO DA CENTRAL INDISPONÍVEL.")
 
     st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
     section_band(
@@ -2697,9 +2712,10 @@ else:
         st.markdown(
             """
             - CODIGO, TP, ARMZ, SALDO EM ESTOQUE E VALOR EM ESTOQUE SÃO OBRIGATÓRIOS.
-            - SALDO OU VALOR NEGATIVO BLOQUEIA O FECHAMENTO.
-            - TP OU ARMZ VAZIO BLOQUEIA O FECHAMENTO.
-            - CÓDIGO DUPLICADO NO MESMO ARMAZÉM BLOQUEIA O FECHAMENTO.
+            - SALDO OU VALOR NEGATIVO BLOQUEIA SOMENTE A GRAVAÇÃO DO FECHAMENTO.
+            - TP OU ARMZ VAZIO BLOQUEIA SOMENTE A GRAVAÇÃO DO FECHAMENTO.
+            - CÓDIGO DUPLICADO NO MESMO ARMAZÉM BLOQUEIA SOMENTE A GRAVAÇÃO DO FECHAMENTO.
+            - ANÁLISES, COMPARAÇÕES E CONFERÊNCIAS CONTINUAM DISPONÍVEIS MESMO COM INCONSISTÊNCIAS.
             """
         )
 
