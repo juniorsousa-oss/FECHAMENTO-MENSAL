@@ -1144,7 +1144,7 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    st.markdown('<div class="sidebar-section-label">Navegação</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section-label">NAVEGAÇÃO</div>', unsafe_allow_html=True)
 
     page = st.radio(
         "Página",
@@ -1158,31 +1158,21 @@ with st.sidebar:
         st.query_params["pagina"] = page
 
     st.divider()
-    st.markdown('<div class="sidebar-section-label">Operador</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section-label">OPERADOR</div>', unsafe_allow_html=True)
     st.session_state.operator = st.text_input(
         "Nome do operador",
         value=st.session_state.operator,
         label_visibility="collapsed",
-        placeholder="Informe o operador",
+        placeholder="INFORME O OPERADOR",
     )
 
     st.divider()
-    st.markdown('<div class="sidebar-section-label">Identidade visual</div>', unsafe_allow_html=True)
     st.markdown(
-        f'<div class="sidebar-logo-preview">{logo_html(str(cfg.get("logo_data") or ""), str(cfg.get("logo_mime") or "image/svg+xml"))}</div>',
-        unsafe_allow_html=True,
-    )
-    st.caption("Padrão visual Setta / NFS.")
-
-    st.divider()
-    st.markdown('<div class="sidebar-section-label">Informações</div>', unsafe_allow_html=True)
-    st.markdown(
-        f"""
+        """
         <div class="sidebar-info-card">
-            <b>Data operacional</b><br>{datetime.now(TZ):%d/%m/%Y}<br><br>
-            <b>Módulo</b><br>Fechamento mensal de inventário<br><br>
-            <b>Alimentação</b><br>Relatório analítico de estoque<br><br>
-            <b>Versão</b><br>Protótipo 0.3
+            <b>CENTRAL DE DADOS</b><br>
+            ALIMENTAÇÃO AUTOMÁTICA<br>
+            ANALÍTICO
         </div>
         """,
         unsafe_allow_html=True,
@@ -1199,6 +1189,15 @@ st.markdown(
 )
 st.markdown(f'<p class="app-sub">{cfg["subtitle"]}</p>', unsafe_allow_html=True)
 
+_force_central_fm = bool(st.session_state.pop("_force_central_fm", False))
+central_context = central_analitico_context(force=_force_central_fm)
+current_competencia = month_start(datetime.now(TZ).date())
+central_balance_preview = (
+    (central_context.get("balance") or {}).get("rows") or []
+    if central_context.get("available")
+    else []
+)
+
 try:
     imports = db.list_inventory_imports()
     summaries = db.list_inventory_summaries()
@@ -1207,6 +1206,44 @@ except Exception as exc:
     imports = []
     summaries = []
     data_error = str(exc)
+
+central_parsed = central_context.get("parsed") or {}
+if (
+    central_context.get("available")
+    and not central_parsed.get("errors")
+    and central_parsed.get("rows")
+):
+    current_key = current_competencia.isoformat()
+    imports = [
+        row for row in imports
+        if str(row.get("competencia") or "")[:10] != current_key
+    ]
+    summaries = [
+        row for row in summaries
+        if str(row.get("competencia") or "")[:10] != current_key
+    ]
+    imports.append(
+        {
+            "competencia": current_key,
+            "arquivo_nome": str(
+                (central_context.get("meta") or {}).get("last_file_name")
+                or "ANALITICO.xltx"
+            ),
+            "total_linhas": int(central_parsed.get("total_rows") or 0),
+            "linhas_validas": int(central_parsed.get("valid_rows") or 0),
+            "linhas_invalidas": 0,
+            "valor_total": float(central_parsed.get("total_value") or 0),
+            "status": "VALIDO",
+            "importado_em": (central_context.get("meta") or {}).get("last_update_at"),
+            "preview": True,
+        }
+    )
+    summaries.extend(
+        build_preview_summaries(
+            current_competencia,
+            central_parsed["rows"],
+        )
+    )
 
 imports_by_month = {
     str(row.get("competencia") or "")[:10]: row
