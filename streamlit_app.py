@@ -2660,154 +2660,47 @@ elif page == "Análise de movimentações":
 
 
 else:
-    st.markdown('<div class="section-title">Configurações</div>', unsafe_allow_html=True)
-    st.caption(
-        "As alterações desta página são persistidas no Supabase. "
-        "A página atual e a competência analisada permanecem na URL."
+    st.markdown('<div class="section-title">CONFIGURAÇÕES</div>', unsafe_allow_html=True)
+
+    tab_api, tab_rules = st.tabs(
+        ["ACOMPANHAMENTO DE API", "REGRAS"]
     )
 
-    with st.container(border=True):
-        st.markdown("#### Identidade do aplicativo")
-        title = st.text_input(
-            "Título principal",
-            value=str(cfg.get("title") or DEFAULT_CONFIG["title"]),
+    with tab_api:
+        section_band(
+            "01 · FONTES",
+            "CENTRAL DE DADOS",
+            "",
         )
-        subtitle = st.text_input(
-            "Subtítulo",
-            value=str(cfg.get("subtitle") or DEFAULT_CONFIG["subtitle"]),
-        )
-        sidebar_title = st.text_input(
-            "Título da barra lateral",
-            value=str(cfg.get("sidebar_title") or DEFAULT_CONFIG["sidebar_title"]),
-        )
-        sidebar_subtitle = st.text_input(
-            "Subtítulo da barra lateral",
-            value=str(cfg.get("sidebar_subtitle") or DEFAULT_CONFIG["sidebar_subtitle"]),
-        )
+        render_central_status(central_context)
 
-        if st.button("SALVAR CONFIGURAÇÕES", type="primary", use_container_width=True):
-            new_cfg = dict(cfg)
-            new_cfg.update(
-                {
-                    "title": title.strip() or DEFAULT_CONFIG["title"],
-                    "subtitle": subtitle.strip() or DEFAULT_CONFIG["subtitle"],
-                    "sidebar_title": sidebar_title.strip() or DEFAULT_CONFIG["sidebar_title"],
-                    "sidebar_subtitle": sidebar_subtitle.strip() or DEFAULT_CONFIG["sidebar_subtitle"],
-                }
-            )
-            try:
-                db.save_config(new_cfg)
-                st.session_state.app_cfg = {
-                    **DEFAULT_CONFIG,
-                    **new_cfg,
-                }
-                st.success("Configurações salvas permanentemente.")
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Não foi possível salvar as configurações: {exc}")
-
-    with st.container(border=True):
-        st.markdown("#### Logo da empresa")
-        st.caption(
-            "A logo é exibida nas mesmas dimensões utilizadas no aplicativo de NFs. "
-            "Ao trocar a imagem, o tamanho do card e o limite visual da logo permanecem fixos."
-        )
-
-        current_logo = str(cfg.get("logo_data") or "").strip()
-        current_logo_mime = str(cfg.get("logo_mime") or "image/svg+xml")
-        if current_logo:
-            st.markdown(
-                f'<div class="logo-preview"><img src="data:{current_logo_mime};base64,{current_logo}"></div>',
-                unsafe_allow_html=True,
-            )
-
-        logo_upload = st.file_uploader(
-            "Selecionar nova logo",
-            type=["png", "jpg", "jpeg", "svg"],
-            key="fm_logo_upload",
-        )
-
-        if logo_upload is not None:
-            raw_logo = logo_upload.getvalue()
-            if len(raw_logo) > 1_500_000:
-                st.error("Logo acima de 1,5 MB.")
-            else:
-                mime = (
-                    logo_upload.type
-                    or (
-                        "image/svg+xml"
-                        if logo_upload.name.lower().endswith(".svg")
-                        else "image/png"
-                    )
-                )
-                encoded = base64.b64encode(raw_logo).decode()
-                st.markdown(
-                    f'<div class="logo-preview"><img src="data:{mime};base64,{encoded}"></div>',
-                    unsafe_allow_html=True,
-                )
-
-                if st.button(
-                    "SALVAR NOVA LOGO",
-                    type="primary",
-                    use_container_width=True,
-                    key="save_fm_logo",
-                ):
-                    new_cfg = dict(cfg)
-                    new_cfg.update(
-                        logo_data=encoded,
-                        logo_mime=mime,
-                    )
-                    try:
-                        db.save_config(new_cfg)
-                        st.session_state.app_cfg = {
-                            **DEFAULT_CONFIG,
-                            **new_cfg,
-                        }
-                        st.success("Nova logo salva permanentemente.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Não foi possível salvar a logo: {exc}")
+        if central_context.get("error"):
+            st.warning(str(central_context.get("error")))
 
         if st.button(
-            "RESTAURAR LOGO PADRÃO SETTA",
+            "REPROCESSAR FONTE",
             use_container_width=True,
-            key="restore_fm_logo",
+            key="fm_reprocess_central",
         ):
-            try:
-                default_logo = base64.b64encode(
-                    (ROOT / "config" / "logo_setta.svg").read_bytes()
-                ).decode()
-                new_cfg = dict(cfg)
-                new_cfg.update(
-                    logo_data=default_logo,
-                    logo_mime="image/svg+xml",
-                )
-                db.save_config(new_cfg)
-                st.session_state.app_cfg = {
-                    **DEFAULT_CONFIG,
-                    **new_cfg,
-                }
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Não foi possível restaurar a logo padrão: {exc}")
+            load_central_analitico.clear()
+            st.session_state["_force_central_fm"] = True
+            st.rerun()
 
-    with st.container(border=True):
-        st.markdown("#### Regras obrigatórias do relatório")
+        render_manual_contingency(imports_by_month)
+
+    with tab_rules:
+        section_band(
+            "01 · REGRAS",
+            "VALIDAÇÃO DO ANALÍTICO",
+            "",
+        )
         st.markdown(
             """
-            - CODIGO, TP, ARMZ, SALDO EM ESTOQUE e VALOR EM ESTOQUE são obrigatórios.
-            - Produto sem saldo não é aceito.
-            - Produto sem custo/valor não é aceito.
-            - Saldo ou valor negativo não é aceito.
-            - TP e ARMZ vazios não são aceitos.
-            - Código duplicado no mesmo armazém bloqueia a importação.
+            - CODIGO, TP, ARMZ, SALDO EM ESTOQUE E VALOR EM ESTOQUE SÃO OBRIGATÓRIOS.
+            - SALDO OU VALOR NEGATIVO BLOQUEIA O FECHAMENTO.
+            - TP OU ARMZ VAZIO BLOQUEIA O FECHAMENTO.
+            - CÓDIGO DUPLICADO NO MESMO ARMAZÉM BLOQUEIA O FECHAMENTO.
             """
-        )
-
-    with st.container(border=True):
-        st.markdown("#### Ícone do navegador")
-        st.info(
-            "O favicon continua sincronizado com o ícone efetivamente salvo no aplicativo NFS Setta."
         )
 
 
