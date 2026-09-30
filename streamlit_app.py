@@ -11,6 +11,7 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 
 import inventory_db as db
+import central_fechamento_data as central_data
 from report_parser import parse_inventory_report, parse_inventory_balance_report
 from cb_parser import (
     normalize_code,
@@ -65,20 +66,16 @@ CB_SOURCE_LABELS = {
 }
 
 
-st.set_page_config(
-    page_title="FECHAMENTO MENSAL | SETTA",
-    page_icon="📄",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+try:
+    GLOBAL_VISUAL_CONFIG = central_data.load_visual_config()
+except Exception:
+    GLOBAL_VISUAL_CONFIG = {}
 
 
 def browser_icon():
     try:
-        visual = db.load_nfs_visual_config()
-        data = str(visual.get("favicon_data") or "").strip()
-        if data:
-            raw = base64.b64decode(data, validate=True)
+        raw = central_data.favicon_bytes(GLOBAL_VISUAL_CONFIG)
+        if raw:
             image = Image.open(io.BytesIO(raw))
             image.load()
             return image
@@ -883,11 +880,6 @@ if "app_cfg" not in st.session_state:
         remote_cfg = {}
 
     try:
-        nfs_visual = db.load_nfs_visual_config()
-    except Exception:
-        nfs_visual = {}
-
-    try:
         fallback_logo_data = base64.b64encode(
             (ROOT / "config" / "logo_setta.svg").read_bytes()
         ).decode()
@@ -895,17 +887,17 @@ if "app_cfg" not in st.session_state:
         fallback_logo_data = ""
 
     default_logo_data = str(
-        nfs_visual.get("logo_data") or fallback_logo_data
+        GLOBAL_VISUAL_CONFIG.get("logo_data") or fallback_logo_data
     )
     default_logo_mime = str(
-        nfs_visual.get("logo_mime") or "image/svg+xml"
+        GLOBAL_VISUAL_CONFIG.get("logo_mime") or "image/svg+xml"
     )
 
     st.session_state.app_cfg = {
         **DEFAULT_CONFIG,
+        **remote_cfg,
         "logo_data": default_logo_data,
         "logo_mime": default_logo_mime,
-        **remote_cfg,
     }
 
 if "operator" not in st.session_state:
