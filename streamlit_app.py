@@ -1394,9 +1394,9 @@ def cb_kpi_html(
             <div class="cb-kpi-note">Quantidade física ≠ sistema</div>
         </div>
         <div class="cb-kpi" style="--cb-accent:#d97706">
-            <div class="cb-kpi-label">DIVERGÊNCIA EM R$</div>
+            <div class="cb-kpi-label">DIFERENÇA EM R$</div>
             <div class="cb-kpi-value">{money_br(divergence_rs)}</div>
-            <div class="cb-kpi-note">Físico − sistema × custo unitário</div>
+            <div class="cb-kpi-note">Estoque − contagem × custo unitário</div>
         </div>
     </div>
     """
@@ -3016,13 +3016,13 @@ elif page == "Conferência de chapas e barramentos":
         section_band(
             "03 · CONFERÊNCIA",
             "CONSOLIDADO FÍSICO × SISTEMA",
-            "Divergência Qtd = Físico − Sistema. O saldo sistêmico vem exclusivamente de SALDO EM ESTOQUE e valores negativos são tratados como zero. As fontes físicas são complementares e somadas por código. Para barramentos, o CONSUMO informado pela produção aparece como contexto de análise, sem alterar automaticamente a divergência. A estimativa em R$ usa o Últ. Preço do CADASTROS.",
+            "Diferença = ESTOQUE DO SISTEMA − CONTAGEM FÍSICA. O item entra na base final quando possui saldo no Analítico ou quando uma fonte física é vinculada ao seu código. Se houver contagem sem saldo no Analítico, o saldo sistema é zero. Para barramentos, o CONSUMO é apenas contexto de análise. A estimativa em R$ usa o Últ. Preço do CADASTROS.",
         )
 
-        if not cb_stock_items:
+        if not cb_stock_items and not cb_counts:
             st.info(
-                "A conferência será liberada após o SALDO EM ESTOQUE "
-                "do Relatório Analítico estar disponível nesta competência."
+                "A base final será formada quando houver saldo no Analítico "
+                "ou alguma contagem física vinculada."
             )
         else:
             reconciliation = build_cb_reconciliation(
@@ -3033,7 +3033,7 @@ elif page == "Conferência de chapas e barramentos":
 
             if reconciliation.empty:
                 st.info(
-                    "Ainda não existem materiais confirmados na base mestre."
+                    "Nenhum material foi ativado para a análise desta competência."
                 )
             else:
                 counted_mask = reconciliation["Físico"].notna()
@@ -3043,8 +3043,8 @@ elif page == "Conferência de chapas e barramentos":
                 divergence_total = float(
                     reconciliation.loc[
                         divergent_mask,
-                        "Divergência R$",
-                    ].fillna(0).sum()
+                        "Diferença R$",
+                    ].fillna(0).abs().sum()
                 )
 
                 st.markdown(
@@ -3091,7 +3091,7 @@ elif page == "Conferência de chapas e barramentos":
                     "Saldo sistema",
                     "Físico",
                     "Consumo informado",
-                    "Divergência Qtd",
+                    "Diferença Qtd",
                 ]:
                     shown[col] = shown[col].map(
                         lambda value: (
@@ -3106,7 +3106,7 @@ elif page == "Conferência de chapas e barramentos":
 
                 for col in [
                     "Custo unitário",
-                    "Divergência R$",
+                    "Diferença R$",
                 ]:
                     shown[col] = shown[col].map(
                         lambda value: (
@@ -3153,8 +3153,8 @@ elif page == "Conferência de chapas e barramentos":
                                 "Saldo sistema",
                                 "Físico",
                                 "Consumo informado",
-                                "Divergência Qtd",
-                                "Divergência R$",
+                                "Diferença Qtd",
+                                "Diferença R$",
                                 "Status",
                             ]
                         ],
