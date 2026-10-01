@@ -38,6 +38,13 @@ DEFAULT_CONFIG = {
     "subtitle": "Inventário • Conferências • Baixas • Movimentações • Fechamento",
     "sidebar_title": "FECHAMENTO MENSAL",
     "sidebar_subtitle": "Análises de inventário",
+    "menu_labels": {
+        "Dashboard": "DASHBOARD",
+        "Conferência de chapas e barramentos": "CONFERÊNCIA DE CHAPAS E BARRAMENTOS",
+        "Conferência de baixas": "CONFERÊNCIA DE BAIXAS",
+        "Análise de movimentações": "ANÁLISE DE MOVIMENTAÇÕES",
+        "Configurações": "CONFIGURAÇÕES",
+    },
 }
 
 PAGES = [
@@ -1370,15 +1377,20 @@ if "app_cfg" not in st.session_state:
         GLOBAL_VISUAL_CONFIG.get("logo_mime") or "image/svg+xml"
     )
 
+    remote_menu_labels = remote_cfg.get("menu_labels")
+    if not isinstance(remote_menu_labels, dict):
+        remote_menu_labels = {}
+
     st.session_state.app_cfg = {
         **DEFAULT_CONFIG,
         **remote_cfg,
+        "menu_labels": {
+            **DEFAULT_CONFIG["menu_labels"],
+            **remote_menu_labels,
+        },
         "logo_data": default_logo_data,
         "logo_mime": default_logo_mime,
     }
-
-if "operator" not in st.session_state:
-    st.session_state.operator = ""
 
 cfg = st.session_state.app_cfg
 
@@ -1414,29 +1426,36 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    page = st.radio(
-        "Página",
-        PAGES,
-        label_visibility="collapsed",
-        key="nav_page",
-        format_func=lambda item: item.upper(),
-    )
+    page = st.session_state.nav_page
+    menu_labels = cfg.get("menu_labels") or {}
+
+    for index, internal_page in enumerate(PAGES):
+        label = str(
+            menu_labels.get(internal_page)
+            or DEFAULT_CONFIG["menu_labels"].get(
+                internal_page,
+                internal_page,
+            )
+        ).strip()
+
+        if st.button(
+            label,
+            key=f"nav_button_{index}",
+            type=(
+                "primary"
+                if page == internal_page
+                else "secondary"
+            ),
+            use_container_width=True,
+        ):
+            st.session_state.nav_page = internal_page
+            st.query_params["pagina"] = internal_page
+            st.rerun()
 
     if str(st.query_params.get("pagina", "") or "") != page:
         st.query_params["pagina"] = page
 
     st.divider()
-    st.markdown(
-        '<div class="sidebar-section-label">OPERADOR</div>',
-        unsafe_allow_html=True,
-    )
-    st.session_state.operator = st.text_input(
-        "Nome do operador",
-        value=st.session_state.operator,
-        label_visibility="collapsed",
-        placeholder="INFORME O OPERADOR",
-    )
-
     st.markdown(
         """
         <div class="sidebar-info-card">
@@ -2911,8 +2930,8 @@ else:
         unsafe_allow_html=True,
     )
 
-    tab_api, tab_rules = st.tabs(
-        ["STATUS API", "REGRAS"]
+    tab_api, tab_menu, tab_rules = st.tabs(
+        ["STATUS API", "MENU", "REGRAS"]
     )
 
     with tab_api:
@@ -3030,6 +3049,109 @@ else:
         )
 
         render_manual_contingency(imports_by_month)
+
+    with tab_menu:
+        section_band(
+            "01 · NAVEGAÇÃO",
+            "NOMES DOS BOTÕES",
+            "Altere somente o texto exibido no menu lateral. A identificação interna das páginas permanece fixa para preservar a navegação e as regras do aplicativo.",
+        )
+
+        current_menu_labels = cfg.get("menu_labels") or {}
+
+        with st.form("fm_menu_labels_form"):
+            edited_menu_labels = {}
+
+            for internal_page in PAGES:
+                edited_menu_labels[internal_page] = st.text_input(
+                    internal_page.upper(),
+                    value=str(
+                        current_menu_labels.get(
+                            internal_page,
+                            DEFAULT_CONFIG["menu_labels"].get(
+                                internal_page,
+                                internal_page,
+                            ),
+                        )
+                    ),
+                    key=(
+                        "cfg_menu_"
+                        + internal_page.lower()
+                        .replace(" ", "_")
+                        .replace("ç", "c")
+                        .replace("ã", "a")
+                        .replace("á", "a")
+                        .replace("é", "e")
+                    ),
+                )
+
+            save_menu = st.form_submit_button(
+                "SALVAR NOMES DO MENU",
+                type="primary",
+                use_container_width=True,
+            )
+
+        if save_menu:
+            normalized_menu_labels = {
+                internal_page: (
+                    str(
+                        edited_menu_labels.get(
+                            internal_page,
+                            "",
+                        )
+                    ).strip()
+                    or DEFAULT_CONFIG["menu_labels"].get(
+                        internal_page,
+                        internal_page,
+                    )
+                )
+                for internal_page in PAGES
+            }
+
+            new_config = {
+                **cfg,
+                "menu_labels": normalized_menu_labels,
+            }
+
+            try:
+                db.save_config(new_config)
+                st.session_state.app_cfg = new_config
+                st.session_state["_menu_cfg_saved"] = True
+                st.rerun()
+            except Exception as exc:
+                st.error(
+                    "NÃO FOI POSSÍVEL SALVAR OS NOMES DO MENU: "
+                    + str(exc)
+                )
+
+        if st.session_state.pop(
+            "_menu_cfg_saved",
+            False,
+        ):
+            st.success(
+                "NOMES DO MENU ATUALIZADOS COM SUCESSO."
+            )
+
+        if st.button(
+            "RESTAURAR NOMES PADRÃO",
+            use_container_width=True,
+            key="fm_restore_menu_labels",
+        ):
+            restored_config = {
+                **cfg,
+                "menu_labels": {
+                    **DEFAULT_CONFIG["menu_labels"],
+                },
+            }
+            try:
+                db.save_config(restored_config)
+                st.session_state.app_cfg = restored_config
+                st.rerun()
+            except Exception as exc:
+                st.error(
+                    "NÃO FOI POSSÍVEL RESTAURAR O MENU: "
+                    + str(exc)
+                )
 
     with tab_rules:
         section_band(
