@@ -1849,36 +1849,31 @@ if page == "Dashboard":
 
 
 elif page == "Conferência de chapas e barramentos":
-    title_col, info_col, _title_spacer = st.columns(
-        [0.39, 0.035, 0.575],
-        vertical_alignment="center",
+    st.markdown(
+        """
+        <div class="cb-title-inline">
+            <div class="section-title cb-title-main">
+                CONFERÊNCIA DE CHAPAS E BARRAMENTOS
+            </div>
+            <div class="cb-info-wrap" tabindex="0">
+                <span class="cb-info-icon">i</span>
+                <div class="cb-info-tooltip">
+                    <strong>COMO FUNCIONA</strong>
+                    <span>
+                        O CADASTROS define o universo de materiais.
+                        Neste módulo, o Relatório Analítico fornece somente o
+                        SALDO EM ESTOQUE da competência.
+                        O físico é formado pelas fontes de Chapas, Barramentos
+                        e Almoxarifado. Materiais novos passam por validação e,
+                        depois de confirmados, permanecem automaticamente na
+                        base dos próximos fechamentos.
+                    </span>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
-
-    with title_col:
-        st.markdown(
-            '<div class="section-title">CONFERÊNCIA DE CHAPAS E BARRAMENTOS</div>',
-            unsafe_allow_html=True,
-        )
-
-    with info_col:
-        with st.popover(
-            "ⓘ",
-            help="Informações sobre a conferência",
-            use_container_width=False,
-        ):
-            st.markdown(
-                """
-                O **CADASTROS** define o universo de materiais.
-
-                Neste módulo, o **Relatório Analítico** fornece somente o
-                **SALDO EM ESTOQUE** da competência.
-
-                O físico é formado pelas fontes de **Chapas, Barramentos e Almoxarifado**.
-
-                Materiais novos passam por validação e, depois de confirmados,
-                permanecem automaticamente na base dos próximos fechamentos.
-                """
-            )
 
     if not visible_months:
         st.info(
