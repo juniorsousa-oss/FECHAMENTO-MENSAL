@@ -888,7 +888,9 @@ def resolve_chapa_rows(
     catalog_map = {
         str(row.get("codigo") or "").strip(): row
         for row in catalog
-        if str(row.get("status") or "").upper() == "CONFIRMADO"
+        if bool(row.get("ativo", True))
+        and str(row.get("status") or "").upper() != "IGNORADO"
+        and str(row.get("categoria") or "").upper() == "CHAPA"
     }
 
     resolved: list[dict] = []
