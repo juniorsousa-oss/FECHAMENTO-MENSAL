@@ -2426,9 +2426,8 @@ elif page == "Conferência de chapas e barramentos":
                 type=["xlsx", "xltx"],
                 key="cb_barramentos_file",
                 help=(
-                    "Aceita o modelo atual com CODIGO, Modelo de Barra, "
-                    "TOTAL FECHAMENTO e CONSUMO, além do modelo anterior "
-                    "com BARRAS + PROCESSADO."
+                    "Todos os itens do relatório precisam estar vinculados "
+                    "a um código do CADASTROS antes da importação."
                 ),
             )
 
@@ -2439,49 +2438,37 @@ elif page == "Conferência de chapas e barramentos":
                         bar_file.name,
                     )
 
-                    cad_master_lookup = (
-                        (cadastros_context.get("parsed") or {})
-                        .get("master_lookup")
-                        or {}
-                    )
-
                     catalog_bar = {
-                        str(row.get("codigo")): row
-                        for row in cb_catalog
+                        str(row.get("codigo") or "").strip(): row
+                        for row in standby_catalog
                         if row.get("categoria") == "BARRA_COBRE"
-                        and row.get("status") == "CONFIRMADO"
-                        and bool(row.get("ativo", True))
                     }
 
                     valid_bar_rows = []
                     bar_issues = []
 
                     for row in parsed_bar["rows"]:
-                        code = normalize_code(row.get("codigo"))
-                        item = catalog_bar.get(code)
-
-                        if item is None:
-                            cadastro_item = (
-                                cad_master_lookup.get(code)
-                                or {}
+                        source_code = normalize_code(
+                            row.get("codigo")
+                        )
+                        mapped_code = (
+                            source_code
+                            if source_code in catalog_bar
+                            else physical_mapping_lookup.get(
+                                (
+                                    "BARRAMENTOS_EXCEL",
+                                    source_code,
+                                ),
+                                "",
                             )
+                        )
+
+                        item = catalog_bar.get(mapped_code)
+                        if item is None:
                             bar_issues.append(
                                 {
-                                    "Código": code,
+                                    "Código origem": source_code,
                                     "Modelo": row.get("modelo"),
-                                    "Descrição": str(
-                                        cadastro_item.get("descricao")
-                                        or ""
-                                    ).strip(),
-                                    "Referência": str(
-                                        cadastro_item.get("referencia")
-                                        or row.get("modelo")
-                                        or ""
-                                    ).strip(),
-                                    "Últ. preço": float(
-                                        cadastro_item.get("ult_preco")
-                                        or 0
-                                    ),
                                     "Físico (m)": float(
                                         row.get("quantidade_fisica")
                                         or 0
@@ -2489,9 +2476,6 @@ elif page == "Conferência de chapas e barramentos":
                                     "Consumo (m)": float(
                                         row.get("consumo")
                                         or 0
-                                    ),
-                                    "Motivo": (
-                                        "CÓDIGO NÃO CONFIRMADO NA BASE MESTRE"
                                     ),
                                 }
                             )
@@ -2512,7 +2496,7 @@ elif page == "Conferência de chapas e barramentos":
 
                         valid_bar_rows.append(
                             {
-                                "codigo": code,
+                                "codigo": mapped_code,
                                 "quantidade_fisica": quantidade,
                                 "consumo": consumo,
                                 "observacao": (
@@ -2520,38 +2504,39 @@ elif page == "Conferência de chapas e barramentos":
                                     f"{criterio or 'CONTAGEM'} "
                                     f"{quantidade:.3f} m · "
                                     f"Consumo informado {consumo:.3f} m"
+                                    + (
+                                        f" · origem {source_code}"
+                                        if mapped_code != source_code
+                                        else ""
+                                    )
                                 ).strip(" ·"),
                             }
                         )
 
                     br1, br2, br3, br4 = st.columns(4)
                     br1.metric(
-                        "Códigos encontrados",
+                        "Itens do relatório",
                         parsed_bar["total_rows"],
                     )
                     br2.metric(
+                        "Vinculados",
+                        len(valid_bar_rows),
+                    )
+                    br3.metric(
                         "Físico total",
                         f"{float(parsed_bar['total_metros']):,.3f} m"
                         .replace(",", "X")
                         .replace(".", ",")
                         .replace("X", "."),
                     )
-                    br3.metric(
-                        "Consumo informado",
-                        f"{float(parsed_bar.get('total_consumo') or 0):,.3f} m"
-                        .replace(",", "X")
-                        .replace(".", ",")
-                        .replace("X", "."),
-                    )
                     br4.metric(
-                        "Pendências",
+                        "Sem vínculo",
                         len(bar_issues),
                     )
 
                     st.caption(
-                        "O CONSUMO é informação auxiliar para análise de "
-                        "eventuais divergências. Ele não altera automaticamente "
-                        "o saldo físico nem a divergência calculada."
+                        "O CONSUMO é contexto para investigar divergências. "
+                        "Não altera automaticamente o saldo nem a diferença."
                     )
 
                     if valid_bar_rows:
@@ -2559,8 +2544,8 @@ elif page == "Conferência de chapas e barramentos":
                             valid_bar_rows
                         ).rename(
                             columns={
-                                "codigo": "Código",
-                                "quantidade_fisica": "Físico produção (m)",
+                                "codigo": "Código sistema",
+                                "quantidade_fisica": "Contagem (m)",
                                 "consumo": "Consumo informado (m)",
                                 "observacao": "Detalhe",
                             }
@@ -2573,123 +2558,110 @@ elif page == "Conferência de chapas e barramentos":
 
                     if bar_issues:
                         st.warning(
-                            f"{len(bar_issues)} código(s) ainda não estão "
-                            "confirmados na base mestre. Você pode validar "
-                            "cada item abaixo e depois importar a contagem."
+                            "A importação fica bloqueada até que TODOS os itens "
+                            "do relatório possuam vínculo com um código do sistema."
                         )
-                        st.dataframe(
-                            pd.DataFrame(bar_issues),
+
+                        bar_options = [
+                            f"{row.get('codigo')} · {row.get('descricao')}"
+                            for row in standby_catalog
+                            if row.get("categoria") == "BARRA_COBRE"
+                        ]
+                        mapping_rows = []
+                        for index, issue in enumerate(bar_issues):
+                            mapping_rows.append(
+                                {
+                                    "ID": index,
+                                    "Código origem": issue.get(
+                                        "Código origem"
+                                    ),
+                                    "Modelo": issue.get("Modelo"),
+                                    "Físico (m)": issue.get(
+                                        "Físico (m)"
+                                    ),
+                                    "Consumo (m)": issue.get(
+                                        "Consumo (m)"
+                                    ),
+                                    "Vincular ao código": "",
+                                }
+                            )
+
+                        edited_bar_maps = st.data_editor(
+                            pd.DataFrame(mapping_rows),
                             use_container_width=True,
                             hide_index=True,
+                            disabled=[
+                                "ID",
+                                "Código origem",
+                                "Modelo",
+                                "Físico (m)",
+                                "Consumo (m)",
+                            ],
+                            column_config={
+                                "Vincular ao código": (
+                                    st.column_config.SelectboxColumn(
+                                        "Vincular ao código",
+                                        options=[""] + bar_options,
+                                        required=True,
+                                    )
+                                )
+                            },
+                            key="cb_bar_mapping_editor",
                         )
 
-                        st.markdown(
-                            "#### VALIDAR NOVO BARRAMENTO"
-                        )
-
-                        for issue in bar_issues:
-                            issue_code = str(
-                                issue.get("Código") or ""
-                            )
-                            issue_model = str(
-                                issue.get("Modelo") or ""
-                            )
-
-                            with st.expander(
-                                f"{issue_code} · {issue_model}",
-                                expanded=(
-                                    len(bar_issues) == 1
-                                ),
-                            ):
-                                issue_desc = st.text_input(
-                                    "Descrição",
-                                    value=str(
-                                        issue.get("Descrição")
-                                        or ""
-                                    ),
-                                    key=(
-                                        "cb_new_bar_desc_"
-                                        + issue_code
-                                    ),
-                                    placeholder=(
-                                        "Descrição do CADASTROS"
-                                    ),
+                        if st.button(
+                            "SALVAR VÍNCULOS DOS BARRAMENTOS",
+                            type="primary",
+                            use_container_width=True,
+                            key="cb_save_bar_maps",
+                        ):
+                            missing_links = edited_bar_maps[
+                                edited_bar_maps[
+                                    "Vincular ao código"
+                                ].astype(str).str.strip() == ""
+                            ]
+                            if not missing_links.empty:
+                                st.error(
+                                    "Vincule todos os itens antes de salvar."
                                 )
-                                issue_ref = st.text_input(
-                                    "Referência",
-                                    value=str(
-                                        issue.get("Referência")
-                                        or issue_model
-                                        or ""
-                                    ),
-                                    key=(
-                                        "cb_new_bar_ref_"
-                                        + issue_code
-                                    ),
-                                )
-                                issue_price = st.number_input(
-                                    "Últ. preço",
-                                    min_value=0.0,
-                                    value=float(
-                                        issue.get("Últ. preço")
-                                        or 0
-                                    ),
-                                    step=0.01,
-                                    format="%.2f",
-                                    key=(
-                                        "cb_new_bar_price_"
-                                        + issue_code
-                                    ),
-                                )
-
-                                st.caption(
-                                    "Ao confirmar, o código será incluído "
-                                    "na base mestre como BARRA DE COBRE, "
-                                    "unidade MT e status CONFIRMADO."
-                                )
-
-                                if st.button(
-                                    "CONFIRMAR COMO BARRA DE COBRE",
-                                    type="primary",
-                                    use_container_width=True,
-                                    key=(
-                                        "cb_confirm_new_bar_"
-                                        + issue_code
-                                    ),
+                            else:
+                                for _, edit_row in (
+                                    edited_bar_maps.iterrows()
                                 ):
-                                    if not issue_desc.strip():
-                                        st.error(
-                                            "Informe a descrição antes "
-                                            "de confirmar o material."
-                                        )
-                                    else:
-                                        try:
-                                            db.confirm_cb_catalog_item(
-                                                issue_code,
-                                                "BARRA_COBRE",
-                                                issue_desc,
-                                                issue_ref,
-                                                issue_price,
-                                            )
-                                            st.session_state[
-                                                "_cb_count_flash"
-                                            ] = (
-                                                f"{issue_code} confirmado "
-                                                "como BARRA DE COBRE."
-                                            )
-                                            st.rerun()
-                                        except Exception as exc:
-                                            st.error(
-                                                "Não foi possível confirmar "
-                                                f"{issue_code}: {exc}"
-                                            )
+                                    source_issue = bar_issues[
+                                        int(edit_row["ID"])
+                                    ]
+                                    selected_code = str(
+                                        edit_row[
+                                            "Vincular ao código"
+                                        ]
+                                    ).split(" · ", 1)[0].strip()
 
-                    if valid_bar_rows and st.button(
-                        (
-                            "IMPORTAR BARRAMENTOS VÁLIDOS"
-                            if bar_issues
-                            else "IMPORTAR BARRAMENTOS DA PRODUÇÃO"
-                        ),
+                                    db.save_cb_physical_mapping(
+                                        "BARRAMENTOS_EXCEL",
+                                        str(
+                                            source_issue.get(
+                                                "Código origem"
+                                            )
+                                            or ""
+                                        ),
+                                        str(
+                                            source_issue.get(
+                                                "Modelo"
+                                            )
+                                            or ""
+                                        ),
+                                        selected_code,
+                                    )
+                                st.session_state[
+                                    "_cb_count_flash"
+                                ] = (
+                                    "Vínculos dos barramentos salvos."
+                                )
+                                st.rerun()
+
+                    elif valid_bar_rows and st.button(
+                        "IMPORTAR CONTAGEM DE BARRAMENTOS",
                         type="primary",
                         use_container_width=True,
                         key="cb_import_bars",
@@ -2701,14 +2673,8 @@ elif page == "Conferência de chapas e barramentos":
                             valid_bar_rows,
                         )
                         st.session_state["_cb_count_flash"] = (
-                            f"Contagem de barramentos importada: "
-                            f"{len(valid_bar_rows)} código(s)."
-                            + (
-                                f" {len(bar_issues)} pendência(s) permaneceram "
-                                "para validação."
-                                if bar_issues
-                                else ""
-                            )
+                            "Contagem de barramentos importada. "
+                            "Todos os itens possuem vínculo com o sistema."
                         )
                         st.rerun()
                 except Exception as exc:
