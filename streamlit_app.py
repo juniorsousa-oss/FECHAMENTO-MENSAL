@@ -2279,9 +2279,8 @@ elif page == "Conferência de chapas e barramentos":
 
                         chapa_options = [
                             row
-                            for row in cb_catalog
+                            for row in standby_catalog
                             if row.get("categoria") == "CHAPA"
-                            and row.get("status") == "CONFIRMADO"
                         ]
                         option_labels = [
                             f"{row.get('codigo')} · {row.get('descricao')}"
@@ -2337,7 +2336,7 @@ elif page == "Conferência de chapas e barramentos":
                         ):
                             if not option_labels:
                                 st.error(
-                                    "Não há códigos de CHAPA confirmados na base mestre."
+                                    "Não há códigos de CHAPA disponíveis no standby do CADASTROS."
                                 )
                             else:
                                 for _, edit_row in edited_mapping.iterrows():
