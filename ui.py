@@ -13,8 +13,9 @@ CSS = """
 [data-testid="stAppViewContainer"]{background:#f4f7fb!important}
 [data-testid="stHeader"]{background:rgba(255,255,255,.96)!important}
 .block-container{max-width:1780px!important;padding-top:3.2rem!important;padding-left:2.7rem!important;padding-right:2.7rem!important;padding-bottom:3rem!important;width:100%!important}
-section[data-testid="stSidebar"]{background:#fff!important;border-right:1px solid #e8ebf0!important}
-section[data-testid="stSidebar"] .block-container{padding-top:1.6rem!important;padding-left:1rem!important;padding-right:1rem!important}
+section[data-testid="stSidebar"]{background:#fff!important;border-right:1px solid #e8ebf0!important;width:260px!important;min-width:260px!important;max-width:260px!important;flex:0 0 260px!important}
+section[data-testid="stSidebar"]>div{width:260px!important;min-width:260px!important;max-width:260px!important}
+section[data-testid="stSidebar"] .block-container{width:260px!important;max-width:260px!important;padding-top:1.35rem!important;padding-left:.9rem!important;padding-right:.9rem!important;padding-bottom:1.2rem!important;box-sizing:border-box!important}
 .sidebar-brand{background:#f8fafc;border:1px solid #e5e8ee;border-radius:12px;padding:.9rem 1rem;margin:0 0 1.05rem 0}
 .sidebar-brand-title{font-size:.92rem;font-weight:800;color:#111827;letter-spacing:-.01em}
 .sidebar-brand-sub{margin-top:.18rem;font-size:.75rem;color:#6b7280}
@@ -22,13 +23,35 @@ section[data-testid="stSidebar"] .block-container{padding-top:1.6rem!important;p
 .sidebar-logo-preview{width:100%;min-height:82px;display:flex;justify-content:center;align-items:center;margin:.65rem 0 .5rem;padding:.65rem .8rem;background:#fff;border:1px dashed #d1d5db;border-radius:10px;box-sizing:border-box;overflow:hidden}
 .sidebar-logo-preview img{display:block;width:auto;height:auto;max-width:140px;max-height:62px;object-fit:contain}
 .sidebar-info-card{background:#f8fafc;border:1px solid #e5e8ee;border-radius:10px;padding:.75rem .85rem;color:#6b7280;font-size:.76rem;line-height:1.55}
+.sidebar-status-card{background:#f8fafc;border:1px solid #dfe3e8;border-radius:10px;padding:.75rem .78rem;margin:.3rem 0 .15rem}
+.sidebar-status-name{font-size:.67rem;font-weight:900;letter-spacing:.04em;color:#64748b;text-transform:uppercase}
+.sidebar-status-value{margin-top:.28rem;font-size:.82rem;font-weight:900;color:#111827;text-transform:uppercase}
+.sidebar-status-value.ok{color:#15803d}
+.sidebar-status-value.warn{color:#b45309}
+.sidebar-status-value.error{color:#b91c1c}
+.sidebar-status-meta{margin-top:.3rem;font-size:.64rem;line-height:1.4;color:#87909e}
+.api-status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin:.15rem 0 1rem}
+.api-status-card{position:relative;background:#fff;border:1px solid #dfe3e8;border-radius:11px;padding:.8rem .85rem .75rem;min-height:92px;box-sizing:border-box;box-shadow:0 3px 11px rgba(15,23,42,.035);overflow:hidden}
+.api-status-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--api-accent,#94a3b8)}
+.api-status-name{font-size:.66rem;font-weight:900;letter-spacing:.035em;color:#64748b;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.api-status-value{margin-top:.42rem;font-size:.78rem;font-weight:900;color:#111827;text-transform:uppercase}
+.api-status-meta{margin-top:.42rem;font-size:.61rem;line-height:1.35;color:#94a3b8}
+.api-overview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin:0 0 .9rem}
+.api-overview-card{background:#fff;border:1px solid #dfe3e8;border-radius:11px;padding:.75rem .85rem}
+.api-overview-label{font-size:.64rem;font-weight:900;color:#64748b;text-transform:uppercase}
+.api-overview-value{margin-top:.28rem;font-size:1.08rem;font-weight:900;color:#111827}
 .logo-preview{width:100%;min-height:150px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid #e5e8ee;border-radius:12px;padding:1rem;box-sizing:border-box;margin:.5rem 0 1rem}
 .logo-preview img{display:block;max-width:205px;max-height:86px;width:auto;height:auto;object-fit:contain}
-section[data-testid="stSidebar"] div[role="radiogroup"]{display:flex;flex-direction:column;gap:.34rem}
-section[data-testid="stSidebar"] div[role="radiogroup"] label{position:relative;width:100%;min-height:42px;display:flex!important;align-items:center!important;padding:.56rem .72rem .56rem .88rem!important;margin:0!important;border:1px solid transparent!important;border-radius:10px!important;background:transparent!important;cursor:pointer}
-section[data-testid="stSidebar"] div[role="radiogroup"] label>div:first-child{position:absolute!important;opacity:0!important;width:0!important;height:0!important;overflow:hidden!important}
+section[data-testid="stSidebar"] div[role="radiogroup"]{display:flex!important;flex-direction:column!important;gap:.46rem!important;margin:0!important;padding:0!important}
+section[data-testid="stSidebar"] div[role="radiogroup"] label{position:relative;width:100%;min-height:40px;display:flex!important;align-items:center!important;gap:0!important;padding:.55rem .72rem .55rem .78rem!important;margin:0!important;border:1px solid #e5e8ee!important;border-radius:9px!important;background:#fff!important;cursor:pointer;box-sizing:border-box!important}
+section[data-testid="stSidebar"] div[role="radiogroup"] label>div:first-child,
+section[data-testid="stSidebar"] div[role="radiogroup"] label [data-baseweb="radio"],
+section[data-testid="stSidebar"] div[role="radiogroup"] label input[type="radio"],
+section[data-testid="stSidebar"] div[role="radiogroup"] label svg{display:none!important;position:absolute!important;opacity:0!important;width:0!important;height:0!important;overflow:hidden!important}
 section[data-testid="stSidebar"] div[role="radiogroup"] label p{margin:0!important;font-size:.83rem!important;font-weight:600!important;color:#374151!important;white-space:normal!important;line-height:1.25!important}
-section[data-testid="stSidebar"] div[role="radiogroup"] label:hover{background:#f8fafc!important;border-color:#e5e7eb!important}
+section[data-testid="stSidebar"] div[role="radiogroup"] label:hover{background:#f8fafc!important;border-color:#d7dce3!important}
+section[data-testid="stSidebar"] [data-testid="stButton"]{margin:.46rem 0 0!important}
+section[data-testid="stSidebar"] [data-testid="stButton"] button{min-height:40px!important;border-radius:9px!important}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked){background:#111827!important;border-color:#111827!important;box-shadow:0 5px 14px rgba(17,24,39,.14)!important}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)::before{content:"";position:absolute;left:.42rem;top:50%;width:4px;height:20px;border-radius:999px;background:#ef4444;transform:translateY(-50%)}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p{color:#fff!important;font-weight:700!important}
@@ -41,6 +64,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 [data-testid="stMain"] .block-container,
 .stMain .block-container{width:100%!important;max-width:100%!important;margin-left:0!important;margin-right:0!important}
 section[data-testid="stSidebar"][aria-expanded="false"]{width:0!important;min-width:0!important;max-width:0!important;flex-basis:0!important}
+section[data-testid="stSidebar"][aria-expanded="false"]>div{width:0!important;min-width:0!important;max-width:0!important}
 .setta-logo-card{width:100%;min-height:128px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid #e5e8ee;border-radius:16px;box-shadow:0 4px 14px rgba(24,39,75,.08);box-sizing:border-box;margin:0 0 2.55rem;padding:1.1rem 2rem}
 .setta-logo-card img{display:block;width:auto;height:auto;max-width:205px;max-height:86px;object-fit:contain}
 .app-title{margin:0!important;padding:0!important;font-size:2.55rem!important;line-height:1.08!important;font-weight:800!important;letter-spacing:-.04em!important;color:#050505!important}
@@ -132,6 +156,10 @@ section[data-testid="stSidebar"][aria-expanded="false"]{width:0!important;min-wi
 .module-hero strong{display:block;color:#111827;font-size:.96rem;margin-bottom:.3rem}
 .module-hero span{color:#667085;font-size:.84rem;line-height:1.55}
 .footer{text-align:center;color:#9298a1;font-size:.72rem;padding-top:1.2rem}
+@media (max-width:1100px){
+.api-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+.api-overview{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
 @media (max-width:900px){
 .block-container{padding-top:2rem!important;padding-left:1rem!important;padding-right:1rem!important;padding-bottom:2rem!important}
 .setta-logo-card{min-height:105px;margin-bottom:1.8rem;padding:.9rem 1rem}
@@ -143,7 +171,7 @@ div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{min-width:100%!
 .inventory-row,.mov-row{grid-template-columns:1fr!important}
 .inventory-value,.mov-value{justify-content:flex-start!important;border-top:1px solid #eef0f3}
 .summary-grid{grid-template-columns:1fr!important}
-.cb-kpi-grid,.cb-source-grid{grid-template-columns:1fr!important}
+.cb-kpi-grid,.cb-source-grid,.api-status-grid,.api-overview{grid-template-columns:1fr!important}
 .tp-table-row{grid-template-columns:1fr!important}
 .tp-table-head{display:none!important}
 .tp-table-cell{border-right:0!important;border-bottom:1px solid #eef0f3;justify-content:flex-start!important}
