@@ -50,67 +50,53 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label input[type="radio"
 section[data-testid="stSidebar"] div[role="radiogroup"] label svg{display:none!important;position:absolute!important;opacity:0!important;width:0!important;height:0!important;overflow:hidden!important}
 section[data-testid="stSidebar"] div[role="radiogroup"] label p{margin:0!important;font-size:.83rem!important;font-weight:600!important;color:#374151!important;white-space:normal!important;line-height:1.25!important}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:hover{background:#f8fafc!important;border-color:#d7dce3!important}
-section[data-testid="stSidebar"] [data-testid="stButton"]{
-  margin:0 0 .55rem!important;
-}
-section[data-testid="stSidebar"] [data-testid="stButton"] button{
+section[data-testid="stSidebar"] div[data-testid="stButton"]{margin:0!important}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button{
   position:relative!important;
-  width:100%!important;
   min-height:42px!important;
-  display:flex!important;
-  align-items:center!important;
   justify-content:flex-start!important;
-  padding:.56rem .72rem .56rem .88rem!important;
-  margin:0!important;
-  border:1px solid transparent!important;
+  text-align:left!important;
+  padding:.56rem .72rem .56rem calc(.88rem + 10px)!important;
   border-radius:10px!important;
-  background:transparent!important;
-  box-shadow:none!important;
-  box-sizing:border-box!important;
-  transition:background .14s ease,border-color .14s ease,box-shadow .14s ease,transform .14s ease!important;
-}
-section[data-testid="stSidebar"] [data-testid="stButton"] button > div{
-  width:100%!important;
-  display:flex!important;
-  align-items:center!important;
-  justify-content:flex-start!important;
-}
-section[data-testid="stSidebar"] [data-testid="stButton"] button p{
-  margin:0!important;
-  width:100%!important;
-  color:#374151!important;
   font-size:.83rem!important;
   font-weight:600!important;
   line-height:1.2!important;
+  width:100%!important
+}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button > div{
+  width:100%!important;
   text-align:left!important;
-  white-space:normal!important;
+  justify-content:flex-start!important
 }
-section[data-testid="stSidebar"] [data-testid="stButton"] button[kind="secondary"],
-section[data-testid="stSidebar"] [data-testid="stButton"] button[data-testid="stBaseButton-secondary"]{
+section[data-testid="stSidebar"] div[data-testid="stButton"] button p{
+  width:100%!important;
+  margin:0!important;
+  text-align:left!important;
+  white-space:normal!important
+}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]{
   background:transparent!important;
-  border-color:transparent!important;
+  border:1px solid transparent!important;
   color:#374151!important;
+  box-shadow:none!important
 }
-section[data-testid="stSidebar"] [data-testid="stButton"] button[kind="secondary"]:hover,
-section[data-testid="stSidebar"] [data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover{
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover{
   background:#f8fafc!important;
   border-color:#e5e7eb!important;
-  transform:translateX(1px)!important;
+  color:#111827!important
 }
-section[data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"],
-section[data-testid="stSidebar"] [data-testid="stButton"] button[data-testid="stBaseButton-primary"]{
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]{
   background:#111827!important;
-  border-color:#111827!important;
+  border:1px solid #111827!important;
   color:#fff!important;
   box-shadow:0 5px 14px rgba(17,24,39,.14)!important;
+  font-weight:700!important
 }
-section[data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] p,
-section[data-testid="stSidebar"] [data-testid="stButton"] button[data-testid="stBaseButton-primary"] p{
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"] p{
   color:#fff!important;
-  font-weight:700!important;
+  font-weight:700!important
 }
-section[data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"]::before,
-section[data-testid="stSidebar"] [data-testid="stButton"] button[data-testid="stBaseButton-primary"]::before{
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]::before{
   content:"";
   position:absolute;
   left:.42rem;
@@ -119,7 +105,10 @@ section[data-testid="stSidebar"] [data-testid="stButton"] button[data-testid="st
   height:20px;
   border-radius:999px;
   background:#ef4444;
-  transform:translateY(-50%);
+  transform:translateY(-50%)
+}
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){
+  margin-bottom:-.45rem!important
 }
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked){background:#111827!important;border-color:#111827!important;box-shadow:0 5px 14px rgba(17,24,39,.14)!important}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)::before{content:"";position:absolute;left:.42rem;top:50%;width:4px;height:20px;border-radius:999px;background:#ef4444;transform:translateY(-50%)}
