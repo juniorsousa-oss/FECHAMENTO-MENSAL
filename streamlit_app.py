@@ -1993,13 +1993,6 @@ elif page == "Conferência de chapas e barramentos":
             if bool(row.get("ativo", True))
             and str(row.get("status") or "").upper() != "IGNORADO"
         ]
-        confirmed_catalog = standby_catalog
-        candidate_catalog = [
-            row
-            for row in standby_catalog
-            if str(row.get("status") or "").upper() == "CANDIDATO"
-        ]
-
         standby_lookup = {
             str(row.get("codigo") or "").strip(): row
             for row in standby_catalog
@@ -3016,7 +3009,7 @@ elif page == "Conferência de chapas e barramentos":
         )
         section_band(
             "03 · CONFERÊNCIA",
-            "CONSOLIDADO FÍSICO × SISTEMA",
+            "SISTEMA × CONTAGEM FÍSICA",
             "Diferença = ESTOQUE DO SISTEMA − CONTAGEM FÍSICA. O item entra na base final quando possui saldo no Analítico ou quando uma fonte física é vinculada ao seu código. Se houver contagem sem saldo no Analítico, o saldo sistema é zero. Para barramentos, o CONSUMO é apenas contexto de análise. A estimativa em R$ usa o Últ. Preço do CADASTROS.",
         )
 
