@@ -1849,21 +1849,18 @@ if page == "Dashboard":
 
 
 elif page == "Conferência de chapas e barramentos":
-    st.markdown(
-        '<div class="section-title">CONFERÊNCIA DE CHAPAS E BARRAMENTOS</div>',
-        unsafe_allow_html=True,
-    )
-
-    info_title_col, info_icon_col, _info_spacer = st.columns(
-        [0.29, 0.035, 0.675],
+    title_col, info_col, _title_spacer = st.columns(
+        [0.39, 0.035, 0.575],
         vertical_alignment="center",
     )
-    with info_title_col:
+
+    with title_col:
         st.markdown(
-            '<div class="cb-inline-title">CONFERÊNCIA FÍSICO × SISTEMA</div>',
+            '<div class="section-title">CONFERÊNCIA DE CHAPAS E BARRAMENTOS</div>',
             unsafe_allow_html=True,
         )
-    with info_icon_col:
+
+    with info_col:
         with st.popover(
             "ⓘ",
             help="Informações sobre a conferência",
