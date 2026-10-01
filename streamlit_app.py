@@ -120,6 +120,26 @@ def previous_month(value: date) -> date:
     return date(value.year, value.month - 1, 1)
 
 
+def competencia_from_source_update(meta: dict) -> date:
+    """A fonte atualizada no mês seguinte pertence ao fechamento anterior."""
+    raw = str((meta or {}).get("last_update_at") or "").strip()
+    if raw:
+        try:
+            updated_at = datetime.fromisoformat(
+                raw.replace("Z", "+00:00")
+            )
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=TZ)
+            local_date = updated_at.astimezone(TZ).date()
+            return previous_month(month_start(local_date))
+        except Exception:
+            pass
+
+    return previous_month(
+        month_start(datetime.now(TZ).date())
+    )
+
+
 def month_label(value: date) -> str:
     return f"{MONTHS_PT[value.month]}/{value.year}"
 
@@ -347,7 +367,9 @@ def render_manual_contingency(imports_by_month: dict[str, dict]) -> None:
         with col_a:
             competencia_input = st.date_input(
                 "COMPETÊNCIA",
-                value=month_start(datetime.now(TZ).date()),
+                value=previous_month(
+                    month_start(datetime.now(TZ).date())
+                ),
                 format="DD/MM/YYYY",
                 key="fm_contingencia_competencia",
             )
@@ -1195,7 +1217,9 @@ st.markdown(f'<p class="app-sub">{cfg["subtitle"]}</p>', unsafe_allow_html=True)
 
 _force_central_fm = bool(st.session_state.pop("_force_central_fm", False))
 central_context = central_analitico_context(force=_force_central_fm)
-current_competencia = month_start(datetime.now(TZ).date())
+current_competencia = competencia_from_source_update(
+    central_context.get("meta") or {}
+)
 central_balance_preview = (
     (central_context.get("balance") or {}).get("rows") or []
     if central_context.get("available")
