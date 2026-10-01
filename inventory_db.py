@@ -537,3 +537,18 @@ def save_cb_system_balances(
         timeout=120,
     )
     return result or {}
+
+
+
+def list_data_sources() -> list[dict]:
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/data_sources",
+        headers=_headers(),
+        params={
+            "select": "source_key,name,status,last_update_at,rows_count,origin,last_file_name,version,updated_at",
+            "order": "name.asc",
+        },
+        timeout=30,
+    )
+    _raise(response)
+    return response.json() or []
