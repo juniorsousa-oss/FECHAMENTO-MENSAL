@@ -1585,7 +1585,6 @@ visible_months = [
 
 
 if page == "Dashboard":
-    st.markdown('<div class="section-title">Dashboard de estoque mensal</div>', unsafe_allow_html=True)
     if data_error:
         st.error(f"Não foi possível carregar a base do fechamento: {data_error}")
 
@@ -1855,21 +1854,34 @@ elif page == "Conferência de chapas e barramentos":
         unsafe_allow_html=True,
     )
 
-    st.markdown(
-        """
-        <div class="module-hero">
-            <strong>CONFERÊNCIA FÍSICO × SISTEMA</strong>
-            <span>
-                O CADASTROS define o universo de materiais. Neste módulo, o Relatório
-                Analítico fornece somente o SALDO EM ESTOQUE da competência.
-                O físico é formado pelas fontes de Chapas, Barramentos e Almoxarifado.
-                Materiais novos passam por validação e, depois de confirmados, permanecem
-                automaticamente na base dos próximos fechamentos.
-            </span>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    info_title_col, info_icon_col = st.columns(
+        [0.94, 0.06],
+        vertical_alignment="center",
     )
+    with info_title_col:
+        st.markdown(
+            '<div class="cb-inline-title">CONFERÊNCIA FÍSICO × SISTEMA</div>',
+            unsafe_allow_html=True,
+        )
+    with info_icon_col:
+        with st.popover(
+            "ⓘ",
+            help="Informações sobre a conferência",
+            use_container_width=False,
+        ):
+            st.markdown(
+                """
+                O **CADASTROS** define o universo de materiais.
+
+                Neste módulo, o **Relatório Analítico** fornece somente o
+                **SALDO EM ESTOQUE** da competência.
+
+                O físico é formado pelas fontes de **Chapas, Barramentos e Almoxarifado**.
+
+                Materiais novos passam por validação e, depois de confirmados,
+                permanecem automaticamente na base dos próximos fechamentos.
+                """
+            )
 
     if not visible_months:
         st.info(
