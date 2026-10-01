@@ -1263,6 +1263,12 @@ def build_cb_reconciliation(
             if item_counts
             else None
         )
+        consumo_informado = sum(
+            float(row.get("consumo") or 0)
+            for row in item_counts
+            if str(row.get("fonte") or "")
+            == "BARRAMENTOS_EXCEL"
+        )
 
         source_parts = []
         for row in item_counts:
@@ -1270,13 +1276,27 @@ def build_cb_reconciliation(
                 str(row.get("fonte") or ""),
                 str(row.get("fonte") or ""),
             )
-            source_parts.append(
+            source_text = (
                 f"{source_label}: "
                 + f"{float(row.get('quantidade_fisica') or 0):,.3f}"
                 .replace(",", "X")
                 .replace(".", ",")
                 .replace("X", ".")
             )
+            row_consumo = float(row.get("consumo") or 0)
+            if (
+                str(row.get("fonte") or "")
+                == "BARRAMENTOS_EXCEL"
+                and row_consumo > 0
+            ):
+                source_text += (
+                    " · consumo "
+                    + f"{row_consumo:,.3f}"
+                    .replace(",", "X")
+                    .replace(".", ",")
+                    .replace("X", ".")
+                )
+            source_parts.append(source_text)
 
         divergencia_qtd = (
             None if physical is None else physical - saldo
@@ -1314,6 +1334,12 @@ def build_cb_reconciliation(
                 "ARMZ": ", ".join(sorted(item["armz"])),
                 "Saldo sistema": saldo,
                 "Físico": physical,
+                "Consumo informado": (
+                    consumo_informado
+                    if item["categoria"] == "BARRA_COBRE"
+                    and consumo_informado > 0
+                    else None
+                ),
                 "Divergência Qtd": divergencia_qtd,
                 "Custo unitário": custo_unitario,
                 "Origem custo": custo_origem,
@@ -2811,7 +2837,7 @@ elif page == "Conferência de chapas e barramentos":
         section_band(
             "03 · CONFERÊNCIA",
             "CONSOLIDADO FÍSICO × SISTEMA",
-            "Divergência Qtd = Físico − Sistema. O saldo sistêmico vem exclusivamente de SALDO EM ESTOQUE e valores negativos são tratados como zero. As fontes físicas são complementares e somadas por código. A estimativa em R$ usa o Últ. Preço do CADASTROS.",
+            "Divergência Qtd = Físico − Sistema. O saldo sistêmico vem exclusivamente de SALDO EM ESTOQUE e valores negativos são tratados como zero. As fontes físicas são complementares e somadas por código. Para barramentos, o CONSUMO informado pela produção aparece como contexto de análise, sem alterar automaticamente a divergência. A estimativa em R$ usa o Últ. Preço do CADASTROS.",
         )
 
         if not cb_stock_items:
@@ -2885,6 +2911,7 @@ elif page == "Conferência de chapas e barramentos":
                 for col in [
                     "Saldo sistema",
                     "Físico",
+                    "Consumo informado",
                     "Divergência Qtd",
                 ]:
                     shown[col] = shown[col].map(
@@ -2946,6 +2973,7 @@ elif page == "Conferência de chapas e barramentos":
                                 "U.M.",
                                 "Saldo sistema",
                                 "Físico",
+                                "Consumo informado",
                                 "Divergência Qtd",
                                 "Divergência R$",
                                 "Status",
