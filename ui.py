@@ -50,48 +50,66 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label input[type="radio"
 section[data-testid="stSidebar"] div[role="radiogroup"] label svg{display:none!important;position:absolute!important;opacity:0!important;width:0!important;height:0!important;overflow:hidden!important}
 section[data-testid="stSidebar"] div[role="radiogroup"] label p{margin:0!important;font-size:.83rem!important;font-weight:600!important;color:#374151!important;white-space:normal!important;line-height:1.25!important}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:hover{background:#f8fafc!important;border-color:#d7dce3!important}
-section[data-testid="stSidebar"] [data-testid="stButton"]{margin:0 0 .46rem!important}
+section[data-testid="stSidebar"] [data-testid="stButton"]{
+  margin:0 0 .55rem!important;
+}
 section[data-testid="stSidebar"] [data-testid="stButton"] button{
   position:relative!important;
-  min-height:40px!important;
   width:100%!important;
-  border-radius:9px!important;
+  min-height:42px!important;
+  display:flex!important;
+  align-items:center!important;
   justify-content:flex-start!important;
-  text-align:left!important;
-  padding:.55rem .72rem!important;
-  font-size:.79rem!important;
-  font-weight:700!important;
-  line-height:1.25!important;
+  padding:.56rem .72rem .56rem .88rem!important;
+  margin:0!important;
+  border:1px solid transparent!important;
+  border-radius:10px!important;
+  background:transparent!important;
   box-shadow:none!important;
+  box-sizing:border-box!important;
+  transition:background .14s ease,border-color .14s ease,box-shadow .14s ease,transform .14s ease!important;
 }
 section[data-testid="stSidebar"] [data-testid="stButton"] button > div{
   width:100%!important;
+  display:flex!important;
+  align-items:center!important;
   justify-content:flex-start!important;
-  text-align:left!important;
 }
 section[data-testid="stSidebar"] [data-testid="stButton"] button p{
   margin:0!important;
   width:100%!important;
+  color:#374151!important;
+  font-size:.83rem!important;
+  font-weight:600!important;
+  line-height:1.2!important;
   text-align:left!important;
   white-space:normal!important;
 }
+section[data-testid="stSidebar"] [data-testid="stButton"] button[kind="secondary"],
 section[data-testid="stSidebar"] [data-testid="stButton"] button[data-testid="stBaseButton-secondary"]{
-  background:#fff!important;
+  background:transparent!important;
+  border-color:transparent!important;
   color:#374151!important;
-  border:1px solid #e5e8ee!important;
 }
+section[data-testid="stSidebar"] [data-testid="stButton"] button[kind="secondary"]:hover,
 section[data-testid="stSidebar"] [data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover{
   background:#f8fafc!important;
-  color:#111827!important;
-  border-color:#d7dce3!important;
+  border-color:#e5e7eb!important;
+  transform:translateX(1px)!important;
 }
+section[data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"],
 section[data-testid="stSidebar"] [data-testid="stButton"] button[data-testid="stBaseButton-primary"]{
   background:#111827!important;
+  border-color:#111827!important;
   color:#fff!important;
-  border:1px solid #111827!important;
   box-shadow:0 5px 14px rgba(17,24,39,.14)!important;
-  padding-left:1.02rem!important;
 }
+section[data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] p,
+section[data-testid="stSidebar"] [data-testid="stButton"] button[data-testid="stBaseButton-primary"] p{
+  color:#fff!important;
+  font-weight:700!important;
+}
+section[data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"]::before,
 section[data-testid="stSidebar"] [data-testid="stButton"] button[data-testid="stBaseButton-primary"]::before{
   content:"";
   position:absolute;
