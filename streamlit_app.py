@@ -2684,12 +2684,12 @@ elif page == "Conferência de chapas e barramentos":
 
         with tab_internal:
             internal_file = st.file_uploader(
-                "Planilha do setor interno",
+                "Planilha do almoxarifado de barras",
                 type=["xlsx", "xltx"],
                 key="cb_internal_file",
                 help=(
-                    "O leitor procura automaticamente uma estrutura com "
-                    "CODIGO e MTS/METROS/QUANTIDADE."
+                    "Todos os itens precisam estar vinculados a um código "
+                    "de BARRA DE COBRE antes da importação."
                 ),
             )
 
@@ -2700,50 +2700,76 @@ elif page == "Conferência de chapas e barramentos":
                         internal_file.name,
                     )
 
-                    confirmed_codes = {
-                        str(row.get("codigo"))
-                        for row in confirmed_catalog
+                    internal_catalog = {
+                        str(row.get("codigo") or "").strip(): row
+                        for row in standby_catalog
+                        if row.get("categoria") == "BARRA_COBRE"
                     }
                     internal_valid = []
                     internal_issues = []
 
                     for row in parsed_internal["rows"]:
-                        code = normalize_code(row.get("codigo"))
-                        if code not in confirmed_codes:
+                        source_code = normalize_code(
+                            row.get("codigo")
+                        )
+                        mapped_code = (
+                            source_code
+                            if source_code in internal_catalog
+                            else physical_mapping_lookup.get(
+                                (
+                                    "INTERNO_EXCEL",
+                                    source_code,
+                                ),
+                                "",
+                            )
+                        )
+
+                        if mapped_code not in internal_catalog:
                             internal_issues.append(
                                 {
-                                    "Código": code,
-                                    "Motivo": "CÓDIGO NÃO CONFIRMADO NA BASE MESTRE",
-                                }
-                            )
-                        else:
-                            internal_valid.append(
-                                {
-                                    "codigo": code,
-                                    "quantidade_fisica": float(
+                                    "Código origem": source_code,
+                                    "Quantidade": float(
                                         row.get(
                                             "quantidade_fisica"
                                         )
                                         or 0
                                     ),
-                                    "observacao": (
-                                        f"{parsed_internal['sheet']} · "
-                                        f"coluna {parsed_internal['quantity_label']}"
-                                    ),
                                 }
                             )
+                            continue
+
+                        internal_valid.append(
+                            {
+                                "codigo": mapped_code,
+                                "quantidade_fisica": float(
+                                    row.get(
+                                        "quantidade_fisica"
+                                    )
+                                    or 0
+                                ),
+                                "observacao": (
+                                    f"{parsed_internal['sheet']} · "
+                                    f"coluna {parsed_internal['quantity_label']}"
+                                    + (
+                                        f" · origem {source_code}"
+                                        if mapped_code != source_code
+                                        else ""
+                                    )
+                                ),
+                            }
+                        )
 
                     in1, in2, in3 = st.columns(3)
                     in1.metric(
-                        "Códigos encontrados",
+                        "Itens do relatório",
                         parsed_internal["total_rows"],
                     )
                     in2.metric(
-                        "Prontos para importar",
+                        "Vinculados",
                         len(internal_valid),
                     )
                     in3.metric(
-                        "Pendências",
+                        "Sem vínculo",
                         len(internal_issues),
                     )
 
@@ -2751,8 +2777,8 @@ elif page == "Conferência de chapas e barramentos":
                         st.dataframe(
                             pd.DataFrame(internal_valid).rename(
                                 columns={
-                                    "codigo": "Código",
-                                    "quantidade_fisica": "Físico interno",
+                                    "codigo": "Código sistema",
+                                    "quantidade_fisica": "Contagem almox. (m)",
                                     "observacao": "Origem",
                                 }
                             ),
@@ -2761,16 +2787,99 @@ elif page == "Conferência de chapas e barramentos":
                         )
 
                     if internal_issues:
-                        st.error(
-                            "Existem códigos ainda não confirmados na base mestre."
+                        st.warning(
+                            "A importação fica bloqueada até que TODOS os itens "
+                            "da contagem do almoxarifado estejam vinculados."
                         )
-                        st.dataframe(
-                            pd.DataFrame(internal_issues),
+
+                        internal_options = [
+                            f"{row.get('codigo')} · {row.get('descricao')}"
+                            for row in standby_catalog
+                            if row.get("categoria") == "BARRA_COBRE"
+                        ]
+                        mapping_rows = [
+                            {
+                                "ID": index,
+                                "Código origem": issue.get(
+                                    "Código origem"
+                                ),
+                                "Quantidade": issue.get("Quantidade"),
+                                "Vincular ao código": "",
+                            }
+                            for index, issue in enumerate(
+                                internal_issues
+                            )
+                        ]
+
+                        edited_internal_maps = st.data_editor(
+                            pd.DataFrame(mapping_rows),
                             use_container_width=True,
                             hide_index=True,
+                            disabled=[
+                                "ID",
+                                "Código origem",
+                                "Quantidade",
+                            ],
+                            column_config={
+                                "Vincular ao código": (
+                                    st.column_config.SelectboxColumn(
+                                        "Vincular ao código",
+                                        options=[""] + internal_options,
+                                        required=True,
+                                    )
+                                )
+                            },
+                            key="cb_internal_mapping_editor",
                         )
-                    elif st.button(
-                        "IMPORTAR CONTAGEM INTERNA",
+
+                        if st.button(
+                            "SALVAR VÍNCULOS DO ALMOXARIFADO",
+                            type="primary",
+                            use_container_width=True,
+                            key="cb_save_internal_maps",
+                        ):
+                            missing_links = edited_internal_maps[
+                                edited_internal_maps[
+                                    "Vincular ao código"
+                                ].astype(str).str.strip() == ""
+                            ]
+                            if not missing_links.empty:
+                                st.error(
+                                    "Vincule todos os itens antes de salvar."
+                                )
+                            else:
+                                for _, edit_row in (
+                                    edited_internal_maps.iterrows()
+                                ):
+                                    issue = internal_issues[
+                                        int(edit_row["ID"])
+                                    ]
+                                    selected_code = str(
+                                        edit_row[
+                                            "Vincular ao código"
+                                        ]
+                                    ).split(" · ", 1)[0].strip()
+
+                                    db.save_cb_physical_mapping(
+                                        "INTERNO_EXCEL",
+                                        str(
+                                            issue.get(
+                                                "Código origem"
+                                            )
+                                            or ""
+                                        ),
+                                        "CONTAGEM ALMOXARIFADO",
+                                        selected_code,
+                                    )
+                                st.session_state[
+                                    "_cb_count_flash"
+                                ] = (
+                                    "Vínculos do almoxarifado salvos."
+                                )
+                                st.rerun()
+
+                    elif internal_valid and st.button(
+                        "IMPORTAR CONTAGEM DO ALMOXARIFADO",
                         type="primary",
                         use_container_width=True,
                         key="cb_import_internal",
@@ -2782,12 +2891,13 @@ elif page == "Conferência de chapas e barramentos":
                             internal_valid,
                         )
                         st.session_state["_cb_count_flash"] = (
-                            "Contagem interna importada."
+                            "Contagem do almoxarifado importada. "
+                            "Todos os itens possuem vínculo com o sistema."
                         )
                         st.rerun()
                 except Exception as exc:
                     st.error(
-                        f"Não foi possível ler a planilha interna: {exc}"
+                        f"Não foi possível ler a planilha do almoxarifado: {exc}"
                     )
 
             st.markdown("#### LANÇAMENTO MANUAL")
