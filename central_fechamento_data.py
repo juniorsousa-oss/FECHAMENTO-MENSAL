@@ -141,3 +141,89 @@ def format_dt(value: Any) -> str:
         return dt.astimezone(TZ).strftime("%d/%m/%Y %H:%M")
     except Exception:
         return str(value)
+
+
+
+def source_state_for(source_key: str) -> dict:
+    key = str(source_key or "").strip()
+    if not key:
+        return {}
+
+    payload = api_call(
+        "bundle_state",
+        {
+            "source_keys": [key],
+            "derived_keys": [],
+        },
+        timeout=30,
+    ).get("data") or {}
+
+    for row in payload.get("sources") or []:
+        if (
+            isinstance(row, dict)
+            and str(row.get("source_key") or "") == key
+        ):
+            return row
+    return {}
+
+
+def download_source(source_key: str) -> tuple[bytes, dict]:
+    key = str(source_key or "").strip()
+    meta = api_call(
+        "source_download",
+        {"source_key": key},
+        timeout=30,
+    ).get("data") or {}
+
+    signed_url = str(meta.get("signed_url") or "")
+    if not signed_url:
+        raise RuntimeError(
+            f"{key.upper()} sem URL de leitura."
+        )
+
+    response = SESSION.get(signed_url, timeout=120)
+    response.raise_for_status()
+    return response.content, meta
+
+
+def sync_state_for(source_key: str) -> dict:
+    key = str(source_key or "").strip()
+    rows = api_call(
+        "consumer_sync_status",
+        {"consumer_key": CONSUMER_KEY},
+        timeout=30,
+    ).get("data") or []
+
+    for row in rows:
+        if (
+            isinstance(row, dict)
+            and str(row.get("source_key") or "") == key
+        ):
+            return row
+    return {}
+
+
+def commit_source_sync(
+    source_key: str,
+    version_token: str,
+    source_updated_at: Any,
+    rows_count: int,
+    *,
+    status: str = "ATUALIZADO",
+    error_message: str | None = None,
+) -> dict:
+    key = str(source_key or "").strip()
+
+    return api_call(
+        "consumer_sync_commit",
+        {
+            "consumer_key": CONSUMER_KEY,
+            "source_key": key,
+            "version_token": version_token,
+            "source_updated_at": source_updated_at,
+            "rows_count": int(rows_count or 0),
+            "status": status,
+            "error_message": error_message,
+        },
+        timeout=30,
+    ).get("data") or {}
