@@ -1967,6 +1967,7 @@ elif page == "Conferência de chapas e barramentos":
             cb_catalog = db.list_cb_catalog()
             cb_counts = db.list_cb_counts(cb_month)
             cb_mappings = db.list_cb_sheet_mappings()
+            cb_physical_mappings = db.list_cb_physical_mappings()
             cb_imports = db.list_cb_imports(cb_month)
             cb_error = ""
         except Exception as exc:
@@ -1974,6 +1975,7 @@ elif page == "Conferência de chapas e barramentos":
             cb_catalog = []
             cb_counts = []
             cb_mappings = []
+            cb_physical_mappings = []
             cb_imports = []
             cb_error = str(exc)
 
@@ -1985,16 +1987,31 @@ elif page == "Conferência de chapas e barramentos":
         if cb_month == current_competencia and central_balance_preview:
             cb_stock_items = central_balance_preview
 
-        confirmed_catalog = [
+        standby_catalog = [
             row
             for row in cb_catalog
-            if str(row.get("status") or "").upper() == "CONFIRMADO"
+            if bool(row.get("ativo", True))
+            and str(row.get("status") or "").upper() != "IGNORADO"
         ]
+        confirmed_catalog = standby_catalog
         candidate_catalog = [
             row
-            for row in cb_catalog
+            for row in standby_catalog
             if str(row.get("status") or "").upper() == "CANDIDATO"
         ]
+
+        standby_lookup = {
+            str(row.get("codigo") or "").strip(): row
+            for row in standby_catalog
+        }
+        physical_mapping_lookup = {
+            (
+                str(row.get("fonte") or "").strip(),
+                str(row.get("chave_origem") or "").strip(),
+            ): str(row.get("codigo") or "").strip()
+            for row in cb_physical_mappings
+            if str(row.get("status") or "").upper() == "CONFIRMADO"
+        }
 
         st.markdown(
             '<div class="topic-divider"></div>',
