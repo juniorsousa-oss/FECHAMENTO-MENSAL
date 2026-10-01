@@ -1854,8 +1854,8 @@ elif page == "Conferência de chapas e barramentos":
         unsafe_allow_html=True,
     )
 
-    info_title_col, info_icon_col = st.columns(
-        [0.94, 0.06],
+    info_title_col, info_icon_col, _info_spacer = st.columns(
+        [0.29, 0.035, 0.675],
         vertical_alignment="center",
     )
     with info_title_col:
