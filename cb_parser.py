@@ -532,6 +532,7 @@ def parse_barramentos_excel(raw: bytes, file_name: str) -> dict:
     )
 
     chosen = None
+
     for ws in wb.worksheets:
         for row_index in range(1, min(ws.max_row, 20) + 1):
             headers = {
@@ -539,39 +540,73 @@ def parse_barramentos_excel(raw: bytes, file_name: str) -> dict:
                 for col in range(1, ws.max_column + 1)
             }
             values = set(headers.values())
+
             has_code = "CODIGO" in values
-            has_barras = any(
-                value.startswith("BARRAS")
-                for value in values
+
+            # Novo modelo: CODIGO + TOTAL FECHAMENTO <MÊS>
+            total_col = next(
+                (
+                    col for col, value in headers.items()
+                    if value.startswith("TOTAL FECHAMENTO")
+                ),
+                None,
             )
-            has_processado = any(
-                "PROCESSADO" in value
-                for value in values
+
+            # Modelo antigo: CODIGO + BARRAS + PROCESSADO
+            bars_col = next(
+                (
+                    col for col, value in headers.items()
+                    if value.startswith("BARRAS")
+                ),
+                None,
             )
-            if has_code and has_barras and has_processado:
-                chosen = (ws, row_index, headers)
+            processed_col = next(
+                (
+                    col for col, value in headers.items()
+                    if "PROCESSADO" in value
+                ),
+                None,
+            )
+
+            if has_code and (
+                total_col is not None
+                or (
+                    bars_col is not None
+                    and processed_col is not None
+                )
+            ):
+                chosen = (
+                    ws,
+                    row_index,
+                    headers,
+                    total_col,
+                    bars_col,
+                    processed_col,
+                )
                 break
+
         if chosen:
             break
 
     if not chosen:
         raise ValueError(
-            "Não encontrei as colunas CODIGO, BARRAS e PROCESSADO "
-            "na planilha de barramentos."
+            "Não encontrei uma estrutura válida de barramentos. "
+            "É necessário CODIGO + TOTAL FECHAMENTO ou "
+            "CODIGO + BARRAS + PROCESSADO."
         )
 
-    ws, header_row, headers = chosen
+    (
+        ws,
+        header_row,
+        headers,
+        total_col,
+        bars_col,
+        processed_col,
+    ) = chosen
+
     code_col = next(
         col for col, value in headers.items()
         if value == "CODIGO"
-    )
-    bars_col = next(
-        col for col, value in headers.items()
-        if value.startswith("BARRAS")
-    )
-    processed_col = next(
-        col for col, value in headers.items()
-        if "PROCESSADO" in value
     )
     model_col = next(
         (
@@ -580,51 +615,109 @@ def parse_barramentos_excel(raw: bytes, file_name: str) -> dict:
         ),
         None,
     )
+    consumption_col = next(
+        (
+            col for col, value in headers.items()
+            if value == "CONSUMO"
+            or value.startswith("CONSUMO ")
+        ),
+        None,
+    )
 
     aggregated: dict[str, dict] = {}
 
     for row_index in range(header_row + 1, ws.max_row + 1):
-        codigo = normalize_code(ws.cell(row_index, code_col).value)
+        codigo = normalize_code(
+            ws.cell(row_index, code_col).value
+        )
         if not codigo:
             continue
 
-        barras = to_number(ws.cell(row_index, bars_col).value)
-        processado = to_number(
-            ws.cell(row_index, processed_col).value
-        )
-        total = barras + processado
         modelo = (
-            str(ws.cell(row_index, model_col).value or "").strip()
+            str(
+                ws.cell(row_index, model_col).value
+                or ""
+            ).strip()
             if model_col
             else ""
         )
+
+        consumo = (
+            to_number(
+                ws.cell(row_index, consumption_col).value
+            )
+            if consumption_col
+            else 0.0
+        )
+
+        if total_col is not None:
+            total = to_number(
+                ws.cell(row_index, total_col).value
+            )
+            barras = 0.0
+            processado = 0.0
+            criterio = "TOTAL FECHAMENTO"
+        else:
+            barras = to_number(
+                ws.cell(row_index, bars_col).value
+            )
+            processado = to_number(
+                ws.cell(row_index, processed_col).value
+            )
+            total = barras + processado
+            criterio = "BARRAS + PROCESSADO"
 
         current = aggregated.setdefault(
             codigo,
             {
                 "codigo": codigo,
                 "quantidade_fisica": 0.0,
+                "consumo": 0.0,
                 "barras": 0.0,
                 "processado": 0.0,
                 "modelo": modelo,
+                "criterio": criterio,
             },
         )
-        current["quantidade_fisica"] += total
-        current["barras"] += barras
-        current["processado"] += processado
+
+        current["quantidade_fisica"] += float(
+            total or 0
+        )
+        current["consumo"] += float(
+            consumo or 0
+        )
+        current["barras"] += float(
+            barras or 0
+        )
+        current["processado"] += float(
+            processado or 0
+        )
+
         if not current["modelo"]:
             current["modelo"] = modelo
 
     rows = list(aggregated.values())
+    wb.close()
+
     return {
         "file_name": file_name,
         "rows": rows,
         "total_rows": len(rows),
         "total_metros": sum(
-            row["quantidade_fisica"] for row in rows
+            float(row["quantidade_fisica"] or 0)
+            for row in rows
+        ),
+        "total_consumo": sum(
+            float(row["consumo"] or 0)
+            for row in rows
+        ),
+        "consumo_disponivel": consumption_col is not None,
+        "criterio": (
+            "TOTAL FECHAMENTO"
+            if total_col is not None
+            else "BARRAS + PROCESSADO"
         ),
     }
-
 
 def parse_interno_excel(raw: bytes, file_name: str) -> dict:
     wb = openpyxl.load_workbook(
