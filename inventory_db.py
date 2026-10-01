@@ -440,6 +440,43 @@ def save_cb_sheet_mapping(
     )
 
 
+def list_cb_physical_mappings() -> list[dict]:
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/fm_cb_fisico_mapeamentos",
+        headers=_headers(),
+        params={
+            "select": (
+                "id,fonte,chave_origem,descricao_origem,"
+                "codigo,status,atualizado_em"
+            ),
+            "order": "fonte.asc,chave_origem.asc",
+        },
+        timeout=30,
+    )
+    _raise(response)
+    return response.json() or []
+
+
+def save_cb_physical_mapping(
+    fonte: str,
+    chave_origem: str,
+    descricao_origem: str,
+    codigo: str,
+) -> None:
+    rpc(
+        "fm_cb_salvar_mapeamento_fisico",
+        {
+            "p_fonte": str(fonte or "").strip(),
+            "p_chave_origem": str(chave_origem or "").strip(),
+            "p_descricao_origem": str(
+                descricao_origem or ""
+            ).strip(),
+            "p_codigo": str(codigo or "").strip(),
+        },
+        timeout=30,
+    )
+
+
 def save_cb_counts_batch(
     competencia: date,
     fonte: str,
