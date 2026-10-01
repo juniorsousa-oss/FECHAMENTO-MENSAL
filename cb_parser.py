@@ -178,6 +178,9 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
         "REF.",
         "REF",
         "REFERÊNCIA",
+        "COD.REF. FOR",
+        "COD REF FOR",
+        "COD. REF. FOR",
     ):
         normalized = normalize_text(possible)
         if normalized in header_map:
