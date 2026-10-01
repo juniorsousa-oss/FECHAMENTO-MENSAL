@@ -179,6 +179,9 @@ section[data-testid="stSidebar"][aria-expanded="false"]>div{width:0!important;mi
 .cb-source-title{font-size:.8rem;font-weight:900;color:#111827;text-transform:uppercase;margin-bottom:.3rem}
 .cb-source-text{font-size:.74rem;color:#667085;line-height:1.45}
 .cb-source-tag{display:inline-flex;margin-top:.55rem;padding:.22rem .46rem;border-radius:999px;background:#f1f5f9;color:#475569;font-size:.64rem;font-weight:800}
+.cb-inline-title{font-size:.92rem;font-weight:900;color:#111827;letter-spacing:-.01em;text-transform:uppercase;line-height:1.2;margin:.25rem 0 .35rem}
+div[data-testid="stPopover"] button{min-height:28px!important;width:28px!important;height:28px!important;padding:0!important;border-radius:999px!important;border:1px solid #d8dde5!important;background:#fff!important;color:#64748b!important;font-size:.92rem!important;font-weight:800!important;box-shadow:none!important}
+div[data-testid="stPopover"] button:hover{background:#f8fafc!important;border-color:#cbd5e1!important;color:#111827!important}
 .summary-card{position:relative;background:#fff;border:1px solid #dfe3e8;border-radius:14px;box-shadow:0 4px 16px rgba(15,23,42,.05);padding:1rem 1.15rem 1.05rem;overflow:hidden}
 .summary-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:#111827}
 .summary-card-label{font-size:.7rem;font-weight:900;letter-spacing:.045em;text-transform:uppercase;color:#64748b;margin-bottom:.55rem}
