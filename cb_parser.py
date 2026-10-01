@@ -199,11 +199,15 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
             price_idx = header_map[normalized]
             break
 
+    ativo_idx = header_map.get("ATIVO")
+
     indexes = [code_idx, desc_idx]
     if reference_idx is not None:
         indexes.append(reference_idx)
     if price_idx is not None:
         indexes.append(price_idx)
+    if ativo_idx is not None:
+        indexes.append(ativo_idx)
 
     max_col = max(indexes) + 1
 
@@ -212,6 +216,21 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
     rows_discarded = 0
     known_codes_found = 0
     new_candidates_found = 0
+    blocked_rows = 0
+    inconsistent_rows = 0
+    ok_master_rows = 0
+
+    def master_code(value: Any) -> str:
+        if value is None:
+            return ""
+
+        if isinstance(value, (int, float)):
+            if isinstance(value, float) and not value.is_integer():
+                return str(value).strip()
+            digits = str(int(value))
+            return digits.zfill(8) if len(digits) <= 8 else digits
+
+        return str(value).strip()
 
     for values in ws.iter_rows(
         min_row=header_row + 1,
@@ -229,10 +248,35 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
             rows_discarded += 1
             continue
 
-        codigo = normalize_code(codigo_raw)
-        if not codigo:
+        codigo_master = master_code(codigo_raw)
+        codigo_valido = bool(
+            re.fullmatch(r"\d{8}", codigo_master)
+        )
+
+        ativo_value = (
+            normalize_text(values[ativo_idx])
+            if ativo_idx is not None
+            and ativo_idx < len(values)
+            else ""
+        )
+
+        if ativo_idx is not None:
+            if ativo_value == "N":
+                blocked_rows += 1
+                rows_discarded += 1
+                continue
+            if ativo_value not in ("S", ""):
+                inconsistent_rows += 1
+                rows_discarded += 1
+                continue
+
+        if not codigo_valido:
+            inconsistent_rows += 1
             rows_discarded += 1
             continue
+
+        codigo = codigo_master
+        ok_master_rows += 1
 
         descricao = str(
             values[desc_idx]
@@ -335,6 +379,9 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
         "new_candidates_found": new_candidates_found,
         "rows_read": total_rows_read,
         "rows_discarded": rows_discarded,
+        "master_ok_rows": ok_master_rows,
+        "master_blocked_rows": blocked_rows,
+        "master_inconsistent_rows": inconsistent_rows,
     }
 
 def parse_chapas_eml(raw: bytes, file_name: str) -> dict:
