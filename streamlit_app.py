@@ -211,6 +211,19 @@ def load_central_analitico(version_token: str) -> tuple[dict, dict, dict]:
     return parsed, balance, meta
 
 
+@st.cache_data(show_spinner=False, ttl=300, max_entries=4)
+def load_central_cadastros(
+    version_token: str,
+) -> tuple[dict, dict]:
+    del version_token
+    raw, meta = central_data.download_source("cadastros")
+    file_name = str(
+        meta.get("last_file_name") or "CADASTROS.xltx"
+    )
+    parsed = parse_cadastros(raw, file_name)
+    return parsed, meta
+
+
 def build_preview_summaries(competencia: date, rows: list[dict]) -> list[dict]:
     if not rows:
         return []
@@ -334,6 +347,83 @@ def central_analitico_context(force: bool = False) -> dict:
             )
         except Exception:
             pass
+        return {
+            "available": False,
+            "meta": meta,
+            "token": token,
+            "status": "ERRO",
+            "error": str(exc),
+        }
+
+
+def central_cadastros_context(
+    force: bool = False,
+) -> dict:
+    try:
+        meta = central_data.source_state_for("cadastros")
+    except Exception as exc:
+        return {
+            "available": False,
+            "status": "ERRO",
+            "error": str(exc),
+        }
+
+    if not meta or not bool(meta.get("available", True)):
+        return {
+            "available": False,
+            "meta": meta,
+            "status": "INDISPONÍVEL",
+            "error": "CADASTROS indisponível na Central de Dados.",
+        }
+
+    token = central_data.source_token(meta)
+
+    if force:
+        load_central_cadastros.clear()
+
+    try:
+        parsed, download_meta = load_central_cadastros(
+            token
+        )
+        sync = central_data.sync_state_for("cadastros")
+        needs_sync = (
+            force
+            or str(sync.get("version_token") or "") != token
+            or str(sync.get("status") or "").upper()
+            != "ATUALIZADO"
+        )
+
+        if needs_sync:
+            db.sync_cb_catalog(parsed["candidates"])
+            central_data.commit_source_sync(
+                "cadastros",
+                token,
+                meta.get("last_update_at"),
+                int(parsed.get("total_candidates") or 0),
+                status="ATUALIZADO",
+            )
+
+        return {
+            "available": True,
+            "meta": {**meta, **download_meta},
+            "token": token,
+            "parsed": parsed,
+            "status": "ATUALIZADO",
+            "synchronized": needs_sync,
+        }
+    except Exception as exc:
+        try:
+            central_data.commit_source_sync(
+                "cadastros",
+                token,
+                meta.get("last_update_at"),
+                0,
+                status="ERRO",
+                error_message=str(exc)[:1500],
+            )
+        except Exception:
+            pass
+
         return {
             "available": False,
             "meta": meta,
@@ -1629,6 +1719,16 @@ elif page == "Conferência de chapas e barramentos":
         )
         st.query_params["mes_cb"] = cb_month.strftime("%Y-%m")
 
+        force_cadastros = bool(
+            st.session_state.pop(
+                "_force_cb_cadastros",
+                False,
+            )
+        )
+        cadastros_context = central_cadastros_context(
+            force=force_cadastros
+        )
+
         try:
             cb_stock_items = db.list_cb_system_balances(cb_month)
             cb_catalog = db.list_cb_catalog()
@@ -1670,7 +1770,7 @@ elif page == "Conferência de chapas e barramentos":
         section_band(
             "01 · BASE MESTRE",
             "CADASTRO DE CHAPAS E BARRAS DE COBRE",
-            "O CADASTROS fornece principalmente CÓDIGO e DESCRIÇÃO, com REFERÊNCIA e ÚLT. PREÇO quando disponíveis. CHAPA é sempre KG e BARRAMENTO é sempre MT. Novos candidatos só entram na base após validação.",
+            "A base é alimentada automaticamente pelo CADASTROS da Central de Dados. O módulo utiliza CÓDIGO e DESCRIÇÃO, com REFERÊNCIA e ÚLT. PREÇO quando disponíveis. CHAPA é sempre KG e BARRAMENTO é sempre MT. Novos candidatos entram para validação.",
         )
 
         base_col1, base_col2, base_col3 = st.columns(3)
@@ -1687,63 +1787,74 @@ elif page == "Conferência de chapas e barramentos":
             "OK" if cb_stock_items else "PENDENTE",
         )
 
-        cadastro_file = st.file_uploader(
-            "Atualizar base pelo relatório CADASTROS",
-            type=["xlsx", "xltx"],
-            key="cb_cadastros_file",
-            help=(
-                "O arquivo é reprocessado a cada fechamento. Novos códigos de chapa "
-                "ou barra de cobre entram como candidatos para validação."
-            ),
-        )
+        cad_meta = cadastros_context.get("meta") or {}
+        cad_parsed = cadastros_context.get("parsed") or {}
 
-        if cadastro_file is not None:
-            try:
-                cadastro_bytes = cadastro_file.getvalue()
-                with st.spinner(
-                    "Lendo somente os materiais candidatos a chapas e barras..."
-                ):
-                    parsed_cad = cached_parse_cadastros(
-                        cadastro_bytes,
-                        cadastro_file.name,
+        if cadastros_context.get("available"):
+            src1, src2, src3, src4 = st.columns(4)
+            src1.metric("FONTE", "CADASTROS")
+            src2.metric(
+                "VERSÃO",
+                f"V{int(cad_meta.get('version') or 0)}",
+            )
+            src3.metric(
+                "REGISTROS NA CENTRAL",
+                f"{int(cad_meta.get('rows_count') or 0):,}".replace(
+                    ",",
+                    ".",
+                ),
+            )
+            src4.metric(
+                "CHAPAS/BARRAS IDENTIFICADAS",
+                int(
+                    cad_parsed.get(
+                        "total_candidates",
+                        len(confirmed_catalog)
+                        + len(candidate_catalog),
                     )
+                    or 0
+                ),
+            )
 
-                ca, cb, cc, cd = st.columns(4)
-                ca.metric(
-                    "Base conhecida",
-                    parsed_cad.get("known_codes_found", 0),
+            st.caption(
+                "FONTE AUTOMÁTICA · "
+                + str(
+                    cad_meta.get("last_file_name")
+                    or "CADASTROS"
                 )
-                cb.metric(
-                    "Novos candidatos",
-                    parsed_cad.get("new_candidates_found", 0),
+                + " · ATUALIZADO EM "
+                + central_data.format_dt(
+                    cad_meta.get("last_update_at")
                 )
-                cc.metric(
-                    "Total chapa/barra",
-                    parsed_cad["total_candidates"],
-                )
-                cd.metric(
-                    "Linhas descartadas",
-                    parsed_cad.get("rows_discarded", 0),
+            )
+
+            if cadastros_context.get("synchronized"):
+                st.success(
+                    "Nova versão do CADASTROS sincronizada automaticamente "
+                    "com a base de chapas e barramentos."
                 )
 
-                if st.button(
-                    "SINCRONIZAR CADASTROS",
-                    type="primary",
-                    use_container_width=True,
-                    key="cb_sync_cad",
-                ):
-                    db.sync_cb_catalog(
-                        parsed_cad["candidates"]
-                    )
-                    st.session_state["_cb_base_flash"] = (
-                        "CADASTROS sincronizado. Novos materiais foram "
-                        "incluídos como candidatos."
-                    )
-                    st.rerun()
-            except Exception as exc:
-                st.error(
-                    f"Não foi possível ler o CADASTROS: {exc}"
+            if st.button(
+                "REPROCESSAR CADASTROS",
+                use_container_width=True,
+                key="cb_reprocess_cadastros",
+                help=(
+                    "Força nova leitura da versão atual da Central de Dados. "
+                    "Use apenas se precisar reconstruir a base filtrada."
+                ),
+            ):
+                st.session_state[
+                    "_force_cb_cadastros"
+                ] = True
+                st.rerun()
+        else:
+            st.error(
+                "CADASTROS DA CENTRAL DE DADOS INDISPONÍVEL. "
+                + str(
+                    cadastros_context.get("error")
+                    or ""
                 )
+            )
 
         flash_base = st.session_state.pop(
             "_cb_base_flash",
