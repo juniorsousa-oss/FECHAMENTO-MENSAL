@@ -314,6 +314,26 @@ def save_cb_catalog_item(
     )
 
 
+def confirm_cb_catalog_item(
+    codigo: str,
+    categoria: str,
+    descricao: str = "",
+    referencia: str = "",
+    ult_preco: float = 0.0,
+) -> None:
+    rpc(
+        "fm_cb_confirmar_item_catalogo",
+        {
+            "p_codigo": str(codigo).strip(),
+            "p_categoria": str(categoria).strip(),
+            "p_descricao": str(descricao or "").strip(),
+            "p_referencia": str(referencia or "").strip(),
+            "p_ult_preco": float(ult_preco or 0),
+        },
+        timeout=30,
+    )
+
+
 def list_cb_counts(competencia: date | str) -> list[dict]:
     if isinstance(competencia, date):
         key = competencia.replace(day=1).isoformat()
