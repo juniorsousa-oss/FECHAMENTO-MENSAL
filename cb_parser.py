@@ -212,6 +212,7 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
     max_col = max(indexes) + 1
 
     candidates: list[dict] = []
+    master_lookup: dict[str, dict] = {}
     total_rows_read = 0
     rows_discarded = 0
     known_codes_found = 0
@@ -299,6 +300,14 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
             else 0.0
         )
 
+        master_lookup[codigo] = {
+            "codigo": codigo,
+            "descricao": descricao,
+            "referencia": referencia,
+            "ult_preco": ult_preco,
+            "ativo": ativo_value,
+        }
+
         desc_norm = normalize_text(descricao)
         ref_norm = normalize_text(referencia)
 
@@ -320,7 +329,8 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
         # Novos códigos entram como candidato apenas quando a descrição
         # ou referência indicar claramente chapa ou barra de cobre.
         elif (
-            desc_norm.startswith("BARRA DE COBRE")
+            "BARRA DE COBRE" in desc_norm
+            or desc_norm.startswith("BARRAMENTO COBRE")
             or "BARRA DE COBRE" in ref_norm
         ):
             categoria = "BARRA_COBRE"
@@ -382,6 +392,7 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
         "master_ok_rows": ok_master_rows,
         "master_blocked_rows": blocked_rows,
         "master_inconsistent_rows": inconsistent_rows,
+        "master_lookup": master_lookup,
     }
 
 def parse_chapas_eml(raw: bytes, file_name: str) -> dict:
