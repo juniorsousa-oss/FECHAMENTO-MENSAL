@@ -622,6 +622,7 @@ def api_status_cards_html(
         accent = status_colors.get(status, "#94a3b8")
         version = int(row.get("version") or 0)
         rows_count = int(row.get("rows_count") or 0)
+        rows_text = f"{rows_count:,}".replace(",", ".")
         updated = html.escape(
             central_data.format_dt(
                 row.get("last_update_at")
@@ -632,21 +633,18 @@ def api_status_cards_html(
         )
 
         cards.append(
-            f"""
-            <div class="api-status-card" style="--api-accent:{accent}">
-                <div class="api-status-name">{name}</div>
-                <div class="api-status-value">{html.escape(status)}</div>
-                <div class="api-status-meta">
-                    V{version} · {updated} ·
-                    {rows_count:,} REGISTROS · {origin}
-                </div>
-            </div>
-            """.replace(",", ".")
+            '<div class="api-status-card" '
+            f'style="--api-accent:{accent}">'
+            f'<div class="api-status-name">{name}</div>'
+            f'<div class="api-status-value">{html.escape(status)}</div>'
+            '<div class="api-status-meta">'
+            f'V{version} · {updated} · {rows_text} REGISTROS · {origin}'
+            '</div>'
+            '</div>'
         )
 
     cards.append("</div>")
     return "".join(cards)
-
 
 def validation_badge(info: dict) -> str:
     status = str(info.get("status") or "").strip().upper()
