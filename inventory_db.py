@@ -324,7 +324,7 @@ def list_cb_counts(competencia: date | str) -> list[dict]:
         f"{supabase_url()}/rest/v1/fm_cb_contagens",
         headers=_headers(),
         params={
-            "select": "id,competencia,fonte,codigo,quantidade_fisica,observacao,origem_ref,atualizado_em",
+            "select": "id,competencia,fonte,codigo,quantidade_fisica,consumo,observacao,origem_ref,atualizado_em",
             "competencia": f"eq.{key}",
             "order": "fonte.asc,codigo.asc",
         },
@@ -433,6 +433,10 @@ def save_cb_counts_batch(
                 "codigo": str(row.get("codigo") or "").strip(),
                 "quantidade_fisica": float(
                     row.get("quantidade_fisica") or 0
+                ),
+                "consumo": max(
+                    float(row.get("consumo") or 0),
+                    0.0,
                 ),
                 "observacao": str(
                     row.get("observacao") or ""
