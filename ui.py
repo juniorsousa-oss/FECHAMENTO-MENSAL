@@ -180,6 +180,16 @@ section[data-testid="stSidebar"][aria-expanded="false"]>div{width:0!important;mi
 .cb-source-text{font-size:.74rem;color:#667085;line-height:1.45}
 .cb-source-tag{display:inline-flex;margin-top:.55rem;padding:.22rem .46rem;border-radius:999px;background:#f1f5f9;color:#475569;font-size:.64rem;font-weight:800}
 .cb-inline-title{font-size:.92rem;font-weight:900;color:#111827;letter-spacing:-.01em;text-transform:uppercase;line-height:1.2;margin:.25rem 0 .35rem}
+.cb-title-inline{display:flex;align-items:center;gap:.45rem;width:max-content;max-width:100%;margin:0 0 1rem}
+.cb-title-main{margin:0!important}
+.cb-info-wrap{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;outline:none}
+.cb-info-icon{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#64748b;font-size:.7rem;font-weight:900;line-height:1;cursor:help;user-select:none}
+.cb-info-wrap:hover .cb-info-icon,.cb-info-wrap:focus .cb-info-icon{border-color:#94a3b8;color:#111827;background:#f8fafc}
+.cb-info-tooltip{position:absolute;left:50%;top:calc(100% + 9px);transform:translateX(-50%) translateY(-3px);width:360px;max-width:min(360px,80vw);padding:.8rem .9rem;background:#111827;color:#fff;border-radius:10px;box-shadow:0 10px 28px rgba(15,23,42,.22);opacity:0;visibility:hidden;pointer-events:none;z-index:9999;transition:opacity .14s ease,transform .14s ease;text-align:left}
+.cb-info-tooltip::before{content:"";position:absolute;left:50%;top:-5px;width:10px;height:10px;background:#111827;transform:translateX(-50%) rotate(45deg)}
+.cb-info-tooltip strong{display:block;font-size:.67rem;letter-spacing:.06em;margin-bottom:.35rem}
+.cb-info-tooltip span{display:block;font-size:.72rem;line-height:1.5;color:#e5e7eb}
+.cb-info-wrap:hover .cb-info-tooltip,.cb-info-wrap:focus .cb-info-tooltip{opacity:1;visibility:visible;transform:translateX(-50%) translateY(0)}
 div[data-testid="stPopover"] button{min-height:28px!important;width:28px!important;height:28px!important;padding:0!important;border-radius:999px!important;border:1px solid #d8dde5!important;background:#fff!important;color:#64748b!important;font-size:.92rem!important;font-weight:800!important;box-shadow:none!important}
 div[data-testid="stPopover"] button:hover{background:#f8fafc!important;border-color:#cbd5e1!important;color:#111827!important}
 .summary-card{position:relative;background:#fff;border:1px solid #dfe3e8;border-radius:14px;box-shadow:0 4px 16px rgba(15,23,42,.05);padding:1rem 1.15rem 1.05rem;overflow:hidden}
