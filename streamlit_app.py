@@ -1177,52 +1177,65 @@ def build_cb_reconciliation(
     catalog: list[dict],
     counts: list[dict],
 ) -> pd.DataFrame:
-    confirmed_catalog = {
+    # CADASTROS funciona como universo em standby. O item só entra na
+    # análise final quando possui saldo sistêmico > 0 ou quando alguma
+    # fonte física foi vinculada a ele.
+    standby_catalog = {
         str(row.get("codigo") or "").strip(): row
         for row in catalog
         if bool(row.get("ativo", True))
-        and str(row.get("status") or "").upper() == "CONFIRMADO"
+        and str(row.get("status") or "").upper() != "IGNORADO"
     }
 
-    base_by_code: dict[str, dict] = {}
-    for codigo, item in confirmed_catalog.items():
-        base_by_code[codigo] = {
-            "codigo": codigo,
-            "descricao": str(item.get("descricao") or "").strip(),
-            "categoria": str(item.get("categoria") or "").strip(),
-            "unidade": str(item.get("unidade") or "").strip(),
-            "ult_preco": float(item.get("ult_preco") or 0),
-            "armz": set(),
-            "saldo_sistema": 0.0,
-        }
-
+    stock_by_code: dict[str, dict] = {}
     for row in stock_items:
         codigo = normalize_code(row.get("codigo"))
-        if codigo not in base_by_code:
+        if codigo not in standby_catalog:
             continue
 
-        current = base_by_code[codigo]
+        current = stock_by_code.setdefault(
+            codigo,
+            {
+                "saldo": 0.0,
+                "armz": set(),
+                "descricao": "",
+            },
+        )
+        current["saldo"] += max(
+            float(row.get("saldo") or 0),
+            0.0,
+        )
+        armz = str(row.get("armz") or "").strip()
+        if armz:
+            current["armz"].add(armz)
         if not current["descricao"]:
             current["descricao"] = str(
                 row.get("descricao") or ""
             ).strip()
 
-        armz = str(row.get("armz") or "").strip()
-        if armz:
-            current["armz"].add(armz)
-
-        current["saldo_sistema"] += float(row.get("saldo") or 0)
-
     counts_by_code: dict[str, list[dict]] = {}
     for row in counts:
         codigo = normalize_code(row.get("codigo"))
-        if codigo not in confirmed_catalog:
+        if codigo not in standby_catalog:
             continue
         counts_by_code.setdefault(codigo, []).append(row)
 
+    # Base final = saldo sistêmico positivo OU item presente em contagem.
+    analysis_codes = {
+        codigo
+        for codigo, data in stock_by_code.items()
+        if float(data.get("saldo") or 0) > 0
+    }
+    analysis_codes.update(counts_by_code.keys())
+
     result: list[dict] = []
 
-    for codigo, item in sorted(base_by_code.items()):
+    for codigo in sorted(analysis_codes):
+        item = standby_catalog[codigo]
+        stock_data = stock_by_code.get(
+            codigo,
+            {"saldo": 0.0, "armz": set(), "descricao": ""},
+        )
         raw_counts = counts_by_code.get(codigo, [])
 
         # O setor interno é alimentado por Excel OU manual.
@@ -1247,8 +1260,8 @@ def build_cb_reconciliation(
                 if str(row.get("fonte") or "") == "INTERNO_EXCEL"
             )
 
-        saldo = max(float(item["saldo_sistema"] or 0), 0.0)
-        custo_unitario = float(item["ult_preco"] or 0)
+        saldo = max(float(stock_data.get("saldo") or 0), 0.0)
+        custo_unitario = float(item.get("ult_preco") or 0)
         custo_origem = (
             "CADASTROS · ÚLT. PREÇO"
             if custo_unitario > 0
@@ -1298,52 +1311,58 @@ def build_cb_reconciliation(
                 )
             source_parts.append(source_text)
 
-        divergencia_qtd = (
-            None if physical is None else physical - saldo
+        # Regra definida: diferença = estoque sistêmico - contagem física.
+        diferenca_qtd = (
+            None if physical is None else saldo - physical
         )
-        divergencia_rs = (
+        diferenca_rs = (
             None
-            if divergencia_qtd is None or custo_unitario <= 0
-            else divergencia_qtd * custo_unitario
+            if diferenca_qtd is None or custo_unitario <= 0
+            else diferenca_qtd * custo_unitario
         )
 
         if physical is None:
             status = "SEM CONTAGEM"
-        elif abs(float(divergencia_qtd or 0)) <= 1e-9:
+        elif abs(float(diferenca_qtd or 0)) <= 1e-9:
             status = "CONFERIDO"
         else:
             status = "DIVERGÊNCIA"
 
-        if (
-            physical is not None
-            and saldo <= 0
-            and physical > 0
-        ):
-            status = "DIVERGÊNCIA"
+        descricao = str(
+            item.get("descricao")
+            or stock_data.get("descricao")
+            or ""
+        ).strip()
 
         result.append(
             {
                 "Categoria": (
                     "CHAPA"
-                    if item["categoria"] == "CHAPA"
+                    if item.get("categoria") == "CHAPA"
                     else "BARRA DE COBRE"
                 ),
                 "Código": codigo,
-                "Descrição": item["descricao"],
-                "U.M.": item["unidade"],
-                "ARMZ": ", ".join(sorted(item["armz"])),
+                "Descrição": descricao,
+                "U.M.": (
+                    "KG"
+                    if item.get("categoria") == "CHAPA"
+                    else "MT"
+                ),
+                "ARMZ": ", ".join(
+                    sorted(stock_data.get("armz") or set())
+                ),
                 "Saldo sistema": saldo,
                 "Físico": physical,
                 "Consumo informado": (
                     consumo_informado
-                    if item["categoria"] == "BARRA_COBRE"
+                    if item.get("categoria") == "BARRA_COBRE"
                     and consumo_informado > 0
                     else None
                 ),
-                "Divergência Qtd": divergencia_qtd,
+                "Diferença Qtd": diferenca_qtd,
                 "Custo unitário": custo_unitario,
                 "Origem custo": custo_origem,
-                "Divergência R$": divergencia_rs,
+                "Diferença R$": diferenca_rs,
                 "Fontes físicas": " | ".join(source_parts),
                 "Status": status,
             }
