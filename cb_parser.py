@@ -919,11 +919,9 @@ def resolve_chapa_rows(
         catalog_item = catalog_map.get(codigo)
 
         if not codigo or not catalog_item:
-            if (
-                float(source_row.get("chapas") or 0) == 0
-                and float(source_row.get("peso_total") or 0) == 0
-            ):
-                continue
+            # Regra do fechamento: toda linha recebida precisa possuir
+            # vínculo com um código do sistema, mesmo quando a contagem
+            # física informada for zero.
             unresolved.append(source_row)
             continue
 
