@@ -1820,17 +1820,6 @@ if page == "Dashboard":
     else:
         st.warning("ANALÍTICO DA CENTRAL INDISPONÍVEL.")
 
-    st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
-    section_band(
-        "06 · FONTES",
-        "CENTRAL DE DADOS",
-        "",
-    )
-    render_central_status(central_context)
-    if central_context.get("error"):
-        st.warning(str(central_context.get("error")))
-
-
 
 elif page == "Conferência de chapas e barramentos":
     st.markdown(
@@ -1953,75 +1942,6 @@ elif page == "Conferência de chapas e barramentos":
             "SALDO SISTEMA",
             "OK" if cb_stock_items else "PENDENTE",
         )
-
-        cad_meta = cadastros_context.get("meta") or {}
-        cad_parsed = cadastros_context.get("parsed") or {}
-
-        if cadastros_context.get("available"):
-            src1, src2, src3, src4 = st.columns(4)
-            src1.metric("FONTE", "CADASTROS")
-            src2.metric(
-                "VERSÃO",
-                f"V{int(cad_meta.get('version') or 0)}",
-            )
-            src3.metric(
-                "REGISTROS NA CENTRAL",
-                f"{int(cad_meta.get('rows_count') or 0):,}".replace(
-                    ",",
-                    ".",
-                ),
-            )
-            src4.metric(
-                "CHAPAS/BARRAS IDENTIFICADAS",
-                int(
-                    cad_parsed.get(
-                        "total_candidates",
-                        len(confirmed_catalog)
-                        + len(candidate_catalog),
-                    )
-                    or 0
-                ),
-            )
-
-            st.caption(
-                "FONTE AUTOMÁTICA · "
-                + str(
-                    cad_meta.get("last_file_name")
-                    or "CADASTROS"
-                )
-                + " · ATUALIZADO EM "
-                + central_data.format_dt(
-                    cad_meta.get("last_update_at")
-                )
-            )
-
-            if cadastros_context.get("synchronized"):
-                st.success(
-                    "Nova versão do CADASTROS sincronizada automaticamente "
-                    "com a base de chapas e barramentos."
-                )
-
-            if st.button(
-                "REPROCESSAR CADASTROS",
-                use_container_width=True,
-                key="cb_reprocess_cadastros",
-                help=(
-                    "Força nova leitura da versão atual da Central de Dados. "
-                    "Use apenas se precisar reconstruir a base filtrada."
-                ),
-            ):
-                st.session_state[
-                    "_force_cb_cadastros"
-                ] = True
-                st.rerun()
-        else:
-            st.error(
-                "CADASTROS DA CENTRAL DE DADOS INDISPONÍVEL. "
-                + str(
-                    cadastros_context.get("error")
-                    or ""
-                )
-            )
 
         flash_base = st.session_state.pop(
             "_cb_base_flash",
@@ -2977,31 +2897,128 @@ elif page == "Análise de movimentações":
 
 
 else:
-    st.markdown('<div class="section-title">CONFIGURAÇÕES</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">CONFIGURAÇÕES</div>',
+        unsafe_allow_html=True,
+    )
 
     tab_api, tab_rules = st.tabs(
-        ["ACOMPANHAMENTO DE API", "REGRAS"]
+        ["STATUS API", "REGRAS"]
     )
 
     with tab_api:
         section_band(
             "01 · FONTES",
             "CENTRAL DE DADOS",
-            "",
+            "Monitoramento centralizado de todas as conexões automáticas do ecossistema Setta.",
         )
-        render_central_status(central_context)
 
-        if central_context.get("error"):
-            st.warning(str(central_context.get("error")))
+        if api_sources_error:
+            st.error(
+                "NÃO FOI POSSÍVEL CONSULTAR O STATUS DAS FONTES: "
+                + api_sources_error
+            )
+        else:
+            last_update_values = [
+                str(row.get("last_update_at") or "")
+                for row in api_sources
+                if row.get("last_update_at")
+            ]
+            last_update = (
+                max(last_update_values)
+                if last_update_values
+                else ""
+            )
 
-        if st.button(
-            "REPROCESSAR FONTE",
+            st.markdown(
+                f"""
+                <div class="api-overview">
+                    <div class="api-overview-card">
+                        <div class="api-overview-label">STATUS GERAL</div>
+                        <div class="api-overview-value">{api_summary["status"]}</div>
+                    </div>
+                    <div class="api-overview-card">
+                        <div class="api-overview-label">FONTES</div>
+                        <div class="api-overview-value">{api_summary["total"]}</div>
+                    </div>
+                    <div class="api-overview-card">
+                        <div class="api-overview-label">ATUALIZADAS</div>
+                        <div class="api-overview-value">{api_summary["healthy"]}</div>
+                    </div>
+                    <div class="api-overview-card">
+                        <div class="api-overview-label">ÚLTIMA ATUALIZAÇÃO</div>
+                        <div class="api-overview-value" style="font-size:.82rem">
+                            {html.escape(central_data.format_dt(last_update))}
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            st.markdown(
+                api_status_cards_html(api_sources),
+                unsafe_allow_html=True,
+            )
+
+        control_a, control_b, control_c = st.columns(3)
+
+        if control_a.button(
+            "ATUALIZAR STATUS",
             use_container_width=True,
-            key="fm_reprocess_central",
+            key="fm_refresh_api_status",
+        ):
+            load_api_sources.clear()
+            st.rerun()
+
+        if control_b.button(
+            "REPROCESSAR ANALÍTICO",
+            use_container_width=True,
+            key="fm_reprocess_analitico",
         ):
             load_central_analitico.clear()
+            load_api_sources.clear()
             st.session_state["_force_central_fm"] = True
             st.rerun()
+
+        if control_c.button(
+            "REPROCESSAR CADASTROS",
+            use_container_width=True,
+            key="fm_reprocess_cadastros",
+        ):
+            load_central_cadastros.clear()
+            result = central_cadastros_context(force=True)
+            load_api_sources.clear()
+            if result.get("available"):
+                st.session_state["_api_flash"] = (
+                    "CADASTROS REPROCESSADO COM SUCESSO."
+                )
+            else:
+                st.session_state["_api_flash"] = (
+                    "FALHA AO REPROCESSAR CADASTROS: "
+                    + str(result.get("error") or "")
+                )
+            st.rerun()
+
+        api_flash = st.session_state.pop(
+            "_api_flash",
+            None,
+        )
+        if api_flash:
+            if api_flash.startswith("FALHA"):
+                st.error(api_flash)
+            else:
+                st.success(api_flash)
+
+        st.markdown(
+            '<div class="topic-divider"></div>',
+            unsafe_allow_html=True,
+        )
+        section_band(
+            "02 · CONTINGÊNCIA",
+            "ALIMENTAÇÃO E RECUPERAÇÃO",
+            "As telas operacionais não exibem mais detalhes de conexão. Alimentação manual e recuperação ficam concentradas aqui.",
+        )
 
         render_manual_contingency(imports_by_month)
 
