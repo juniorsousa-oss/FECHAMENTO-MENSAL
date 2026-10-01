@@ -2018,23 +2018,48 @@ elif page == "Conferência de chapas e barramentos":
             unsafe_allow_html=True,
         )
         section_band(
-            "01 · BASE MESTRE",
-            "CADASTRO DE CHAPAS E BARRAS DE COBRE",
-            "A base é alimentada automaticamente pelo CADASTROS da Central de Dados. O módulo utiliza CÓDIGO e DESCRIÇÃO, com REFERÊNCIA e ÚLT. PREÇO quando disponíveis. CHAPA é sempre KG e BARRAMENTO é sempre MT. Novos candidatos entram para validação.",
+            "01 · BASE DE SELEÇÃO",
+            "CADASTROS → STANDBY → BASE FINAL",
+            "O CADASTROS identifica todos os materiais compatíveis com CHAPA ou BARRA DE COBRE e os mantém em standby. O item só entra na análise final quando possui saldo no Analítico ou quando alguma contagem física é vinculada ao seu código.",
         )
 
-        base_col1, base_col2, base_col3 = st.columns(3)
+        stock_positive_codes = set()
+        for row in cb_stock_items:
+            code = normalize_code(row.get("codigo"))
+            if (
+                code in standby_lookup
+                and max(float(row.get("saldo") or 0), 0.0) > 0
+            ):
+                stock_positive_codes.add(code)
+
+        counted_codes = {
+            normalize_code(row.get("codigo"))
+            for row in cb_counts
+            if normalize_code(row.get("codigo")) in standby_lookup
+        }
+        final_analysis_codes = (
+            stock_positive_codes | counted_codes
+        )
+        standby_only_codes = (
+            set(standby_lookup) - final_analysis_codes
+        )
+
+        base_col1, base_col2, base_col3, base_col4 = st.columns(4)
         base_col1.metric(
-            "ITENS CONFIRMADOS",
-            len(confirmed_catalog),
+            "COMPATÍVEIS EM CADASTROS",
+            len(standby_catalog),
         )
         base_col2.metric(
-            "NOVOS CANDIDATOS",
-            len(candidate_catalog),
+            "COM SALDO ANALÍTICO",
+            len(stock_positive_codes),
         )
         base_col3.metric(
-            "SALDO SISTEMA",
-            "OK" if cb_stock_items else "PENDENTE",
+            "VINCULADOS POR CONTAGEM",
+            len(counted_codes),
+        )
+        base_col4.metric(
+            "BASE FINAL",
+            len(final_analysis_codes),
         )
 
         flash_base = st.session_state.pop(
@@ -2044,126 +2069,45 @@ elif page == "Conferência de chapas e barramentos":
         if flash_base:
             st.success(flash_base)
 
-        if candidate_catalog:
-            with st.expander(
-                f"NOVOS MATERIAIS PARA VALIDAR ({len(candidate_catalog)})",
-                expanded=True,
-            ):
-                select_all_candidates = st.checkbox(
-                    "SELECIONAR TODOS",
-                    value=True,
-                    key="cb_select_all_candidates",
-                    help=(
-                        "Marcado por padrão. Desmarque para limpar a seleção "
-                        "e escolher somente os materiais desejados."
-                    ),
+        with st.expander(
+            f"MATERIAIS EM STANDBY ({len(standby_only_codes)})",
+            expanded=False,
+        ):
+            standby_view = pd.DataFrame(
+                [
+                    {
+                        "Código": row.get("codigo"),
+                        "Categoria": (
+                            "CHAPA"
+                            if row.get("categoria") == "CHAPA"
+                            else "BARRA DE COBRE"
+                        ),
+                        "Descrição": row.get("descricao"),
+                        "Referência": row.get("referencia") or "",
+                        "Últ. preço": float(
+                            row.get("ult_preco") or 0
+                        ),
+                    }
+                    for row in standby_catalog
+                    if str(row.get("codigo") or "").strip()
+                    in standby_only_codes
+                ]
+            )
+            if standby_view.empty:
+                st.info(
+                    "Todos os materiais compatíveis já participam da análise atual."
                 )
-
-                candidate_df = pd.DataFrame(
-                    [
-                        {
-                            "Selecionar": bool(
-                                select_all_candidates
-                            ),
-                            "Código": row.get("codigo"),
-                            "Categoria": (
-                                "CHAPA"
-                                if row.get("categoria") == "CHAPA"
-                                else "BARRA DE COBRE"
-                            ),
-                            "Descrição": row.get("descricao"),
-                            "Referência": row.get("referencia") or "",
-                            "Últ. preço": float(
-                                row.get("ult_preco") or 0
-                            ),
-                            "Regra": row.get("regra_detectada"),
-                        }
-                        for row in candidate_catalog
-                    ]
+            else:
+                st.caption(
+                    "Estes materiais continuam disponíveis para os próximos "
+                    "fechamentos, mas não entram na análise desta competência "
+                    "enquanto não tiverem saldo ou vínculo com uma contagem."
                 )
-
-                edited_candidates = st.data_editor(
-                    candidate_df,
+                st.dataframe(
+                    standby_view,
                     use_container_width=True,
                     hide_index=True,
-                    disabled=[
-                        "Código",
-                        "Descrição",
-                        "Referência",
-                        "Últ. preço",
-                        "Regra",
-                    ],
-                    column_config={
-                        "Selecionar": st.column_config.CheckboxColumn(
-                            "Selecionar"
-                        ),
-                        "Categoria": st.column_config.SelectboxColumn(
-                            "Categoria",
-                            options=[
-                                "CHAPA",
-                                "BARRA DE COBRE",
-                            ],
-                        ),
-                    },
-                    key="cb_candidates_editor",
                 )
-
-                selected_candidates = edited_candidates[
-                    edited_candidates["Selecionar"] == True
-                ]
-
-                action_col1, action_col2 = st.columns(2)
-                if action_col1.button(
-                    "CONFIRMAR SELECIONADOS",
-                    type="primary",
-                    use_container_width=True,
-                    key="cb_confirm_candidates",
-                ):
-                    if selected_candidates.empty:
-                        st.warning(
-                            "Selecione pelo menos um material."
-                        )
-                    else:
-                        for _, row in selected_candidates.iterrows():
-                            db.update_cb_catalog_status(
-                                str(row["Código"]),
-                                (
-                                    "CHAPA"
-                                    if row["Categoria"] == "CHAPA"
-                                    else "BARRA_COBRE"
-                                ),
-                                "CONFIRMADO",
-                            )
-                        st.rerun()
-
-                if action_col2.button(
-                    "IGNORAR SELECIONADOS",
-                    use_container_width=True,
-                    key="cb_ignore_candidates",
-                ):
-                    if selected_candidates.empty:
-                        st.warning(
-                            "Selecione pelo menos um material."
-                        )
-                    else:
-                        catalog_lookup = {
-                            str(row.get("codigo")): row
-                            for row in candidate_catalog
-                        }
-                        for _, row in selected_candidates.iterrows():
-                            original = catalog_lookup.get(
-                                str(row["Código"]),
-                                {},
-                            )
-                            db.update_cb_catalog_status(
-                                str(row["Código"]),
-                                str(
-                                    original.get("categoria")
-                                    or "CHAPA"
-                                ),
-                                "IGNORADO",
-                            )
-                        st.rerun()
 
         if not cb_stock_items:
             st.warning(
