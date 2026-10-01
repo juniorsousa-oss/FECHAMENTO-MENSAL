@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import html
 import io
 from datetime import date, datetime
 from pathlib import Path
@@ -107,6 +108,11 @@ inject_css()
 @st.cache_data(show_spinner=False, max_entries=4)
 def cached_parse_cadastros(raw: bytes, file_name: str) -> dict:
     return parse_cadastros(raw, file_name)
+
+
+@st.cache_data(show_spinner=False, ttl=30)
+def load_api_sources() -> list[dict]:
+    return db.list_data_sources()
 
 
 
@@ -518,6 +524,128 @@ def render_manual_contingency(imports_by_month: dict[str, dict]) -> None:
             )
             st.query_params["mes"] = competencia_input.strftime("%Y-%m")
             st.rerun()
+
+
+def api_sources_summary(
+    sources: list[dict],
+    error: str = "",
+) -> dict:
+    if error:
+        return {
+            "status": "ERRO",
+            "css": "error",
+            "healthy": 0,
+            "total": 0,
+        }
+
+    if not sources:
+        return {
+            "status": "INDISPONÍVEL",
+            "css": "warn",
+            "healthy": 0,
+            "total": 0,
+        }
+
+    ok_statuses = {
+        "ATUALIZADO",
+        "VALIDO",
+        "VÁLIDO",
+        "OK",
+        "ONLINE",
+        "ATIVO",
+    }
+    bad_statuses = {
+        "ERRO",
+        "INDISPONIVEL",
+        "INDISPONÍVEL",
+        "OFFLINE",
+        "FALHA",
+    }
+
+    statuses = [
+        str(row.get("status") or "").strip().upper()
+        for row in sources
+    ]
+    healthy = sum(status in ok_statuses for status in statuses)
+
+    if any(status in bad_statuses for status in statuses):
+        overall = "ERRO"
+        css = "error"
+    elif healthy == len(sources):
+        overall = "ATUALIZADO"
+        css = "ok"
+    else:
+        overall = "ATENÇÃO"
+        css = "warn"
+
+    return {
+        "status": overall,
+        "css": css,
+        "healthy": healthy,
+        "total": len(sources),
+    }
+
+
+def api_status_cards_html(
+    sources: list[dict],
+) -> str:
+    cards = ['<div class="api-status-grid">']
+
+    status_colors = {
+        "ATUALIZADO": "#22c55e",
+        "VALIDO": "#22c55e",
+        "VÁLIDO": "#22c55e",
+        "OK": "#22c55e",
+        "ONLINE": "#22c55e",
+        "ATIVO": "#22c55e",
+        "ATENÇÃO": "#f59e0b",
+        "PENDENCIA": "#f59e0b",
+        "PENDÊNCIA": "#f59e0b",
+        "ERRO": "#ef4444",
+        "INDISPONIVEL": "#ef4444",
+        "INDISPONÍVEL": "#ef4444",
+        "OFFLINE": "#ef4444",
+        "FALHA": "#ef4444",
+    }
+
+    for row in sources:
+        name = html.escape(
+            str(
+                row.get("name")
+                or row.get("source_key")
+                or "FONTE"
+            )
+        )
+        status = str(
+            row.get("status") or "INDISPONÍVEL"
+        ).strip().upper()
+        accent = status_colors.get(status, "#94a3b8")
+        version = int(row.get("version") or 0)
+        rows_count = int(row.get("rows_count") or 0)
+        updated = html.escape(
+            central_data.format_dt(
+                row.get("last_update_at")
+            )
+        )
+        origin = html.escape(
+            str(row.get("origin") or "—")
+        )
+
+        cards.append(
+            f"""
+            <div class="api-status-card" style="--api-accent:{accent}">
+                <div class="api-status-name">{name}</div>
+                <div class="api-status-value">{html.escape(status)}</div>
+                <div class="api-status-meta">
+                    V{version} · {updated} ·
+                    {rows_count:,} REGISTROS · {origin}
+                </div>
+            </div>
+            """.replace(",", ".")
+        )
+
+    cards.append("</div>")
+    return "".join(cards)
 
 
 def validation_badge(info: dict) -> str:
@@ -1245,6 +1373,18 @@ if "operator" not in st.session_state:
 
 cfg = st.session_state.app_cfg
 
+try:
+    api_sources = load_api_sources()
+    api_sources_error = ""
+except Exception as exc:
+    api_sources = []
+    api_sources_error = str(exc)
+
+api_summary = api_sources_summary(
+    api_sources,
+    api_sources_error,
+)
+
 query_page = str(st.query_params.get("pagina", "") or "").strip()
 if "nav_page" not in st.session_state:
     st.session_state.nav_page = query_page if query_page in PAGES else PAGES[0]
@@ -1260,7 +1400,10 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    st.markdown('<div class="sidebar-section-label">NAVEGAÇÃO</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sidebar-section-label">NAVEGAÇÃO</div>',
+        unsafe_allow_html=True,
+    )
 
     page = st.radio(
         "Página",
@@ -1274,7 +1417,10 @@ with st.sidebar:
         st.query_params["pagina"] = page
 
     st.divider()
-    st.markdown('<div class="sidebar-section-label">OPERADOR</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sidebar-section-label">OPERADOR</div>',
+        unsafe_allow_html=True,
+    )
     st.session_state.operator = st.text_input(
         "Nome do operador",
         value=st.session_state.operator,
@@ -1282,17 +1428,38 @@ with st.sidebar:
         placeholder="INFORME O OPERADOR",
     )
 
-    st.divider()
     st.markdown(
         """
         <div class="sidebar-info-card">
-            <b>CENTRAL DE DADOS</b><br>
-            ALIMENTAÇÃO AUTOMÁTICA<br>
-            ANALÍTICO
+            <b>ALIMENTAÇÃO</b><br>
+            AUTOMÁTICA · CENTRAL DE DADOS
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    st.divider()
+    st.markdown(
+        '<div class="sidebar-section-label">STATUS GERAL</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"""
+        <div class="sidebar-status-card">
+            <div class="sidebar-status-name">CONEXÕES</div>
+            <div class="sidebar-status-value {api_summary["css"]}">
+                {api_summary["status"]}
+            </div>
+            <div class="sidebar-status-meta">
+                {api_summary["healthy"]}/{api_summary["total"]} FONTES ATUALIZADAS
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if api_sources_error:
+        st.caption("FALHA AO CONSULTAR A CENTRAL DE DADOS.")
 
 
 st.markdown(
