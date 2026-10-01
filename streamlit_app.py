@@ -28,6 +28,11 @@ ROOT = Path(__file__).parent
 FAVICON_FILE = ROOT / "config" / "favicon_setta.b64"
 TZ = ZoneInfo("America/Sao_Paulo")
 
+CONNECTED_API_SOURCE_KEYS = {
+    "analitico",
+    "cadastros",
+}
+
 DEFAULT_CONFIG = {
     "title": "FECHAMENTO MENSAL",
     "subtitle": "Inventário • Conferências • Baixas • Movimentações • Fechamento",
@@ -112,7 +117,13 @@ def cached_parse_cadastros(raw: bytes, file_name: str) -> dict:
 
 @st.cache_data(show_spinner=False, ttl=30)
 def load_api_sources() -> list[dict]:
-    return db.list_data_sources()
+    sources = db.list_data_sources()
+    return [
+        row
+        for row in sources
+        if str(row.get("source_key") or "").strip().lower()
+        in CONNECTED_API_SOURCE_KEYS
+    ]
 
 
 
