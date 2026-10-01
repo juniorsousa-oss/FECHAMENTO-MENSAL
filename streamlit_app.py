@@ -74,8 +74,8 @@ MONTHS_PT = {
 CB_SOURCE_LABELS = {
     "CHAPAS_EMAIL": "CHAPAS · E-MAIL",
     "BARRAMENTOS_EXCEL": "BARRAMENTOS · EXCEL",
-    "INTERNO_EXCEL": "SETOR INTERNO · EXCEL",
-    "INTERNO_MANUAL": "SETOR INTERNO · MANUAL",
+    "INTERNO_EXCEL": "ALMOXARIFADO · BARRAS",
+    "INTERNO_MANUAL": "ALMOXARIFADO · MANUAL",
 }
 
 
@@ -2202,10 +2202,10 @@ elif page == "Conferência de chapas e barramentos":
                     <div class="cb-source-tag">EXCEL AUTOMÁTICO</div>
                 </div>
                 <div class="cb-source-card">
-                    <div class="cb-source-title">SETOR INTERNO</div>
+                    <div class="cb-source-title">ALMOXARIFADO · BARRAS</div>
                     <div class="cb-source-text">
                         Excel flexível com CODIGO + MTS/METROS/QUANTIDADE ou lançamento manual.
-                        Essa parcela é somada às demais fontes do mesmo código.
+                        Todos os itens precisam estar vinculados a um código de BARRA DE COBRE.
                     </div>
                     <div class="cb-source-tag">EXCEL + MANUAL</div>
                 </div>
@@ -2218,7 +2218,7 @@ elif page == "Conferência de chapas e barramentos":
             [
                 "CHAPAS · E-MAIL",
                 "BARRAMENTOS · EXCEL",
-                "SETOR INTERNO",
+                "ALMOXARIFADO · BARRAS",
             ]
         )
 
@@ -2912,7 +2912,8 @@ elif page == "Conferência de chapas e barramentos":
                         else "MT"
                     ),
                 )
-                for row in confirmed_catalog
+                for row in standby_catalog
+                if row.get("categoria") == "BARRA_COBRE"
             ]
             manual_labels = [
                 f"{code} · {description} · {unit}"
