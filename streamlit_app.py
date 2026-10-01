@@ -2460,6 +2460,12 @@ elif page == "Conferência de chapas e barramentos":
                         bar_file.name,
                     )
 
+                    cad_master_lookup = (
+                        (cadastros_context.get("parsed") or {})
+                        .get("master_lookup")
+                        or {}
+                    )
+
                     catalog_bar = {
                         str(row.get("codigo")): row
                         for row in cb_catalog
@@ -2476,10 +2482,27 @@ elif page == "Conferência de chapas e barramentos":
                         item = catalog_bar.get(code)
 
                         if item is None:
+                            cadastro_item = (
+                                cad_master_lookup.get(code)
+                                or {}
+                            )
                             bar_issues.append(
                                 {
                                     "Código": code,
                                     "Modelo": row.get("modelo"),
+                                    "Descrição": str(
+                                        cadastro_item.get("descricao")
+                                        or ""
+                                    ).strip(),
+                                    "Referência": str(
+                                        cadastro_item.get("referencia")
+                                        or row.get("modelo")
+                                        or ""
+                                    ).strip(),
+                                    "Últ. preço": float(
+                                        cadastro_item.get("ult_preco")
+                                        or 0
+                                    ),
                                     "Físico (m)": float(
                                         row.get("quantidade_fisica")
                                         or 0
@@ -2571,15 +2594,116 @@ elif page == "Conferência de chapas e barramentos":
 
                     if bar_issues:
                         st.warning(
-                            f"{len(bar_issues)} código(s) não serão importados "
-                            "até serem confirmados na base mestre. Os demais "
-                            "podem ser importados normalmente."
+                            f"{len(bar_issues)} código(s) ainda não estão "
+                            "confirmados na base mestre. Você pode validar "
+                            "cada item abaixo e depois importar a contagem."
                         )
                         st.dataframe(
                             pd.DataFrame(bar_issues),
                             use_container_width=True,
                             hide_index=True,
                         )
+
+                        st.markdown(
+                            "#### VALIDAR NOVO BARRAMENTO"
+                        )
+
+                        for issue in bar_issues:
+                            issue_code = str(
+                                issue.get("Código") or ""
+                            )
+                            issue_model = str(
+                                issue.get("Modelo") or ""
+                            )
+
+                            with st.expander(
+                                f"{issue_code} · {issue_model}",
+                                expanded=(
+                                    len(bar_issues) == 1
+                                ),
+                            ):
+                                issue_desc = st.text_input(
+                                    "Descrição",
+                                    value=str(
+                                        issue.get("Descrição")
+                                        or ""
+                                    ),
+                                    key=(
+                                        "cb_new_bar_desc_"
+                                        + issue_code
+                                    ),
+                                    placeholder=(
+                                        "Descrição do CADASTROS"
+                                    ),
+                                )
+                                issue_ref = st.text_input(
+                                    "Referência",
+                                    value=str(
+                                        issue.get("Referência")
+                                        or issue_model
+                                        or ""
+                                    ),
+                                    key=(
+                                        "cb_new_bar_ref_"
+                                        + issue_code
+                                    ),
+                                )
+                                issue_price = st.number_input(
+                                    "Últ. preço",
+                                    min_value=0.0,
+                                    value=float(
+                                        issue.get("Últ. preço")
+                                        or 0
+                                    ),
+                                    step=0.01,
+                                    format="%.2f",
+                                    key=(
+                                        "cb_new_bar_price_"
+                                        + issue_code
+                                    ),
+                                )
+
+                                st.caption(
+                                    "Ao confirmar, o código será incluído "
+                                    "na base mestre como BARRA DE COBRE, "
+                                    "unidade MT e status CONFIRMADO."
+                                )
+
+                                if st.button(
+                                    "CONFIRMAR COMO BARRA DE COBRE",
+                                    type="primary",
+                                    use_container_width=True,
+                                    key=(
+                                        "cb_confirm_new_bar_"
+                                        + issue_code
+                                    ),
+                                ):
+                                    if not issue_desc.strip():
+                                        st.error(
+                                            "Informe a descrição antes "
+                                            "de confirmar o material."
+                                        )
+                                    else:
+                                        try:
+                                            db.confirm_cb_catalog_item(
+                                                issue_code,
+                                                "BARRA_COBRE",
+                                                issue_desc,
+                                                issue_ref,
+                                                issue_price,
+                                            )
+                                            st.session_state[
+                                                "_cb_count_flash"
+                                            ] = (
+                                                f"{issue_code} confirmado "
+                                                "como BARRA DE COBRE."
+                                            )
+                                            st.rerun()
+                                        except Exception as exc:
+                                            st.error(
+                                                "Não foi possível confirmar "
+                                                f"{issue_code}: {exc}"
+                                            )
 
                     if valid_bar_rows and st.button(
                         (
