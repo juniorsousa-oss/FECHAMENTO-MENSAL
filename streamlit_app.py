@@ -2420,6 +2420,11 @@ elif page == "Conferência de chapas e barramentos":
                 "Planilha da produção de barramentos",
                 type=["xlsx", "xltx"],
                 key="cb_barramentos_file",
+                help=(
+                    "Aceita o modelo atual com CODIGO, Modelo de Barra, "
+                    "TOTAL FECHAMENTO e CONSUMO, além do modelo anterior "
+                    "com BARRAS + PROCESSADO."
+                ),
             )
 
             if bar_file is not None:
@@ -2434,80 +2439,128 @@ elif page == "Conferência de chapas e barramentos":
                         for row in cb_catalog
                         if row.get("categoria") == "BARRA_COBRE"
                         and row.get("status") == "CONFIRMADO"
+                        and bool(row.get("ativo", True))
                     }
 
                     valid_bar_rows = []
                     bar_issues = []
+
                     for row in parsed_bar["rows"]:
                         code = normalize_code(row.get("codigo"))
                         item = catalog_bar.get(code)
+
                         if item is None:
                             bar_issues.append(
                                 {
                                     "Código": code,
                                     "Modelo": row.get("modelo"),
-                                    "Motivo": "CÓDIGO NÃO CONFIRMADO NA BASE MESTRE",
+                                    "Físico (m)": float(
+                                        row.get("quantidade_fisica")
+                                        or 0
+                                    ),
+                                    "Consumo (m)": float(
+                                        row.get("consumo")
+                                        or 0
+                                    ),
+                                    "Motivo": (
+                                        "CÓDIGO NÃO CONFIRMADO NA BASE MESTRE"
+                                    ),
                                 }
                             )
                             continue
 
+                        quantidade = float(
+                            row.get("quantidade_fisica")
+                            or 0
+                        )
+                        consumo = float(
+                            row.get("consumo")
+                            or 0
+                        )
+                        criterio = str(
+                            row.get("criterio")
+                            or ""
+                        ).strip()
+
                         valid_bar_rows.append(
                             {
                                 "codigo": code,
-                                "quantidade_fisica": float(
-                                    row.get(
-                                        "quantidade_fisica"
-                                    )
-                                    or 0
-                                ),
+                                "quantidade_fisica": quantidade,
+                                "consumo": consumo,
                                 "observacao": (
                                     f"{row.get('modelo') or ''} · "
-                                    f"Barras {float(row.get('barras') or 0):.3f} m · "
-                                    f"Processado {float(row.get('processado') or 0):.3f} m"
-                                ),
+                                    f"{criterio or 'CONTAGEM'} "
+                                    f"{quantidade:.3f} m · "
+                                    f"Consumo informado {consumo:.3f} m"
+                                ).strip(" ·"),
                             }
                         )
 
-                    br1, br2, br3 = st.columns(3)
+                    br1, br2, br3, br4 = st.columns(4)
                     br1.metric(
                         "Códigos encontrados",
                         parsed_bar["total_rows"],
                     )
                     br2.metric(
-                        "Prontos para importar",
-                        len(valid_bar_rows),
+                        "Físico total",
+                        f"{float(parsed_bar['total_metros']):,.3f} m"
+                        .replace(",", "X")
+                        .replace(".", ",")
+                        .replace("X", "."),
                     )
                     br3.metric(
+                        "Consumo informado",
+                        f"{float(parsed_bar.get('total_consumo') or 0):,.3f} m"
+                        .replace(",", "X")
+                        .replace(".", ",")
+                        .replace("X", "."),
+                    )
+                    br4.metric(
                         "Pendências",
                         len(bar_issues),
                     )
 
+                    st.caption(
+                        "O CONSUMO é informação auxiliar para análise de "
+                        "eventuais divergências. Ele não altera automaticamente "
+                        "o saldo físico nem a divergência calculada."
+                    )
+
                     if valid_bar_rows:
+                        preview_bar = pd.DataFrame(
+                            valid_bar_rows
+                        ).rename(
+                            columns={
+                                "codigo": "Código",
+                                "quantidade_fisica": "Físico produção (m)",
+                                "consumo": "Consumo informado (m)",
+                                "observacao": "Detalhe",
+                            }
+                        )
                         st.dataframe(
-                            pd.DataFrame(valid_bar_rows).rename(
-                                columns={
-                                    "codigo": "Código",
-                                    "quantidade_fisica": "Físico produção (m)",
-                                    "observacao": "Detalhe",
-                                }
-                            ),
+                            preview_bar,
                             use_container_width=True,
                             hide_index=True,
                         )
 
                     if bar_issues:
-                        st.error(
-                            "Existem códigos novos/não confirmados ou com "
-                            "unidade incompatível. Atualize/valide a base mestre "
-                            "antes de importar esta fonte."
+                        st.warning(
+                            f"{len(bar_issues)} código(s) não serão importados "
+                            "até serem confirmados na base mestre. Os demais "
+                            "podem ser importados normalmente."
                         )
                         st.dataframe(
                             pd.DataFrame(bar_issues),
                             use_container_width=True,
                             hide_index=True,
                         )
-                    elif st.button(
-                        "IMPORTAR BARRAMENTOS DA PRODUÇÃO",
+
+                    if valid_bar_rows and st.button(
+                        (
+                            "IMPORTAR BARRAMENTOS VÁLIDOS"
+                            if bar_issues
+                            else "IMPORTAR BARRAMENTOS DA PRODUÇÃO"
+                        ),
                         type="primary",
                         use_container_width=True,
                         key="cb_import_bars",
@@ -2519,7 +2572,14 @@ elif page == "Conferência de chapas e barramentos":
                             valid_bar_rows,
                         )
                         st.session_state["_cb_count_flash"] = (
-                            "Contagem da produção de barramentos importada."
+                            f"Contagem de barramentos importada: "
+                            f"{len(valid_bar_rows)} código(s)."
+                            + (
+                                f" {len(bar_issues)} pendência(s) permaneceram "
+                                "para validação."
+                                if bar_issues
+                                else ""
+                            )
                         )
                         st.rerun()
                 except Exception as exc:
