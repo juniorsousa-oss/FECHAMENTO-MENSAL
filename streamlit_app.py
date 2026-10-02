@@ -2212,34 +2212,56 @@ elif page == "Conferência de chapas e barramentos":
             unsafe_allow_html=True,
         )
 
-        _saldo_atual_total = sum(
-            max(float(row.get("saldo") or 0), 0.0)
-            for row in cb_current_stock_items
-        )
-        _saldo_fechamento_total = sum(
-            max(float(row.get("saldo") or 0), 0.0)
-            for row in cb_closing_stock_items
-        )
-        _s1, _s2 = st.columns(2)
+        def _saldo_categoria(rows, categoria):
+            total = 0.0
+            for row in rows:
+                code = normalize_code(row.get("codigo"))
+                item = standby_lookup.get(code) or {}
+                if str(item.get("categoria") or "").upper() != categoria:
+                    continue
+                total += max(float(row.get("saldo") or 0), 0.0)
+            return total
+
+        _chapa_atual = _saldo_categoria(cb_current_stock_items, "CHAPA")
+        _chapa_fechamento = _saldo_categoria(cb_closing_stock_items, "CHAPA")
+        _barra_atual = _saldo_categoria(cb_current_stock_items, "BARRA_COBRE")
+        _barra_fechamento = _saldo_categoria(cb_closing_stock_items, "BARRA_COBRE")
+
+        _s1, _s2, _s3, _s4 = st.columns(4)
         _s1.metric(
-            "SALDO ATUAL",
-            f"{_saldo_atual_total:,.3f}".replace(",", "X").replace(".", ",").replace("X", "."),
-            help="Fotografia atual do Relatório Analítico da Central de Dados.",
+            "CHAPAS · ATUAL",
+            f"{_chapa_atual:,.3f} KG".replace(",", "X").replace(".", ",").replace("X", "."),
+            help="Saldo atual das chapas monitoradas, vindo da Central de Dados.",
         )
         _s2.metric(
-            f"SALDO DO FECHAMENTO · {_closing_label}",
+            f"CHAPAS · FECHAMENTO {_closing_label}",
             (
-                f"{_saldo_fechamento_total:,.3f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                f"{_chapa_fechamento:,.3f} KG".replace(",", "X").replace(".", ",").replace("X", ".")
                 if cb_closing_stock_items
                 else "NÃO INFORMADO"
             ),
-            help="Este é o saldo usado em todos os cálculos da conferência.",
+            help="Saldo das chapas no último dia da competência. Base oficial do cálculo.",
+        )
+        _s3.metric(
+            "BARRAMENTOS · ATUAL",
+            f"{_barra_atual:,.3f} MT".replace(",", "X").replace(".", ",").replace("X", "."),
+            help="Saldo atual dos barramentos monitorados, vindo da Central de Dados.",
+        )
+        _s4.metric(
+            f"BARRAMENTOS · FECHAMENTO {_closing_label}",
+            (
+                f"{_barra_fechamento:,.3f} MT".replace(",", "X").replace(".", ",").replace("X", ".")
+                if cb_closing_stock_items
+                else "NÃO INFORMADO"
+            ),
+            help="Saldo dos barramentos no último dia da competência. Base oficial do cálculo.",
         )
         st.caption(
             "SALDO ATUAL: Central de Dados"
             + (f" · {_current_updated}" if _current_updated and _current_updated != "—" else "")
             + f" · SALDO DO FECHAMENTO: posição de {_closing_label}. "
-            "TODAS AS DIVERGÊNCIAS E VALORES SÃO CALCULADOS EXCLUSIVAMENTE COM O SALDO DO FECHAMENTO."
+            "OS TOTAIS SÃO SEPARADOS POR UNIDADE (KG E MT) E TODAS AS DIVERGÊNCIAS "
+            "SÃO CALCULADAS EXCLUSIVAMENTE COM O SALDO DO FECHAMENTO."
         )
 
         if not cb_closing_stock_items:
