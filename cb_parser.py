@@ -10,6 +10,7 @@ from email.parser import BytesParser
 from typing import Any
 
 import openpyxl
+import pandas as pd
 from bs4 import BeautifulSoup
 
 
@@ -659,6 +660,206 @@ def parse_cadastros(raw: bytes, file_name: str) -> dict:
         "master_inconsistent_rows": inconsistent_rows,
         "master_lookup": master_lookup,
     }
+
+
+def parse_cadastros_frame(frame: pd.DataFrame, file_name: str) -> dict:
+    """Versão do parser de CADASTROS para SETTA_SOURCE_V1, sem reabrir Excel."""
+    rows = [
+        list(values)
+        for values in frame.itertuples(index=False, name=None)
+    ]
+    required_headers = {"CODIGO", "DESCRICAO"}
+    header_index = None
+    header_map: dict[str, int] = {}
+
+    for index, values in enumerate(rows[:10]):
+        current = {
+            normalize_text(value): col
+            for col, value in enumerate(values)
+            if value is not None and normalize_text(value)
+        }
+        if required_headers.issubset(current.keys()):
+            header_index = index
+            header_map = current
+            break
+
+    if header_index is None:
+        raise ValueError(
+            "Não encontrei as colunas CODIGO e DESCRICAO no CADASTROS."
+        )
+
+    code_idx = header_map["CODIGO"]
+    desc_idx = header_map["DESCRICAO"]
+
+    reference_idx = None
+    for possible in (
+        "REFERENCIA",
+        "REF.",
+        "REF",
+        "REFERÊNCIA",
+        "COD.REF. FOR",
+        "COD REF FOR",
+        "COD. REF. FOR",
+    ):
+        normalized = normalize_text(possible)
+        if normalized in header_map:
+            reference_idx = header_map[normalized]
+            break
+
+    price_idx = None
+    for possible in (
+        "ULT. PRECO",
+        "ULT PRECO",
+        "ULTIMO PRECO",
+        "ULT. PREÇO",
+    ):
+        normalized = normalize_text(possible)
+        if normalized in header_map:
+            price_idx = header_map[normalized]
+            break
+
+    ativo_idx = header_map.get("ATIVO")
+    candidates: list[dict] = []
+    master_lookup: dict[str, dict] = {}
+    total_rows_read = 0
+    rows_discarded = 0
+    known_codes_found = 0
+    new_candidates_found = 0
+    blocked_rows = 0
+    inconsistent_rows = 0
+    ok_master_rows = 0
+
+    def master_code(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, (int, float)):
+            try:
+                if isinstance(value, float) and not float(value).is_integer():
+                    return str(value).strip()
+            except Exception:
+                pass
+            digits = str(int(value))
+            return digits.zfill(8) if len(digits) <= 8 else digits
+        text = str(value).strip()
+        if re.fullmatch(r"\d+\.0", text):
+            text = text[:-2]
+        return text.zfill(8) if text.isdigit() and len(text) <= 8 else text
+
+    for values in rows[header_index + 1 :]:
+        total_rows_read += 1
+        codigo_raw = values[code_idx] if code_idx < len(values) else None
+        if codigo_raw is None or str(codigo_raw).strip() == "":
+            rows_discarded += 1
+            continue
+
+        codigo_master = master_code(codigo_raw)
+        codigo_valido = bool(re.fullmatch(r"\d{8}", codigo_master))
+
+        ativo_value = (
+            normalize_text(values[ativo_idx])
+            if ativo_idx is not None and ativo_idx < len(values)
+            else ""
+        )
+        if ativo_idx is not None:
+            if ativo_value == "N":
+                blocked_rows += 1
+                rows_discarded += 1
+                continue
+            if ativo_value not in ("S", ""):
+                inconsistent_rows += 1
+                rows_discarded += 1
+                continue
+
+        if not codigo_valido:
+            inconsistent_rows += 1
+            rows_discarded += 1
+            continue
+
+        codigo = codigo_master
+        ok_master_rows += 1
+        descricao = str(
+            values[desc_idx] if desc_idx < len(values) else ""
+            or ""
+        ).strip()
+        referencia = (
+            str(values[reference_idx] or "").strip()
+            if reference_idx is not None and reference_idx < len(values)
+            else ""
+        )
+        ult_preco = (
+            to_number(values[price_idx])
+            if price_idx is not None and price_idx < len(values)
+            else 0.0
+        )
+
+        master_lookup[codigo] = {
+            "codigo": codigo,
+            "descricao": descricao,
+            "referencia": referencia,
+            "ult_preco": ult_preco,
+            "ativo": ativo_value,
+        }
+
+        desc_norm = normalize_text(descricao)
+        ref_norm = normalize_text(referencia)
+        categoria = ""
+        regra = ""
+        status = "CANDIDATO"
+
+        if codigo in INITIAL_CONFIRMED_CODES:
+            categoria = "BARRA_COBRE" if codigo.startswith("0011") else "CHAPA"
+            regra = "BASE_INICIAL_VALIDADA"
+            status = "CONFIRMADO"
+            known_codes_found += 1
+        elif (
+            "BARRA DE COBRE" in desc_norm
+            or desc_norm.startswith("BARRAMENTO COBRE")
+            or "BARRA DE COBRE" in ref_norm
+        ):
+            categoria = "BARRA_COBRE"
+            regra = "DESCRICAO_OU_REFERENCIA_BARRA_COBRE"
+            new_candidates_found += 1
+        elif desc_norm.startswith("CHAPA ") or ref_norm.startswith("CHAPA "):
+            categoria = "CHAPA"
+            regra = "DESCRICAO_OU_REFERENCIA_CHAPA"
+            new_candidates_found += 1
+
+        if not categoria:
+            rows_discarded += 1
+            continue
+
+        candidates.append(
+            {
+                "codigo": codigo,
+                "categoria": categoria,
+                "descricao": descricao,
+                "referencia": referencia,
+                "grupo": "",
+                "tp": "",
+                "unidade": "KG" if categoria == "CHAPA" else "MT",
+                "ult_preco": ult_preco,
+                "status": status,
+                "origem": file_name,
+                "regra_detectada": regra,
+            }
+        )
+
+    return {
+        "file_name": file_name,
+        "candidates": candidates,
+        "total_candidates": len(candidates),
+        "chapas": sum(1 for row in candidates if row["categoria"] == "CHAPA"),
+        "barras": sum(1 for row in candidates if row["categoria"] == "BARRA_COBRE"),
+        "known_codes_found": known_codes_found,
+        "new_candidates_found": new_candidates_found,
+        "rows_read": total_rows_read,
+        "rows_discarded": rows_discarded,
+        "master_ok_rows": ok_master_rows,
+        "master_blocked_rows": blocked_rows,
+        "master_inconsistent_rows": inconsistent_rows,
+        "master_lookup": master_lookup,
+    }
+
 
 def parse_chapas_eml(raw: bytes, file_name: str) -> dict:
     message = BytesParser(policy=policy.default).parsebytes(raw)
