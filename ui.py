@@ -113,6 +113,170 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)::before{content:"";position:absolute;left:.42rem;top:50%;width:4px;height:20px;border-radius:999px;background:#ef4444;transform:translateY(-50%)}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p{color:#fff!important;font-weight:700!important}
 
+/* SIDEBAR SETTA V1 — PADRÃO VALIDADO
+   26 / 20 / 8 / 42 / 2 / 20 / 20 / 8 px */
+section[data-testid="stSidebar"] .block-container{
+  width:260px!important;
+  min-width:260px!important;
+  max-width:260px!important;
+  box-sizing:border-box!important;
+  padding-top:26px!important;
+  padding-left:16px!important;
+  padding-right:16px!important;
+}
+section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{
+  gap:0!important;
+  row-gap:0!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.setta-sidebar){
+  margin:0!important;
+  padding:0!important;
+}
+.setta-sidebar{
+  width:100%!important;
+  margin:0!important;
+  padding:0!important;
+  box-sizing:border-box!important;
+  font-family:inherit!important;
+}
+.setta-sidebar *{box-sizing:border-box!important}
+.sidebar-brand{
+  width:100%!important;
+  background:#f8fafc!important;
+  border:1px solid #e5e8ee!important;
+  border-radius:12px!important;
+  padding:14px 16px!important;
+  margin:0 0 20px 0!important;
+}
+.sidebar-brand-title{
+  margin:0!important;
+  padding:0!important;
+  font-size:15px!important;
+  font-weight:800!important;
+  line-height:18px!important;
+  color:#111827!important;
+  letter-spacing:-.01em!important;
+}
+.sidebar-brand-sub{
+  margin:3px 0 0 0!important;
+  padding:0!important;
+  font-size:12px!important;
+  font-weight:400!important;
+  line-height:16px!important;
+  color:#6b7280!important;
+}
+.sidebar-section-label{
+  display:block!important;
+  margin:0 0 8px 0!important;
+  padding:0!important;
+  color:#374151!important;
+  font-size:12px!important;
+  line-height:15px!important;
+  font-weight:800!important;
+  text-transform:uppercase!important;
+  letter-spacing:.055em!important;
+}
+.sidebar-nav{
+  display:flex!important;
+  flex-direction:column!important;
+  width:100%!important;
+  gap:2px!important;
+  margin:0!important;
+  padding:0!important;
+}
+.sidebar-nav-link{
+  position:relative!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  width:100%!important;
+  height:42px!important;
+  min-height:42px!important;
+  max-height:42px!important;
+  margin:0!important;
+  padding:0 12px 0 24px!important;
+  border:1px solid transparent!important;
+  border-radius:10px!important;
+  background:transparent!important;
+  color:#374151!important;
+  text-decoration:none!important;
+  font-size:13px!important;
+  line-height:16px!important;
+  font-weight:500!important;
+  text-align:left!important;
+}
+.sidebar-nav-link:hover{
+  background:#f8fafc!important;
+  border-color:#e5e7eb!important;
+  color:#111827!important;
+  text-decoration:none!important;
+}
+.sidebar-nav-link.active{
+  background:#111827!important;
+  border-color:#111827!important;
+  color:#fff!important;
+  font-weight:700!important;
+  box-shadow:0 5px 14px rgba(17,24,39,.14)!important;
+}
+.sidebar-nav-link.active::before{
+  content:""!important;
+  position:absolute!important;
+  left:7px!important;
+  top:50%!important;
+  width:4px!important;
+  height:20px!important;
+  border-radius:999px!important;
+  background:#ef4444!important;
+  transform:translateY(-50%)!important;
+}
+.sidebar-divider{
+  display:block!important;
+  width:100%!important;
+  height:1px!important;
+  min-height:1px!important;
+  background:#d1d5db!important;
+  margin:20px 0!important;
+  padding:0!important;
+}
+.sidebar-status-card{
+  width:100%!important;
+  background:#f8fafc!important;
+  border:1px solid #e5e8ee!important;
+  border-radius:10px!important;
+  padding:12px 14px!important;
+  margin:0!important;
+  color:#6b7280!important;
+}
+.sidebar-status-name{
+  margin:0!important;
+  padding:0!important;
+  font-size:11px!important;
+  line-height:14px!important;
+  font-weight:800!important;
+  color:#64748b!important;
+  text-transform:uppercase!important;
+  letter-spacing:.025em!important;
+}
+.sidebar-status-value{
+  margin:4px 0 0 0!important;
+  padding:0!important;
+  font-size:13px!important;
+  line-height:16px!important;
+  font-weight:900!important;
+  text-transform:uppercase!important;
+}
+.sidebar-status-value.status-ok{color:#16a34a!important}
+.sidebar-status-value.status-warning{color:#f59e0b!important}
+.sidebar-status-value.status-error{color:#ef4444!important}
+.sidebar-status-meta{
+  margin:6px 0 0 0!important;
+  padding:0!important;
+  color:#6b7280!important;
+  font-size:11px!important;
+  line-height:15px!important;
+  text-transform:uppercase!important;
+}
+
 [data-testid="stAppViewContainer"] > .main,
 [data-testid="stAppViewContainer"] .main,
 [data-testid="stMain"],
@@ -121,8 +285,8 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 [data-testid="stMain"] .block-container,
 .stMain .block-container{width:100%!important;max-width:100%!important;margin-left:0!important;margin-right:0!important}
 section[data-testid="stSidebar"][aria-expanded="false"]{width:0!important;min-width:0!important;max-width:0!important;flex-basis:0!important}
-.setta-logo-card{width:100%;min-height:128px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid #e5e8ee;border-radius:16px;box-shadow:0 4px 14px rgba(24,39,75,.08);box-sizing:border-box;margin:0 0 2.55rem 0;padding:1.1rem 2rem}
-.setta-logo-card img{display:block;width:auto;height:auto;max-width:205px;max-height:86px;object-fit:contain}
+.setta-logo-card{width:100%!important;min-height:128px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:#fff!important;border:1px solid #e5e8ee!important;border-radius:16px!important;box-shadow:0 4px 14px rgba(24,39,75,.08)!important;box-sizing:border-box!important;margin:0 0 2.55rem 0!important;padding:1.1rem 2rem!important}
+.setta-logo-card img{display:block!important;width:auto!important;height:auto!important;max-width:205px!important;max-height:86px!important;object-fit:contain!important}
 .app-title{margin:0!important;padding:0!important;font-size:2.55rem!important;line-height:1.08!important;font-weight:800!important;letter-spacing:-.04em!important;color:#050505!important}
 .app-sub{margin-top:.72rem!important;margin-bottom:1.65rem!important;color:#4f5661!important;font-size:.94rem!important;line-height:1.35!important}
 .section-title{margin:0 0 1rem!important;color:#0f172a!important;font-size:1.28rem!important;font-weight:800!important;letter-spacing:-.02em}
