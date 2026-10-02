@@ -64,7 +64,11 @@ jobs:
           assert "def _set_fm_page(target: str)" in app
           assert 'if "_fm_nav_initialized" not in st.session_state' in app
           assert "def load_global_visual_config()" in app
-          assert "sidebar-nav-end-spacer" in app
+          assert "_needs_inventory_core = page in" in app
+          assert "def load_inventory_overview()" in app
+          assert "@st.cache_resource" in app
+          assert 'class="sidebar-status-section"' in app
+          assert "sidebar-status-section" in app
           ui = Path("ui.py").read_text(encoding="utf-8")
           assert "FECHAMENTO MENSAL — ajuste fino da sidebar" in ui
           assert "_saldo_codes = set(final_analysis_codes)" in app
