@@ -70,7 +70,7 @@ jobs:
           assert 'class="sidebar-status-section"' in app
           assert "sidebar-status-section" in app
           ui = Path("ui.py").read_text(encoding="utf-8")
-          assert "FECHAMENTO MENSAL — ajuste fino da sidebar" in ui
+          assert "FECHAMENTO MENSAL — bloco único e estável entre navegação e status" in ui
           assert "_saldo_codes = set(final_analysis_codes)" in app
           assert "CANDIDATOS/NÃO SELECIONADOS E ITENS REMOVIDOS NÃO COMPÕEM O SALDO" in app
           assert "Identidade visual" not in app
