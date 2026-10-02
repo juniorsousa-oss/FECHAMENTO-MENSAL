@@ -4122,20 +4122,40 @@ elif page == "Conferência de chapas e barramentos":
                 )
             )
 
+        _current_snapshot_available = bool(
+            central_context.get("available")
+        ) and bool(cb_current_stock_items)
+
         _can_finalize_adjustments = (
             bool(cb_closing_stock_items)
-            and cb_missing_count == 0
+            and _current_snapshot_available
+            and (
+                cb_missing_count == 0
+                or _assume_missing_zero
+            )
         )
 
-        if cb_missing_count > 0:
-            st.warning(
-                f"Existem {cb_missing_count} material(is) sem contagem. "
-                "O registro mensal só é liberado após concluir ou remover "
-                "essas pendências da análise."
-            )
-        elif not cb_closing_stock_items:
+        if not cb_closing_stock_items:
             st.warning(
                 "Carregue o saldo do fechamento antes de registrar os ajustes."
+            )
+        elif not _current_snapshot_available:
+            st.warning(
+                "O saldo atual da Central de Dados não está disponível. "
+                "A finalização fica bloqueada porque o cálculo precisa comparar "
+                "Fechamento × Atual para escolher o menor saldo."
+            )
+        elif cb_missing_count > 0 and not _assume_missing_zero:
+            st.warning(
+                f"Existem {cb_missing_count} material(is) sem contagem. "
+                "Você pode concluir as contagens, remover os itens da análise "
+                "ou marcar a opção acima para considerar Físico = 0 e calcular a baixa."
+            )
+        elif cb_missing_count > 0 and _assume_missing_zero:
+            st.warning(
+                f"{cb_missing_count} material(is) sem contagem serão registrados "
+                "com Físico = 0. O sistema calculará a baixa usando o menor saldo "
+                "entre Fechamento e Atual."
             )
 
         _finalize_label = (
@@ -4152,8 +4172,8 @@ elif page == "Conferência de chapas e barramentos":
             key="cb_finalize_adjustments",
         ):
             _rows_to_save = (
-                cb_adjustment_snapshot.to_dict("records")
-                if not cb_adjustment_snapshot.empty
+                _finalization_snapshot.to_dict("records")
+                if not _finalization_snapshot.empty
                 else []
             )
             db.finalize_cb_adjustments(
