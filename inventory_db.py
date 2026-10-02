@@ -547,6 +547,46 @@ def save_cb_counts_batch(
     return result or {}
 
 
+def list_cb_exclusions(
+    competencia: date | str,
+) -> list[dict]:
+    if isinstance(competencia, date):
+        key = competencia.replace(day=1).isoformat()
+    else:
+        key = str(competencia)[:10]
+
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/fm_cb_exclusoes",
+        headers=_headers(),
+        params={
+            "select": "id,competencia,codigo,motivo,ativo,atualizado_em",
+            "competencia": f"eq.{key}",
+            "order": "codigo.asc",
+        },
+        timeout=30,
+    )
+    _raise(response)
+    return response.json() or []
+
+
+def set_cb_exclusion(
+    competencia: date,
+    codigo: str,
+    ativo: bool,
+    motivo: str = "",
+) -> None:
+    rpc(
+        "fm_cb_definir_exclusao",
+        {
+            "p_competencia": competencia.replace(day=1).isoformat(),
+            "p_codigo": str(codigo or "").strip(),
+            "p_ativo": bool(ativo),
+            "p_motivo": str(motivo or "").strip(),
+        },
+        timeout=30,
+    )
+
+
 def list_cb_imports(
     competencia: date | str | None = None,
 ) -> list[dict]:
