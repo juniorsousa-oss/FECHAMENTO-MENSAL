@@ -2795,62 +2795,137 @@ elif page == "Conferência de chapas e barramentos":
                         internal_file.name,
                     )
 
-                    internal_catalog = {
-                        str(row.get("codigo") or "").strip(): row
+                    internal_catalog_rows = [
+                        row
                         for row in standby_catalog
                         if row.get("categoria") == "BARRA_COBRE"
+                    ]
+                    internal_catalog = {
+                        str(row.get("codigo") or "").strip(): row
+                        for row in internal_catalog_rows
                     }
+
                     internal_valid = []
                     internal_issues = []
 
                     for row in parsed_internal["rows"]:
-                        source_code = normalize_code(
-                            row.get("codigo")
-                        )
+                        source_key = str(
+                            row.get("chave_origem") or ""
+                        ).strip()
+                        identifier = str(
+                            row.get("identificador") or source_key
+                        ).strip()
+                        direct_code = str(
+                            row.get("codigo_direto") or ""
+                        ).strip()
+
                         mapped_code = (
-                            source_code
-                            if source_code in internal_catalog
-                            else physical_mapping_lookup.get(
-                                (
-                                    "INTERNO_EXCEL",
-                                    source_code,
-                                ),
+                            direct_code
+                            if direct_code in internal_catalog
+                            else ""
+                        )
+
+                        if not mapped_code:
+                            mapped_code = physical_mapping_lookup.get(
+                                ("INTERNO_EXCEL", source_key),
                                 "",
                             )
-                        )
 
-                        if mapped_code not in internal_catalog:
-                            internal_issues.append(
-                                {
-                                    "Código origem": source_code,
-                                    "Quantidade": float(
-                                        row.get(
-                                            "quantidade_fisica"
-                                        )
-                                        or 0
-                                    ),
-                                }
+                        match_origin = ""
+                        if mapped_code:
+                            match_origin = (
+                                "CÓDIGO"
+                                if mapped_code == direct_code
+                                else "VÍNCULO SALVO"
                             )
-                            continue
 
+                        if not mapped_code:
+                            auto_matches = find_bar_catalog_matches(
+                                identifier,
+                                internal_catalog_rows,
+                            )
+                            if len(auto_matches) == 1:
+                                mapped_code = str(
+                                    auto_matches[0].get("codigo")
+                                    or ""
+                                ).strip()
+                                match_origin = "MEDIDA/REFERÊNCIA"
+                            else:
+                                suggestions = [
+                                    (
+                                        f"{item.get('codigo')} · "
+                                        f"{item.get('descricao')}"
+                                    )
+                                    for item in auto_matches
+                                ]
+                                internal_issues.append(
+                                    {
+                                        "Chave origem": source_key,
+                                        "Barramento informado": identifier,
+                                        "Quantidade informada": float(
+                                            row.get(
+                                                "quantidade_informada"
+                                            )
+                                            or 0
+                                        ),
+                                        "Leitura": str(
+                                            row.get(
+                                                "modo_quantidade"
+                                            )
+                                            or ""
+                                        ),
+                                        "Contagem calculada (m)": float(
+                                            row.get(
+                                                "quantidade_fisica"
+                                            )
+                                            or 0
+                                        ),
+                                        "Sugestões": " | ".join(
+                                            suggestions
+                                        ),
+                                    }
+                                )
+                                continue
+
+                        catalog_item = internal_catalog.get(
+                            mapped_code,
+                            {},
+                        )
                         internal_valid.append(
                             {
                                 "codigo": mapped_code,
+                                "identificador": identifier,
+                                "quantidade_informada": float(
+                                    row.get(
+                                        "quantidade_informada"
+                                    )
+                                    or 0
+                                ),
+                                "modo_quantidade": str(
+                                    row.get(
+                                        "modo_quantidade"
+                                    )
+                                    or ""
+                                ),
                                 "quantidade_fisica": float(
                                     row.get(
                                         "quantidade_fisica"
                                     )
                                     or 0
                                 ),
+                                "descricao": str(
+                                    catalog_item.get(
+                                        "descricao"
+                                    )
+                                    or ""
+                                ).strip(),
+                                "vinculo": match_origin,
                                 "observacao": (
                                     f"{parsed_internal['sheet']} · "
-                                    f"coluna {parsed_internal['quantity_label']}"
-                                    + (
-                                        f" · origem {source_code}"
-                                        if mapped_code != source_code
-                                        else ""
-                                    )
-                                ),
+                                    f"informado {identifier} · "
+                                    f"{row.get('quantidade_origem') or ''} · "
+                                    f"{match_origin}"
+                                ).strip(" ·"),
                             }
                         )
 
