@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import base64
+import gzip
+import json
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 import requests
 
 import inventory_db as db
@@ -184,6 +187,71 @@ def download_source(source_key: str) -> tuple[bytes, dict]:
     response = SESSION.get(signed_url, timeout=120)
     response.raise_for_status()
     return response.content, meta
+
+
+def download_normalized_source(source_key: str) -> tuple[dict, dict]:
+    key = str(source_key or "").strip()
+    meta = api_call(
+        "source_normalized_download",
+        {"source_key": key},
+        timeout=30,
+    ).get("data") or {}
+    signed_url = str(meta.get("signed_url") or "")
+    if not signed_url:
+        raise RuntimeError(f"{key.upper()} normalizado sem URL de leitura.")
+    response = SESSION.get(signed_url, timeout=120)
+    response.raise_for_status()
+    pack = json.loads(gzip.decompress(response.content).decode("utf-8"))
+    if str(pack.get("format") or "") != "SETTA_SOURCE_V1":
+        raise RuntimeError(f"Formato normalizado inválido para {key.upper()}.")
+    return pack, meta
+
+
+def normalized_frame(
+    pack: dict,
+    *,
+    sheet_name: str | None = None,
+    sheet_contains: str | None = None,
+    fallback_last: bool = False,
+) -> pd.DataFrame:
+    sheets = [
+        row for row in (pack.get("sheets") or [])
+        if isinstance(row, dict)
+    ]
+    if not sheets:
+        raise ValueError("Pacote normalizado sem planilhas.")
+
+    selected = None
+    if sheet_name is not None:
+        selected = next(
+            (row for row in sheets if str(row.get("name") or "") == sheet_name),
+            None,
+        )
+    if selected is None and sheet_contains:
+        wanted = sheet_contains.casefold()
+        selected = next(
+            (
+                row for row in sheets
+                if wanted in str(row.get("name") or "").casefold()
+            ),
+            None,
+        )
+    if selected is None:
+        selected = sheets[-1] if fallback_last else sheets[0]
+
+    frame = pd.DataFrame(selected.get("rows") or [])
+    frame.attrs["sheet_name"] = str(selected.get("name") or "NORMALIZADO")
+    return frame
+
+
+def download_preferred_source(source_key: str) -> tuple[dict, dict]:
+    """Normalizado primeiro; Excel bruto apenas para fontes legadas."""
+    try:
+        pack, meta = download_normalized_source(source_key)
+        return {"normalized": True, "pack": pack}, meta
+    except Exception:
+        raw, meta = download_source(source_key)
+        return {"normalized": False, "raw": raw}, meta
 
 
 def sync_state_for(source_key: str) -> dict:
