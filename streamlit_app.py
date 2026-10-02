@@ -1363,9 +1363,10 @@ def build_cb_reconciliation(
                 )
             source_parts.append(source_text)
 
-        # Regra definida: diferença = estoque sistêmico - contagem física.
+        # Regra definida: diferença = contagem física - estoque sistêmico.
+        # Físico maior que sistema = diferença positiva.
         diferenca_qtd = (
-            None if physical is None else saldo - physical
+            None if physical is None else physical - saldo
         )
         diferenca_rs = (
             None
@@ -1448,7 +1449,7 @@ def cb_kpi_html(
         <div class="cb-kpi" style="--cb-accent:#d97706">
             <div class="cb-kpi-label">DIFERENÇA EM R$</div>
             <div class="cb-kpi-value">{money_br(divergence_rs)}</div>
-            <div class="cb-kpi-note">Estoque − contagem × custo unitário</div>
+            <div class="cb-kpi-note">Físico − estoque × custo unitário</div>
         </div>
     </div>
     """
@@ -3293,7 +3294,7 @@ elif page == "Conferência de chapas e barramentos":
         section_band(
             "02 · CONFERÊNCIA",
             "SISTEMA × CONTAGEM FÍSICA",
-            "Diferença = Estoque do sistema − Contagem física.",
+            "Diferença = Contagem física − Estoque do sistema.",
         )
 
         if not cb_stock_items and not cb_counts:
