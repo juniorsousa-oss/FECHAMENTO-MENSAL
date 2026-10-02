@@ -2052,11 +2052,19 @@ elif page == "Conferência de chapas e barramentos":
             for row in cb_counts
             if normalize_code(row.get("codigo")) in standby_lookup
         }
-        final_analysis_codes = (
+        excluded_codes_current = {
+            str(row.get("codigo") or "").strip()
+            for row in cb_exclusions
+            if bool(row.get("ativo", True))
+        }
+        source_analysis_codes = (
             stock_positive_codes | counted_codes
         )
+        final_analysis_codes = (
+            source_analysis_codes - excluded_codes_current
+        )
         standby_only_codes = (
-            set(standby_lookup) - final_analysis_codes
+            set(standby_lookup) - source_analysis_codes
         )
 
         st.markdown(
