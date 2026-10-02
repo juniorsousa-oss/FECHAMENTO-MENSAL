@@ -885,8 +885,25 @@ def parse_interno_excel(raw: bytes, file_name: str) -> dict:
                     )
                     rows.append(
                         {
-                            "codigo": codigo,
-                            "quantidade_fisica": quantidade,
+                            "identificador": identificador,
+                            "chave_origem": codigo,
+                            "codigo_direto": (
+                                codigo
+                                if re.fullmatch(r"\d{8}", codigo)
+                                else ""
+                            ),
+                            "quantidade_informada": float(
+                                quantidade.get("quantidade_informada") or 0
+                            ),
+                            "modo_quantidade": str(
+                                quantidade.get("modo_quantidade") or ""
+                            ),
+                            "quantidade_fisica": float(
+                                quantidade.get("quantidade_fisica") or 0
+                            ),
+                            "quantidade_origem": str(
+                                quantidade.get("quantidade_origem") or ""
+                            ),
                         }
                     )
 
