@@ -59,6 +59,11 @@ jobs:
           assert "contagem_assumida_zero" in db
           assert "saldo_base_ajuste" in db
           assert "treatment_lookup" in app
+          assert 'href="?pagina=' not in app
+          assert 'key=f"fm_nav_{_index}"' in app
+          assert "def _set_fm_page(target: str)" in app
+          assert 'if "_fm_nav_initialized" not in st.session_state' in app
+          assert "def load_global_visual_config()" in app
           assert "_saldo_codes = set(final_analysis_codes)" in app
           assert "CANDIDATOS/NÃO SELECIONADOS E ITENS REMOVIDOS NÃO COMPÕEM O SALDO" in app
           assert "Identidade visual" not in app
