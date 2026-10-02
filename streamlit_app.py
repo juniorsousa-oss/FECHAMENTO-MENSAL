@@ -3479,32 +3479,42 @@ elif page == "Conferência de chapas e barramentos":
 
                 shown_display = shown.copy()
 
+                # Mantém os dados auxiliares no cálculo, mas não ocupa a
+                # grade operacional com colunas que não precisam ser conferidas.
+                shown_display = shown_display.drop(
+                    columns=[
+                        "ARMZ",
+                        "Custo unitário",
+                        "Origem custo",
+                        "Fontes físicas",
+                    ],
+                    errors="ignore",
+                )
+
                 for col in [
                     "Saldo sistema",
                     "Físico",
                     "Consumo informado",
                     "Diferença Qtd",
                 ]:
-                    shown_display[col] = shown_display[col].map(
-                        lambda value: (
-                            ""
-                            if pd.isna(value)
-                            else f"{float(value):,.6f}"
+                    if col in shown_display.columns:
+                        shown_display[col] = shown_display[col].map(
+                            lambda value: (
+                                f"{0.0:,.6f}"
+                                if pd.isna(value)
+                                else f"{float(value):,.6f}"
+                            )
                             .replace(",", "X")
                             .replace(".", ",")
                             .replace("X", ".")
                         )
-                    )
 
-                for col in [
-                    "Custo unitário",
-                    "Diferença R$",
-                ]:
-                    shown_display[col] = shown_display[col].map(
-                        lambda value: (
-                            ""
-                            if pd.isna(value)
-                            else money_br(value)
+                if "Diferença R$" in shown_display.columns:
+                    shown_display["Diferença R$"] = shown_display[
+                        "Diferença R$"
+                    ].map(
+                        lambda value: money_br(
+                            0 if pd.isna(value) else value
                         )
                     )
 
