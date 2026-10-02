@@ -13,22 +13,217 @@ CSS = """
 [data-testid="stAppViewContainer"]{background:#f4f7fb!important}
 [data-testid="stHeader"]{background:rgba(255,255,255,.96)!important}
 .block-container{max-width:1780px!important;padding-top:3.2rem!important;padding-left:2.7rem!important;padding-right:2.7rem!important;padding-bottom:3rem!important;width:100%!important}
-section[data-testid="stSidebar"]{background:#fff!important;border-right:1px solid #e8ebf0!important;width:260px!important;min-width:260px!important;max-width:260px!important;flex-basis:260px!important}
-section[data-testid="stSidebar"] .block-container{padding-top:1.6rem!important;padding-left:1rem!important;padding-right:1rem!important}
-.sidebar-brand{background:#f8fafc;border:1px solid #e5e8ee;border-radius:12px;padding:.9rem 1rem;margin:0 0 1.05rem 0}
-.sidebar-brand-title{font-size:.92rem;font-weight:800;color:#111827;letter-spacing:-.01em}
-.sidebar-brand-sub{margin-top:.18rem;font-size:.75rem;color:#6b7280}
-.sidebar-section-label{margin:.25rem 0 .45rem;color:#374151;font-size:.76rem;font-weight:800;text-transform:uppercase;letter-spacing:.055em}
-.sidebar-logo-preview{width:100%;min-height:82px;display:flex;justify-content:center;align-items:center;margin:.65rem 0 .5rem;padding:.65rem .8rem;background:#fff;border:1px dashed #d1d5db;border-radius:10px;box-sizing:border-box;overflow:hidden}
-.sidebar-logo-preview img{display:block;width:auto;height:auto;max-width:140px;max-height:62px;object-fit:contain}
-.sidebar-info-card{background:#f8fafc;border:1px solid #e5e8ee;border-radius:10px;padding:.75rem .85rem;color:#6b7280;font-size:.76rem;line-height:1.55}
-.sidebar-status-card{background:#f8fafc;border:1px solid #dfe3e8;border-radius:10px;padding:.75rem .78rem;margin:.3rem 0 .15rem}
-.sidebar-status-name{font-size:.67rem;font-weight:900;letter-spacing:.04em;color:#64748b;text-transform:uppercase}
-.sidebar-status-value{margin-top:.28rem;font-size:.82rem;font-weight:900;color:#111827;text-transform:uppercase}
-.sidebar-status-value.ok{color:#15803d}
-.sidebar-status-value.warn{color:#b45309}
-.sidebar-status-value.error{color:#b91c1c}
-.sidebar-status-meta{margin-top:.3rem;font-size:.64rem;line-height:1.4;color:#87909e}
+/* SIDEBAR SETTA — BLOCO ÚNICO
+   Estrutura: 26 / 20 / 8 / 42 / 2 / 18 / 20 / 8 px */
+section[data-testid="stSidebar"]{
+  background:#fff!important;
+  border-right:1px solid #e8ebf0!important;
+  width:260px!important;
+  min-width:260px!important;
+  max-width:260px!important;
+  flex-basis:260px!important;
+}
+section[data-testid="stSidebar"] .block-container{
+  width:260px!important;
+  min-width:260px!important;
+  max-width:260px!important;
+  box-sizing:border-box!important;
+  padding:26px 16px!important;
+}
+section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{
+  gap:0!important;
+  row-gap:0!important;
+}
+section[data-testid="stSidebar"] .sidebar-brand{
+  width:100%!important;
+  box-sizing:border-box!important;
+  background:#f8fafc!important;
+  border:1px solid #e5e8ee!important;
+  border-radius:12px!important;
+  padding:14px 16px!important;
+  margin:0!important;
+}
+section[data-testid="stSidebar"] .sidebar-brand-title{
+  margin:0!important;
+  padding:0!important;
+  font-size:15px!important;
+  line-height:18px!important;
+  font-weight:800!important;
+  color:#111827!important;
+  letter-spacing:-.01em!important;
+}
+section[data-testid="stSidebar"] .sidebar-brand-sub{
+  margin:3px 0 0 0!important;
+  padding:0!important;
+  font-size:12px!important;
+  line-height:16px!important;
+  font-weight:400!important;
+  color:#6b7280!important;
+}
+section[data-testid="stSidebar"] .sidebar-brand-gap{
+  display:block!important;
+  width:100%!important;
+  height:20px!important;
+  min-height:20px!important;
+  margin:0!important;
+  padding:0!important;
+}
+section[data-testid="stSidebar"] .sidebar-section-label{
+  display:block!important;
+  margin:0!important;
+  padding:0!important;
+  color:#374151!important;
+  font-size:12px!important;
+  line-height:15px!important;
+  font-weight:800!important;
+  text-transform:uppercase!important;
+  letter-spacing:.055em!important;
+}
+section[data-testid="stSidebar"] .sidebar-nav-label{
+  margin:0!important;
+  padding:0!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){
+  margin:0 0 2px 0!important;
+  padding:0!important;
+}
+section[data-testid="stSidebar"] .st-key-fm_nav_0{
+  margin-top:8px!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stButton"]{
+  width:100%!important;
+  margin:0!important;
+  padding:0!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button{
+  position:relative!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  width:100%!important;
+  height:42px!important;
+  min-height:42px!important;
+  max-height:42px!important;
+  margin:0!important;
+  padding:0 12px 0 24px!important;
+  border-radius:10px!important;
+  font-size:13px!important;
+  line-height:16px!important;
+  font-weight:500!important;
+  text-align:left!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button > div,
+section[data-testid="stSidebar"] div[data-testid="stButton"] button p{
+  width:100%!important;
+  margin:0!important;
+  padding:0!important;
+  line-height:16px!important;
+  text-align:left!important;
+  white-space:normal!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]{
+  background:transparent!important;
+  border:1px solid transparent!important;
+  color:#374151!important;
+  box-shadow:none!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover{
+  background:#f8fafc!important;
+  border-color:#e5e7eb!important;
+  color:#111827!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]{
+  background:#111827!important;
+  border:1px solid #111827!important;
+  color:#fff!important;
+  box-shadow:0 5px 14px rgba(17,24,39,.14)!important;
+  font-weight:700!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"] p{
+  color:#fff!important;
+  font-weight:700!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]::before{
+  content:"";
+  position:absolute;
+  left:7px;
+  top:50%;
+  width:4px;
+  height:20px;
+  border-radius:999px;
+  background:#ef4444;
+  transform:translateY(-50%);
+}
+section[data-testid="stSidebar"] .sidebar-status-section{
+  display:block!important;
+  width:100%!important;
+  margin:0!important;
+  padding:0!important;
+}
+section[data-testid="stSidebar"] .sidebar-status-top-gap{
+  display:block!important;
+  width:100%!important;
+  height:18px!important;
+  min-height:18px!important;
+  margin:0!important;
+  padding:0!important;
+}
+section[data-testid="stSidebar"] .sidebar-divider{
+  display:block!important;
+  width:100%!important;
+  height:1px!important;
+  min-height:1px!important;
+  margin:0 0 20px 0!important;
+  padding:0!important;
+  background:#d1d5db!important;
+}
+section[data-testid="stSidebar"] .sidebar-status-label{
+  display:block!important;
+  margin:0 0 8px 0!important;
+  padding:0!important;
+  line-height:15px!important;
+}
+section[data-testid="stSidebar"] .sidebar-status-card{
+  display:block!important;
+  width:100%!important;
+  box-sizing:border-box!important;
+  margin:0!important;
+  padding:12px 14px!important;
+  background:#f8fafc!important;
+  border:1px solid #e5e8ee!important;
+  border-radius:10px!important;
+  color:#6b7280!important;
+}
+section[data-testid="stSidebar"] .sidebar-status-name{
+  margin:0!important;
+  padding:0!important;
+  font-size:11px!important;
+  line-height:14px!important;
+  font-weight:800!important;
+  color:#64748b!important;
+  text-transform:uppercase!important;
+  letter-spacing:.025em!important;
+}
+section[data-testid="stSidebar"] .sidebar-status-value{
+  margin:4px 0 0 0!important;
+  padding:0!important;
+  font-size:13px!important;
+  line-height:16px!important;
+  font-weight:900!important;
+  text-transform:uppercase!important;
+}
+section[data-testid="stSidebar"] .sidebar-status-value.status-ok{color:#16a34a!important}
+section[data-testid="stSidebar"] .sidebar-status-value.status-warning{color:#f59e0b!important}
+section[data-testid="stSidebar"] .sidebar-status-value.status-error{color:#ef4444!important}
+section[data-testid="stSidebar"] .sidebar-status-meta{
+  margin:6px 0 0 0!important;
+  padding:0!important;
+  color:#6b7280!important;
+  font-size:11px!important;
+  line-height:15px!important;
+  text-transform:uppercase!important;
+}
+
 .api-status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin:.15rem 0 1rem}
 .api-status-card{position:relative;background:#fff;border:1px solid #dfe3e8;border-radius:11px;padding:.8rem .85rem .75rem;min-height:92px;box-sizing:border-box;box-shadow:0 3px 11px rgba(15,23,42,.035);overflow:hidden}
 .api-status-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--api-accent,#94a3b8)}
@@ -109,170 +304,6 @@ section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid=
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked){background:#111827!important;border-color:#111827!important;box-shadow:0 5px 14px rgba(17,24,39,.14)!important}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)::before{content:"";position:absolute;left:.42rem;top:50%;width:4px;height:20px;border-radius:999px;background:#ef4444;transform:translateY(-50%)}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p{color:#fff!important;font-weight:700!important}
-
-/* SIDEBAR SETTA V1 — PADRÃO VALIDADO
-   26 / 20 / 8 / 42 / 2 / 20 / 20 / 8 px */
-section[data-testid="stSidebar"] .block-container{
-  width:260px!important;
-  min-width:260px!important;
-  max-width:260px!important;
-  box-sizing:border-box!important;
-  padding-top:26px!important;
-  padding-left:16px!important;
-  padding-right:16px!important;
-}
-section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{
-  gap:0!important;
-  row-gap:0!important;
-}
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.setta-sidebar){
-  margin:0!important;
-  padding:0!important;
-}
-.setta-sidebar{
-  width:100%!important;
-  margin:0!important;
-  padding:0!important;
-  box-sizing:border-box!important;
-  font-family:inherit!important;
-}
-.setta-sidebar *{box-sizing:border-box!important}
-.sidebar-brand{
-  width:100%!important;
-  background:#f8fafc!important;
-  border:1px solid #e5e8ee!important;
-  border-radius:12px!important;
-  padding:14px 16px!important;
-  margin:0 0 20px 0!important;
-}
-.sidebar-brand-title{
-  margin:0!important;
-  padding:0!important;
-  font-size:15px!important;
-  font-weight:800!important;
-  line-height:18px!important;
-  color:#111827!important;
-  letter-spacing:-.01em!important;
-}
-.sidebar-brand-sub{
-  margin:3px 0 0 0!important;
-  padding:0!important;
-  font-size:12px!important;
-  font-weight:400!important;
-  line-height:16px!important;
-  color:#6b7280!important;
-}
-.sidebar-section-label{
-  display:block!important;
-  margin:0 0 8px 0!important;
-  padding:0!important;
-  color:#374151!important;
-  font-size:12px!important;
-  line-height:15px!important;
-  font-weight:800!important;
-  text-transform:uppercase!important;
-  letter-spacing:.055em!important;
-}
-.sidebar-nav{
-  display:flex!important;
-  flex-direction:column!important;
-  width:100%!important;
-  gap:2px!important;
-  margin:0!important;
-  padding:0!important;
-}
-.sidebar-nav-link{
-  position:relative!important;
-  display:flex!important;
-  align-items:center!important;
-  justify-content:flex-start!important;
-  width:100%!important;
-  height:42px!important;
-  min-height:42px!important;
-  max-height:42px!important;
-  margin:0!important;
-  padding:0 12px 0 24px!important;
-  border:1px solid transparent!important;
-  border-radius:10px!important;
-  background:transparent!important;
-  color:#374151!important;
-  text-decoration:none!important;
-  font-size:13px!important;
-  line-height:16px!important;
-  font-weight:500!important;
-  text-align:left!important;
-}
-.sidebar-nav-link:hover{
-  background:#f8fafc!important;
-  border-color:#e5e7eb!important;
-  color:#111827!important;
-  text-decoration:none!important;
-}
-.sidebar-nav-link.active{
-  background:#111827!important;
-  border-color:#111827!important;
-  color:#fff!important;
-  font-weight:700!important;
-  box-shadow:0 5px 14px rgba(17,24,39,.14)!important;
-}
-.sidebar-nav-link.active::before{
-  content:""!important;
-  position:absolute!important;
-  left:7px!important;
-  top:50%!important;
-  width:4px!important;
-  height:20px!important;
-  border-radius:999px!important;
-  background:#ef4444!important;
-  transform:translateY(-50%)!important;
-}
-.sidebar-divider{
-  display:block!important;
-  width:100%!important;
-  height:1px!important;
-  min-height:1px!important;
-  background:#d1d5db!important;
-  margin:20px 0!important;
-  padding:0!important;
-}
-.sidebar-status-card{
-  width:100%!important;
-  background:#f8fafc!important;
-  border:1px solid #e5e8ee!important;
-  border-radius:10px!important;
-  padding:12px 14px!important;
-  margin:0!important;
-  color:#6b7280!important;
-}
-.sidebar-status-name{
-  margin:0!important;
-  padding:0!important;
-  font-size:11px!important;
-  line-height:14px!important;
-  font-weight:800!important;
-  color:#64748b!important;
-  text-transform:uppercase!important;
-  letter-spacing:.025em!important;
-}
-.sidebar-status-value{
-  margin:4px 0 0 0!important;
-  padding:0!important;
-  font-size:13px!important;
-  line-height:16px!important;
-  font-weight:900!important;
-  text-transform:uppercase!important;
-}
-.sidebar-status-value.status-ok{color:#16a34a!important}
-.sidebar-status-value.status-warning{color:#f59e0b!important}
-.sidebar-status-value.status-error{color:#ef4444!important}
-.sidebar-status-meta{
-  margin:6px 0 0 0!important;
-  padding:0!important;
-  color:#6b7280!important;
-  font-size:11px!important;
-  line-height:15px!important;
-  text-transform:uppercase!important;
-}
 
 [data-testid="stAppViewContainer"] > .main,
 [data-testid="stAppViewContainer"] .main,
@@ -417,131 +448,6 @@ div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{min-width:100%!
 .history-head{display:none!important}
 .history-cell{border-right:0!important;border-bottom:1px solid #eef0f3;justify-content:flex-start!important}
 .history-cell::before{content:attr(data-label);display:inline-block;min-width:118px;margin-right:.65rem;font-size:.65rem;font-weight:900;text-transform:uppercase;color:#64748b}
-}
-
-/* SETTA SIDEBAR SPACING LOCK — WRAPPERS STREAMLIT
-   26 / 20 / 8 / 42 / 2 / 20 / 20 / 8 px */
-section[data-testid="stSidebar"] .block-container{
-  width:260px!important;
-  min-width:260px!important;
-  max-width:260px!important;
-  box-sizing:border-box!important;
-  padding-top:26px!important;
-  padding-left:16px!important;
-  padding-right:16px!important;
-}
-section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{
-  gap:0!important;
-  row-gap:0!important;
-}
-/* Espaçamento estável da sidebar.
-   Não depende de :has() nem da árvore interna de wrappers do Streamlit. */
-section[data-testid="stSidebar"] .sidebar-brand{
-  width:100%!important;
-  padding:14px 16px!important;
-  margin:0!important;
-}
-section[data-testid="stSidebar"] .sidebar-brand-gap{
-  display:block!important;
-  width:100%!important;
-  height:20px!important;
-  min-height:20px!important;
-  margin:0!important;
-  padding:0!important;
-}
-section[data-testid="stSidebar"] .sidebar-section-label{
-  display:block!important;
-  margin:0!important;
-  padding:0!important;
-  font-size:12px!important;
-  line-height:15px!important;
-}
-/* O título não carrega mais o espaçamento do menu.
-   O gap é aplicado diretamente no primeiro widget da navegação. */
-section[data-testid="stSidebar"] .sidebar-nav-label{
-  display:block!important;
-  margin:0!important;
-  padding:0!important;
-  font-size:12px!important;
-  line-height:15px!important;
-}
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){
-  margin:0 0 2px 0!important;
-  padding:0!important;
-}
-
-/* Gap real entre NAVEGAÇÃO e o primeiro botão.
-   O key do widget gera a classe st-key-fm_nav_0 no wrapper do DASHBOARD. */
-section[data-testid="stSidebar"] .st-key-fm_nav_0{
-  margin-top:8px!important;
-}
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"].st-key-fm_nav_0{
-  margin-top:8px!important;
-  margin-bottom:2px!important;
-}
-section[data-testid="stSidebar"] div[data-testid="stButton"]{
-  width:100%!important;
-  margin:0!important;
-  padding:0!important;
-}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button{
-  position:relative!important;
-  display:flex!important;
-  align-items:center!important;
-  justify-content:flex-start!important;
-  width:100%!important;
-  height:42px!important;
-  min-height:42px!important;
-  max-height:42px!important;
-  margin:0!important;
-  padding:0 12px 0 24px!important;
-  border-radius:10px!important;
-  font-size:13px!important;
-  line-height:16px!important;
-  text-align:left!important;
-}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button > div,
-section[data-testid="stSidebar"] div[data-testid="stButton"] button p{
-  width:100%!important;
-  margin:0!important;
-  padding:0!important;
-  line-height:16px!important;
-  text-align:left!important;
-}
-section[data-testid="stSidebar"] .sidebar-status-section{
-  display:block!important;
-  width:100%!important;
-  margin:0!important;
-  padding:0!important;
-}
-section[data-testid="stSidebar"] .sidebar-status-top-gap{
-  display:block!important;
-  width:100%!important;
-  height:18px!important;
-  min-height:18px!important;
-  margin:0!important;
-  padding:0!important;
-}
-section[data-testid="stSidebar"] .sidebar-status-section .sidebar-divider{
-  display:block!important;
-  width:100%!important;
-  height:1px!important;
-  min-height:1px!important;
-  margin:0 0 20px 0!important;
-  padding:0!important;
-  background:#d1d5db!important;
-}
-section[data-testid="stSidebar"] .sidebar-status-section .sidebar-status-label{
-  display:block!important;
-  margin:0 0 8px 0!important;
-  padding:0!important;
-  line-height:15px!important;
-}
-section[data-testid="stSidebar"] .sidebar-status-section .sidebar-status-card{
-  display:block!important;
-  width:100%!important;
-  margin:0!important;
-  padding:12px 14px!important;
 }
 
 </style>
