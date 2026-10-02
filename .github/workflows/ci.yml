@@ -39,6 +39,11 @@ jobs:
           assert '"Saldo fechamento"' in app
           assert '"Saldo atual"' in app
           assert "O saldo atual não interfere no resultado da conferência." in app
+          db = Path("inventory_db.py").read_text(encoding="utf-8")
+          assert "page_size = 1000" in db
+          assert '"offset": str(offset)' in db
+          assert "CHAPAS · ATUAL" in app
+          assert "BARRAMENTOS · ATUAL" in app
           assert "Identidade visual" not in app
           print("ESTRUTURA_OK")
           PY
