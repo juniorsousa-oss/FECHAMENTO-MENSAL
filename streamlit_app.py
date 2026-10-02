@@ -1646,17 +1646,19 @@ _sidebar_status_class = {
 )
 
 with st.sidebar:
+    # Card superior + título da navegação no mesmo bloco.
+    # Os espaçadores fazem parte do próprio HTML para não depender
+    # dos wrappers internos do Streamlit, que podem mudar entre versões.
     st.markdown(
         (
             '<div class="sidebar-brand">'
             f'<div class="sidebar-brand-title">{html.escape(str(cfg["sidebar_title"]))}</div>'
             f'<div class="sidebar-brand-sub">{html.escape(str(cfg["sidebar_subtitle"]))}</div>'
             '</div>'
+            '<div class="sidebar-brand-gap" aria-hidden="true"></div>'
+            '<div class="sidebar-section-label sidebar-nav-label">NAVEGAÇÃO</div>'
+            '<div class="sidebar-nav-gap" aria-hidden="true"></div>'
         ),
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="sidebar-section-label sidebar-nav-label">NAVEGAÇÃO</div>',
         unsafe_allow_html=True,
     )
 
@@ -1684,6 +1686,7 @@ with st.sidebar:
     st.markdown(
         (
             '<div class="sidebar-status-section">'
+            '<div class="sidebar-status-top-gap" aria-hidden="true"></div>'
             '<div class="sidebar-divider"></div>'
             '<div class="sidebar-section-label sidebar-status-label">STATUS GERAL</div>'
             '<div class="sidebar-status-card">'
