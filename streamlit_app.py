@@ -1605,7 +1605,10 @@ st.markdown(
     f'<h1 class="app-title">{cfg["title"]} | SETTA</h1>',
     unsafe_allow_html=True,
 )
-st.markdown(f'<p class="app-sub">{cfg["subtitle"]}</p>', unsafe_allow_html=True)
+st.markdown(
+    f'<p class="app-sub">{str(cfg["subtitle"]).upper()}</p>',
+    unsafe_allow_html=True,
+)
 
 _force_central_fm = bool(st.session_state.pop("_force_central_fm", False))
 central_context = central_analitico_context(force=_force_central_fm)
