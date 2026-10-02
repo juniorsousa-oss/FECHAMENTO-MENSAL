@@ -2281,12 +2281,18 @@ elif page == "Conferência de chapas e barramentos":
             ),
             help="Saldo dos barramentos no último dia da competência. Base oficial do cálculo.",
         )
+        _chapa_variacao_total = _chapa_atual - _chapa_fechamento
+        _barra_variacao_total = _barra_atual - _barra_fechamento
+
         st.caption(
             "SALDO ATUAL: Central de Dados"
             + (f" · {_current_updated}" if _current_updated and _current_updated != "—" else "")
             + f" · SALDO DO FECHAMENTO: posição de {_closing_label}. "
-            "OS TOTAIS SÃO SEPARADOS POR UNIDADE (KG E MT) E TODAS AS DIVERGÊNCIAS "
-            "SÃO CALCULADAS EXCLUSIVAMENTE COM O SALDO DO FECHAMENTO."
+            + "VARIAÇÃO CHAPAS: "
+            + f"{_chapa_variacao_total:+,.3f} KG".replace(",", "X").replace(".", ",").replace("X", ".")
+            + " · VARIAÇÃO BARRAMENTOS: "
+            + f"{_barra_variacao_total:+,.3f} MT".replace(",", "X").replace(".", ",").replace("X", ".")
+            + ". NO CÁLCULO ITEM A ITEM, O SISTEMA USA O MENOR SALDO ENTRE FECHAMENTO E ATUAL."
         )
 
         if not cb_closing_stock_items:
@@ -3466,7 +3472,7 @@ elif page == "Conferência de chapas e barramentos":
         section_band(
             "02 · CONFERÊNCIA",
             "FECHAMENTO × CONTAGEM FÍSICA",
-            "Diferença = Contagem física − Saldo do fechamento. O saldo atual é apenas informativo. Barras com |diferença| < 3 m são aceitas automaticamente.",
+            "Diferença = Contagem física − menor saldo entre Fechamento e Atual. Isso evita repetir baixas já refletidas no saldo atual. Barras com |diferença| < 3 m são aceitas automaticamente.",
         )
 
         cb_adjustment_snapshot = pd.DataFrame()
@@ -3484,10 +3490,19 @@ elif page == "Conferência de chapas e barramentos":
                 cb_catalog,
                 cb_counts,
             )
+            movement_comparison = reconciliation.copy()
 
             if not reconciliation.empty:
                 saldo_num = pd.to_numeric(
                     reconciliation["Saldo fechamento"],
+                    errors="coerce",
+                ).fillna(0)
+                saldo_atual_num = pd.to_numeric(
+                    reconciliation["Saldo atual"],
+                    errors="coerce",
+                ).fillna(0)
+                variacao_num = pd.to_numeric(
+                    reconciliation["Variação atual x fechamento"],
                     errors="coerce",
                 ).fillna(0)
                 fisico_num = pd.to_numeric(
@@ -3501,6 +3516,8 @@ elif page == "Conferência de chapas e barramentos":
 
                 useful_mask = (
                     saldo_num.abs().gt(1e-9)
+                    | saldo_atual_num.abs().gt(1e-9)
+                    | variacao_num.abs().gt(1e-9)
                     | fisico_num.abs().gt(1e-9)
                     | diff_num.abs().gt(1e-9)
                 )
@@ -3517,6 +3534,72 @@ elif page == "Conferência de chapas e barramentos":
                             "Tolerância automática"
                         ].fillna(False)
                     ].copy()
+
+            if not movement_comparison.empty:
+                _movement_view = movement_comparison.copy()
+                _movement_view["Variação atual x fechamento"] = pd.to_numeric(
+                    _movement_view["Variação atual x fechamento"],
+                    errors="coerce",
+                ).fillna(0)
+                _movement_view = _movement_view[
+                    _movement_view["Variação atual x fechamento"].abs() > 1e-9
+                ].copy()
+
+                if not _movement_view.empty:
+                    _inc = int(
+                        (_movement_view["Variação atual x fechamento"] > 0).sum()
+                    )
+                    _dec = int(
+                        (_movement_view["Variação atual x fechamento"] < 0).sum()
+                    )
+                    st.caption(
+                        f"MOVIMENTAÇÃO DESDE O FECHAMENTO: {_inc} ITEM(NS) AUMENTARAM "
+                        f"E {_dec} ITEM(NS) REDUZIRAM O SALDO."
+                    )
+                    with st.expander(
+                        "DETALHAR MOVIMENTAÇÃO · SALDO ATUAL × FECHAMENTO",
+                        expanded=False,
+                    ):
+                        _movement_display = _movement_view[
+                            [
+                                "Categoria",
+                                "Código",
+                                "Descrição",
+                                "U.M.",
+                                "Saldo fechamento",
+                                "Saldo atual",
+                                "Variação atual x fechamento",
+                                "Saldo base ajuste",
+                                "Base usada",
+                            ]
+                        ].sort_values(
+                            "Variação atual x fechamento",
+                            ascending=False,
+                        )
+                        st.dataframe(
+                            _movement_display,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Saldo fechamento": st.column_config.NumberColumn(
+                                    "Saldo fechamento",
+                                    format="localized",
+                                ),
+                                "Saldo atual": st.column_config.NumberColumn(
+                                    "Saldo atual",
+                                    format="localized",
+                                ),
+                                "Variação atual x fechamento": st.column_config.NumberColumn(
+                                    "Variação atual x fechamento",
+                                    format="localized",
+                                ),
+                                "Saldo base ajuste": st.column_config.NumberColumn(
+                                    "Saldo base ajuste",
+                                    format="localized",
+                                    help="Menor saldo entre Fechamento e Atual.",
+                                ),
+                            },
+                        )
 
             excluded_codes = {
                 str(row.get("codigo") or "").strip()
@@ -3707,6 +3790,7 @@ elif page == "Conferência de chapas e barramentos":
                         "Origem custo",
                         "Fontes físicas",
                         "Tolerância automática",
+                        "Contagem assumida zero",
                     ],
                     errors="ignore",
                 )
@@ -3717,6 +3801,8 @@ elif page == "Conferência de chapas e barramentos":
                 for col in [
                     "Saldo fechamento",
                     "Saldo atual",
+                    "Variação atual x fechamento",
+                    "Saldo base ajuste",
                     "Físico",
                     "Consumo informado",
                     "Diferença Qtd",
@@ -3763,7 +3849,21 @@ elif page == "Conferência de chapas e barramentos":
                             "Saldo atual": st.column_config.NumberColumn(
                                 "Saldo atual",
                                 format="localized",
-                                help="Saldo do Analítico atual. Exibido apenas para referência.",
+                                help="Saldo do Analítico atual.",
+                            ),
+                            "Variação atual x fechamento": st.column_config.NumberColumn(
+                                "Variação atual x fechamento",
+                                format="localized",
+                                help="Saldo atual menos saldo do fechamento.",
+                            ),
+                            "Saldo base ajuste": st.column_config.NumberColumn(
+                                "Saldo base ajuste",
+                                format="localized",
+                                help="Menor saldo entre Fechamento e Atual. É a base usada para calcular a diferença.",
+                            ),
+                            "Base usada": st.column_config.TextColumn(
+                                "Base usada",
+                                help="ATUAL quando o saldo atual é menor; FECHAMENTO nos demais casos.",
                             ),
                             "Físico": st.column_config.NumberColumn(
                                 "Físico",
