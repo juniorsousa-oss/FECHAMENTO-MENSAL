@@ -7,6 +7,7 @@ on:
       - 'streamlit_app.py'
       - 'central_fechamento_data.py'
       - 'report_parser.py'
+      - 'cb_parser.py'
       - 'requirements.txt'
       - '.github/workflows/ci.yml'
   workflow_dispatch:
@@ -56,4 +57,15 @@ jobs:
               parsed["invalid_rows"],
               balance["total_rows"],
           )
+          PY
+
+      - name: Validar competência de chapas
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          parser = Path("cb_parser.py").read_text(encoding="utf-8")
+          app = Path("streamlit_app.py").read_text(encoding="utf-8")
+          assert "table_date.month - 1" in parser
+          assert "Competência do fechamento:" in app
+          print("COMPETENCIA_CHAPAS_OK")
           PY
