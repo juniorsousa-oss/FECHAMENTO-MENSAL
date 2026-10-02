@@ -84,7 +84,8 @@ jobs:
           assert "margin:0 0 2px 0!important" in ui
           assert not Path("db.py").exists()
           assert "_saldo_codes = set(final_analysis_codes)" in app
-          assert "CANDIDATOS/NÃO SELECIONADOS E ITENS REMOVIDOS NÃO COMPÕEM O SALDO" in app
+          assert '"01 · ALIMENTAÇÃO FÍSICA"' in app
+          assert 'expanded=False' in app
           assert "Identidade visual" not in app
           print("ESTRUTURA_OK")
           PY
