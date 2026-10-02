@@ -3328,27 +3328,6 @@ elif page == "Conferência de chapas e barramentos":
                     "permanece na análise desta competência."
                 )
             else:
-                counted_mask = reconciliation["Físico"].notna()
-                divergent_mask = (
-                    reconciliation["Status"] == "DIVERGÊNCIA"
-                )
-                divergence_total = float(
-                    reconciliation.loc[
-                        divergent_mask,
-                        "Diferença R$",
-                    ].fillna(0).abs().sum()
-                )
-
-                st.markdown(
-                    cb_kpi_html(
-                        len(reconciliation),
-                        int(counted_mask.sum()),
-                        int(divergent_mask.sum()),
-                        divergence_total,
-                    ),
-                    unsafe_allow_html=True,
-                )
-
                 if "cb_filter_applied_category" not in st.session_state:
                     st.session_state["cb_filter_applied_category"] = "TODOS"
                 if "cb_filter_applied_status" not in st.session_state:
@@ -3360,8 +3339,13 @@ elif page == "Conferência de chapas e barramentos":
                     "cb_filters_form",
                     clear_on_submit=False,
                 ):
-                    filter_col1, filter_col2, filter_col3 = st.columns(
-                        [1, 1, 2]
+                    (
+                        filter_col1,
+                        filter_col2,
+                        filter_col3,
+                        filter_col4,
+                    ) = st.columns(
+                        [1.05, 1.05, 1.35, 0.72]
                     )
 
                     with filter_col1:
@@ -3416,10 +3400,15 @@ elif page == "Conferência de chapas e barramentos":
                             key="cb_filter_draft_search",
                         ).strip()
 
-                    apply_filters = st.form_submit_button(
-                        "APLICAR FILTROS",
-                        use_container_width=True,
-                    )
+                    with filter_col4:
+                        st.markdown(
+                            '<div style="height:28px"></div>',
+                            unsafe_allow_html=True,
+                        )
+                        apply_filters = st.form_submit_button(
+                            "APLICAR",
+                            use_container_width=True,
+                        )
 
                 if apply_filters:
                     st.session_state[
@@ -3466,6 +3455,27 @@ elif page == "Conferência de chapas e barramentos":
                             regex=False,
                         )
                     ]
+
+                filtered_counted_mask = shown["Físico"].notna()
+                filtered_divergent_mask = (
+                    shown["Status"] == "DIVERGÊNCIA"
+                )
+                filtered_divergence_total = float(
+                    shown.loc[
+                        filtered_divergent_mask,
+                        "Diferença R$",
+                    ].fillna(0).abs().sum()
+                )
+
+                st.markdown(
+                    cb_kpi_html(
+                        len(shown),
+                        int(filtered_counted_mask.sum()),
+                        int(filtered_divergent_mask.sum()),
+                        filtered_divergence_total,
+                    ),
+                    unsafe_allow_html=True,
+                )
 
                 shown_display = shown.copy()
 
