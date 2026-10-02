@@ -25,7 +25,8 @@ INITIAL_CONFIRMED_CODES = {
     "06000211","06000216","06000217","06000218","06000219",
 }
 
-INITIAL_CHAPA_MAP = {
+CHAPA_EMAIL_BASE_MAP = {
+    # 2500 x 1200
     ("2500X1200", "#12 FINA FRIA"): "06000005",
     ("2500X1200", "#16 FINA FRIA"): "06000031",
     ("2500X1200", "#18 FINA FRIA"): "06000014",
@@ -33,6 +34,8 @@ INITIAL_CHAPA_MAP = {
     ("2500X1200", "#14 GALVANIZADA"): "06000168",
     ("2500X1200", "#16 GALVANIZADA"): "06000169",
     ("2500X1200", "#18 GALVANIZADA"): "06000187",
+
+    # 3000 x 1200
     ("3000X1200", "#12 FINA FRIA"): "06000005",
     ("3000X1200", "#16 FINA FRIA"): "06000031",
     ("3000X1200", "#18 FINA FRIA"): "06000014",
@@ -43,23 +46,19 @@ INITIAL_CHAPA_MAP = {
     ("3000X1200", "3/16'' FINA QUENTE"): "06000170",
     ("3000X1200", '1/8" FINA QUENTE'): "06000011",
     ("3000X1200", '1/8" XADREZ'): "06000055",
+
+    # Variadas
     ("VARIADAS", "MAGNELIS 1,55"): "06000178",
     ("VARIADAS", "MAGNELIS 1,95"): "06000179",
+
+    # SIVACON
     ("SIVACON", "#12 GALVANIZADA"): "06000219",
     ("SIVACON", "#14 GALVANIZADA"): "06000218",
     ("SIVACON", "#16 GALVANIZADA"): "06000217",
     ("SIVACON", "#20 GALVANIZADA"): "06000216",
+    ("SIVACON", "5MM ALUMINIO"): "06000210",
+    ("SIVACON", "3MM ALUMINIO"): "06000211",
 }
-
-
-SIVACON_CANONICAL_CHAPA_MAP = {
-    ("SIVACON", "#12 GALVANIZADA"): "06000219",  # 2,5 mm
-    ("SIVACON", "#14 GALVANIZADA"): "06000218",  # 2,0 mm
-    ("SIVACON", "#16 GALVANIZADA"): "06000217",  # 1,5 mm
-    ("SIVACON", "#20 GALVANIZADA"): "06000216",  # 1,0 mm
-}
-
-
 
 
 def normalize_code(value: Any) -> str:
@@ -1193,22 +1192,22 @@ def resolve_chapa_rows(
     mappings: list[dict],
     catalog: list[dict],
 ) -> dict:
-    mapping_exact: dict[tuple[str, str], dict] = {
-        (normalize_text(dim), normalize_text(desc)): {
-            "codigo": codigo
-        }
-        for (dim, desc), codigo in INITIAL_CHAPA_MAP.items()
+    # Nova lógica:
+    # 1) a matriz DIMENSÃO + DESCRIÇÃO abaixo é a base oficial do e-mail;
+    # 2) vínculos manuais persistidos só completam itens fora da matriz;
+    # 3) não existe mais fallback automático apenas pela descrição.
+    base_mapping: dict[tuple[str, str], dict] = {
+        (normalize_text(dim), normalize_text(desc)): {"codigo": codigo}
+        for (dim, desc), codigo in CHAPA_EMAIL_BASE_MAP.items()
     }
-    mapping_fallback: dict[str, list[dict]] = defaultdict(list)
 
-    for (dim, desc), codigo in INITIAL_CHAPA_MAP.items():
-        mapping_fallback[normalize_text(desc)].append(
-            {"codigo": codigo}
-        )
+    manual_exact: dict[tuple[str, str], dict] = {}
+    manual_wildcard: dict[str, dict] = {}
 
     for row in mappings:
         if str(row.get("status") or "").upper() != "CONFIRMADO":
             continue
+
         dim = normalize_text(
             row.get("dimensao_norm")
             or row.get("dimensao_origem")
@@ -1220,16 +1219,11 @@ def resolve_chapa_rows(
         )
         if not desc:
             continue
-        mapping_exact[(dim or "*", desc)] = row
-        mapping_fallback[desc].append(row)
 
-    # A equivalência SIVACON é uma regra física validada do processo.
-    # Reaplicamos após os vínculos persistidos para impedir que um
-    # mapeamento histórico antigo sobrescreva os códigos corretos.
-    for (dim, desc), codigo in SIVACON_CANONICAL_CHAPA_MAP.items():
-        dim_norm = normalize_text(dim)
-        desc_norm = normalize_text(desc)
-        mapping_exact[(dim_norm, desc_norm)] = {"codigo": codigo}
+        if dim in {"", "*"}:
+            manual_wildcard[desc] = row
+        else:
+            manual_exact[(dim, desc)] = row
 
     catalog_map = {
         str(row.get("codigo") or "").strip(): row
@@ -1246,16 +1240,11 @@ def resolve_chapa_rows(
         dim = normalize_text(source_row.get("dimensao_norm"))
         desc = normalize_text(source_row.get("descricao_norm"))
 
-        mapping = mapping_exact.get((dim, desc))
+        mapping = base_mapping.get((dim, desc))
         if mapping is None:
-            unique_codes = {
-                str(item.get("codigo") or "").strip()
-                for item in mapping_fallback.get(desc, [])
-                if str(item.get("codigo") or "").strip()
-            }
-            if len(unique_codes) == 1:
-                only_code = next(iter(unique_codes))
-                mapping = {"codigo": only_code}
+            mapping = manual_exact.get((dim, desc))
+        if mapping is None:
+            mapping = manual_wildcard.get(desc)
 
         codigo = (
             str(mapping.get("codigo") or "").strip()
