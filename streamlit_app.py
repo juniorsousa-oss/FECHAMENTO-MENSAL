@@ -3969,18 +3969,81 @@ elif page == "Conferência de chapas e barramentos":
             "Ao finalizar, o sistema grava uma fotografia dos ajustes de Chapas em KG e Barramentos em MT, incluindo a previsão financeira. O histórico permanece separado por competência.",
         )
 
-        _adj_chapa = (
-            cb_adjustment_snapshot[
-                cb_adjustment_snapshot["Categoria"] == "CHAPA"
+        _assume_missing_zero = False
+        if cb_missing_count > 0:
+            _assume_missing_zero = st.checkbox(
+                (
+                    f"FINALIZAR CONSIDERANDO {cb_missing_count} MATERIAL(IS) "
+                    "SEM CONTAGEM COMO ZERO"
+                ),
+                value=False,
+                key="cb_assume_missing_zero",
+                help=(
+                    "Quando marcado, cada material sem contagem recebe Físico = 0. "
+                    "A baixa será calculada contra o Saldo base ajuste, que é o menor "
+                    "saldo entre Fechamento e Atual."
+                ),
+            )
+
+        _finalization_snapshot = cb_adjustment_snapshot.copy()
+
+        if (
+            _assume_missing_zero
+            and "reconciliation" in locals()
+            and not reconciliation.empty
+        ):
+            _missing_zero_rows = reconciliation[
+                reconciliation["Status"] == "SEM CONTAGEM"
             ].copy()
-            if not cb_adjustment_snapshot.empty
+
+            if not _missing_zero_rows.empty:
+                _missing_zero_rows["Físico"] = 0.0
+                _missing_zero_rows["Contagem assumida zero"] = True
+                _missing_zero_rows["Diferença Qtd"] = (
+                    -pd.to_numeric(
+                        _missing_zero_rows["Saldo base ajuste"],
+                        errors="coerce",
+                    ).fillna(0.0)
+                )
+                _missing_zero_rows["Diferença R$"] = (
+                    pd.to_numeric(
+                        _missing_zero_rows["Diferença Qtd"],
+                        errors="coerce",
+                    ).fillna(0.0)
+                    * pd.to_numeric(
+                        _missing_zero_rows["Custo unitário"],
+                        errors="coerce",
+                    ).fillna(0.0)
+                )
+                _missing_zero_rows["Status"] = "DIVERGÊNCIA"
+                _missing_zero_rows = _missing_zero_rows[
+                    pd.to_numeric(
+                        _missing_zero_rows["Diferença Qtd"],
+                        errors="coerce",
+                    ).fillna(0.0).abs() > 1e-9
+                ].copy()
+
+                if not _missing_zero_rows.empty:
+                    _finalization_snapshot = pd.concat(
+                        [
+                            _finalization_snapshot,
+                            _missing_zero_rows,
+                        ],
+                        ignore_index=True,
+                    )
+
+        _adj_chapa = (
+            _finalization_snapshot[
+                _finalization_snapshot["Categoria"] == "CHAPA"
+            ].copy()
+            if not _finalization_snapshot.empty
             else pd.DataFrame()
         )
         _adj_barra = (
-            cb_adjustment_snapshot[
-                cb_adjustment_snapshot["Categoria"] == "BARRA DE COBRE"
+            _finalization_snapshot[
+                _finalization_snapshot["Categoria"] == "BARRA DE COBRE"
             ].copy()
-            if not cb_adjustment_snapshot.empty
+            if not _finalization_snapshot.empty
             else pd.DataFrame()
         )
 
@@ -4027,7 +4090,8 @@ elif page == "Conferência de chapas e barramentos":
         st.caption(
             "SINAL POSITIVO = entrada/acréscimo de estoque · "
             "SINAL NEGATIVO = baixa/redução. A previsão em R$ usa o custo "
-            "unitário registrado na conferência no momento da finalização."
+            "unitário registrado na conferência. O ajuste é sempre calculado "
+            "contra o menor saldo entre Fechamento e Atual."
         )
 
         try:
