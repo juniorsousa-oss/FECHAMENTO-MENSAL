@@ -422,7 +422,7 @@ div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{min-width:100%!
 .history-cell::before{content:attr(data-label);display:inline-block;min-width:118px;margin-right:.65rem;font-size:.65rem;font-weight:900;text-transform:uppercase;color:#64748b}
 }
 
-/* SETTA SIDEBAR SPACING LOCK — PADRÃO VALIDADO
+/* SETTA SIDEBAR SPACING LOCK — WRAPPERS STREAMLIT
    26 / 20 / 8 / 42 / 2 / 20 / 20 / 8 px */
 section[data-testid="stSidebar"] .block-container{
   width:260px!important;
@@ -437,30 +437,31 @@ section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{
   gap:0!important;
   row-gap:0!important;
 }
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-brand),
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-section-label),
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-status-section){
+/* O espaçamento precisa ficar no wrapper do Streamlit.
+   Margem no HTML interno era colapsada/cortada e aproximava NAVEGAÇÃO do card. */
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > .sidebar-brand){
+  margin:0 0 20px 0!important;
+  padding:0!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > .sidebar-nav-label){
+  margin:0 0 8px 0!important;
+  padding:0!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > .sidebar-status-section){
   margin:0!important;
   padding:0!important;
 }
 section[data-testid="stSidebar"] .sidebar-brand{
   width:100%!important;
   padding:14px 16px!important;
-  margin:0 0 20px 0!important;
+  margin:0!important;
 }
 section[data-testid="stSidebar"] .sidebar-section-label{
   display:block!important;
-  margin:0 0 8px 0!important;
+  margin:0!important;
   padding:0!important;
   font-size:12px!important;
   line-height:15px!important;
-}
-section[data-testid="stSidebar"] .sidebar-nav-label{
-  margin-bottom:0!important;
-}
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-nav-label)
-+ div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){
-  margin-top:8px!important;
 }
 section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){
   margin:0 0 2px 0!important;
