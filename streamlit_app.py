@@ -2761,23 +2761,6 @@ elif page == "Conferência de chapas e barramentos":
                     )
 
         with tab_internal:
-            st.download_button(
-                "BAIXAR CARGA MODELO",
-                data=build_almox_barras_model(),
-                file_name="MODELO_CONTAGEM_ALMOX_BARRAS.xlsx",
-                mime=(
-                    "application/vnd.openxmlformats-officedocument."
-                    "spreadsheetml.sheet"
-                ),
-                use_container_width=True,
-                key="cb_download_internal_model",
-            )
-
-            st.caption(
-                "Preencha a carga modelo com CODIGO e MTS. "
-                "Códigos repetidos serão somados automaticamente."
-            )
-
             internal_file = st.file_uploader(
                 "Planilha do almoxarifado de barras",
                 type=["xlsx", "xltx"],
@@ -2787,6 +2770,19 @@ elif page == "Conferência de chapas e barramentos":
                     "Todos os itens precisam estar vinculados a um código "
                     "de BARRA DE COBRE antes da importação."
                 ),
+            )
+
+            st.download_button(
+                "RELATÓRIO MODELO",
+                data=build_almox_barras_model(),
+                file_name="MODELO_CONTAGEM_ALMOX_BARRAS.xlsx",
+                mime=(
+                    "application/vnd.openxmlformats-officedocument."
+                    "spreadsheetml.sheet"
+                ),
+                type="tertiary",
+                use_container_width=False,
+                key="cb_download_internal_model",
             )
 
             if internal_file is not None:
