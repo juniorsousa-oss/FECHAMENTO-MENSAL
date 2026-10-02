@@ -808,13 +808,23 @@ def parse_interno_excel(raw: bytes, file_name: str) -> dict:
     )
 
     candidates: list[dict] = []
+    identifier_names = {
+        "CODIGO",
+        "BARRAMENTO",
+        "MATERIAL",
+        "REFERENCIA",
+        "REF",
+    }
     quantity_names = {
         "MTS",
+        "MT",
         "METROS",
+        "METRO",
         "QUANTIDADE",
         "QUANTIDADE FISICA",
         "QTD",
         "QNT",
+        "BARRAS",
         "SALDO CONTAGEM",
         "CONTAGEM",
     }
@@ -827,7 +837,7 @@ def parse_interno_excel(raw: bytes, file_name: str) -> dict:
             }
             code_cols = [
                 col for col, value in headers.items()
-                if value == "CODIGO"
+                if value in identifier_names
             ]
 
             for code_col in code_cols:
