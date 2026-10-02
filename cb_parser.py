@@ -1046,8 +1046,8 @@ def parse_interno_excel(raw: bytes, file_name: str) -> dict:
 
     if not candidates:
         raise ValueError(
-            "Não encontrei uma estrutura com CODIGO e MTS/METROS/"
-            "QUANTIDADE na planilha do setor interno."
+            "Não encontrei uma estrutura válida. Use preferencialmente "
+            "BARRAMENTO + QUANTIDADE ou CODIGO + MTS."
         )
 
     candidates.sort(
