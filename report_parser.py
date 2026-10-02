@@ -7,6 +7,8 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from typing import Any
 
+import pandas as pd
+
 
 def _local(tag: str) -> str:
     return tag.split("}")[-1]
@@ -33,7 +35,33 @@ def _to_number(value: Any) -> float | None:
         return None
 
 
-def _parse_rows(raw: bytes) -> tuple[str, list[dict[str, Any]]]:
+def _excel_column(index: int) -> str:
+    value = int(index) + 1
+    chars = []
+    while value:
+        value, remainder = divmod(value - 1, 26)
+        chars.append(chr(65 + remainder))
+    return "".join(reversed(chars))
+
+
+def _parse_rows(raw: bytes | pd.DataFrame) -> tuple[str, list[dict[str, Any]]]:
+    if isinstance(raw, pd.DataFrame):
+        rows: list[dict[str, Any]] = []
+        for values in raw.itertuples(index=False, name=None):
+            current: dict[str, Any] = {}
+            for index, value in enumerate(values):
+                if value is None:
+                    continue
+                try:
+                    if pd.isna(value):
+                        continue
+                except Exception:
+                    pass
+                current[_excel_column(index)] = value
+            if current:
+                rows.append(current)
+        return str(raw.attrs.get("sheet_name") or "NORMALIZADO"), rows
+
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
         shared: list[str] = []
         if "xl/sharedStrings.xml" in archive.namelist():
@@ -156,7 +184,7 @@ def _parse_rows(raw: bytes) -> tuple[str, list[dict[str, Any]]]:
         return sheet_name, rows
 
 
-def parse_inventory_report(raw: bytes, file_name: str) -> dict:
+def parse_inventory_report(raw: bytes | pd.DataFrame, file_name: str) -> dict:
     sheet_name, rows = _parse_rows(raw)
 
     header_index = next(
@@ -315,7 +343,7 @@ def parse_inventory_report(raw: bytes, file_name: str) -> dict:
 
 
 def parse_inventory_balance_report(
-    raw: bytes,
+    raw: bytes | pd.DataFrame,
     file_name: str,
 ) -> dict:
     """Parser simplificado para chapas e barramentos.
