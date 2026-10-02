@@ -40,7 +40,7 @@ jobs:
           assert "SALVAR SALDO DO FECHAMENTO" in app
           assert '"Saldo fechamento"' in app
           assert '"Saldo atual"' in app
-          assert "O saldo atual não interfere no resultado da conferência." in app
+          assert "menor saldo entre Fechamento e Atual" in app
           db = Path("inventory_db.py").read_text(encoding="utf-8")
           assert "page_size = 1000" in db
           assert '"offset": str(offset)' in db
