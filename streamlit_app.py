@@ -1226,12 +1226,17 @@ def build_cb_reconciliation(
             codigo,
             {
                 "saldo": 0.0,
+                "valor_estoque": 0.0,
                 "armz": set(),
                 "descricao": "",
             },
         )
         current["saldo"] += max(
             float(row.get("saldo") or 0),
+            0.0,
+        )
+        current["valor_estoque"] += max(
+            float(row.get("valor_estoque") or 0),
             0.0,
         )
         armz = str(row.get("armz") or "").strip()
@@ -1263,7 +1268,12 @@ def build_cb_reconciliation(
         item = standby_catalog[codigo]
         stock_data = stock_by_code.get(
             codigo,
-            {"saldo": 0.0, "armz": set(), "descricao": ""},
+            {
+                "saldo": 0.0,
+                "valor_estoque": 0.0,
+                "armz": set(),
+                "descricao": "",
+            },
         )
         raw_counts = counts_by_code.get(codigo, [])
 
@@ -1290,12 +1300,25 @@ def build_cb_reconciliation(
             )
 
         saldo = max(float(stock_data.get("saldo") or 0), 0.0)
-        custo_unitario = float(item.get("ult_preco") or 0)
-        custo_origem = (
-            "CADASTROS · ÚLT. PREÇO"
-            if custo_unitario > 0
-            else "SEM CUSTO"
+        valor_estoque = max(
+            float(stock_data.get("valor_estoque") or 0),
+            0.0,
         )
+
+        # Prioridade de valorização:
+        # 1) custo médio efetivo do estoque = valor em estoque / saldo;
+        # 2) último preço do CADASTROS somente quando não houver valor
+        #    de estoque utilizável para o material.
+        if valor_estoque > 0 and saldo > 0:
+            custo_unitario = valor_estoque / saldo
+            custo_origem = "ANALÍTICO · VALOR / SALDO"
+        else:
+            custo_unitario = float(item.get("ult_preco") or 0)
+            custo_origem = (
+                "CADASTROS · ÚLT. PREÇO"
+                if custo_unitario > 0
+                else "SEM CUSTO"
+            )
 
         physical = (
             sum(
@@ -2145,8 +2168,9 @@ elif page == "Conferência de chapas e barramentos":
                 type=["xlsx", "xltx"],
                 key="cb_analytic_file",
                 help=(
-                    "Neste módulo são usados apenas CODIGO e SALDO EM ESTOQUE. "
-                    "Saldo negativo é convertido para zero. Valor/custo não bloqueia a carga."
+                    "Neste módulo são usados CODIGO, SALDO EM ESTOQUE e, "
+                    "quando disponível, VALOR EM ESTOQUE para calcular o custo "
+                    "unitário médio. Saldo negativo é convertido para zero."
                 ),
             )
 
@@ -2172,8 +2196,8 @@ elif page == "Conferência de chapas e barramentos":
                     )
 
                     st.caption(
-                        "Nesta carga não são validados TP, custo, valor em estoque "
-                        "ou regras do fechamento geral."
+                        "Nesta carga, o VALOR EM ESTOQUE é usado apenas para "
+                        "valorização da divergência; ele não bloqueia a conferência."
                     )
 
                     if st.button(
