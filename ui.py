@@ -421,6 +421,30 @@ div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{min-width:100%!
 .history-cell{border-right:0!important;border-bottom:1px solid #eef0f3;justify-content:flex-start!important}
 .history-cell::before{content:attr(data-label);display:inline-block;min-width:118px;margin-right:.65rem;font-size:.65rem;font-weight:900;text-transform:uppercase;color:#64748b}
 }
+
+/* FECHAMENTO MENSAL — ajuste fino da sidebar após navegação sem reload */
+section[data-testid="stSidebar"] .sidebar-nav-end-spacer{
+  display:block!important;
+  height:12px!important;
+  min-height:12px!important;
+  width:100%!important;
+}
+section[data-testid="stSidebar"] .sidebar-divider{
+  margin:10px 0 16px 0!important;
+}
+section[data-testid="stSidebar"] .sidebar-section-label{
+  margin:0 0 8px 0!important;
+}
+section[data-testid="stSidebar"] .sidebar-status-card{
+  margin:0!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-nav-end-spacer),
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-divider),
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-section-label),
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-status-card){
+  margin:0!important;
+  padding:0!important;
+}
 </style>
 """
 
