@@ -2272,8 +2272,16 @@ elif page == "Conferência de chapas e barramentos":
                         "competencia"
                     )
                     if detected_comp:
+                        _data_contagem = parsed_email.get("data_contagem")
+                        _data_txt = (
+                            _data_contagem.strftime("%d/%m/%Y")
+                            if _data_contagem
+                            else "—"
+                        )
                         st.caption(
-                            "Competência detectada no e-mail: "
+                            "Data da contagem: "
+                            + _data_txt
+                            + " · Competência do fechamento: "
                             + month_label(detected_comp)
                             + f" · {parsed_email['tables_found']} tabela(s) de histórico encontrada(s)"
                         )
