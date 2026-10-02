@@ -2839,25 +2839,46 @@ elif page == "Conferência de chapas e barramentos":
                                 else "VÍNCULO SALVO"
                             )
 
+                        similarity = None
+                        matched_dimension = ""
+
                         if not mapped_code:
                             auto_matches = find_bar_catalog_matches(
                                 identifier,
                                 internal_catalog_rows,
                             )
-                            if len(auto_matches) == 1:
+
+                            if auto_matches:
+                                best_match = auto_matches[0]
                                 mapped_code = str(
-                                    auto_matches[0].get("codigo")
+                                    best_match.get("codigo")
                                     or ""
                                 ).strip()
-                                match_origin = "MEDIDA/REFERÊNCIA"
-                            else:
-                                suggestions = [
-                                    (
-                                        f"{item.get('codigo')} · "
-                                        f"{item.get('descricao')}"
+                                similarity = float(
+                                    best_match.get(
+                                        "_match_similarity"
                                     )
-                                    for item in auto_matches
-                                ]
+                                    or 0
+                                )
+                                matched_dimension = str(
+                                    best_match.get(
+                                        "_match_dimension"
+                                    )
+                                    or ""
+                                ).strip()
+
+                                match_origin = str(
+                                    best_match.get(
+                                        "_match_mode"
+                                    )
+                                    or "SIMILARIDADE"
+                                ).strip()
+
+                                if similarity < 99.99:
+                                    match_origin += (
+                                        f" · {similarity:.2f}%"
+                                    )
+                            else:
                                 internal_issues.append(
                                     {
                                         "Chave origem": source_key,
@@ -2880,9 +2901,7 @@ elif page == "Conferência de chapas e barramentos":
                                             )
                                             or 0
                                         ),
-                                        "Sugestões": " | ".join(
-                                            suggestions
-                                        ),
+                                        "Sugestões": "",
                                     }
                                 )
                                 continue
@@ -2894,6 +2913,7 @@ elif page == "Conferência de chapas e barramentos":
                         internal_valid.append(
                             {
                                 "codigo": mapped_code,
+                                "chave_origem": source_key,
                                 "identificador": identifier,
                                 "quantidade_informada": float(
                                     row.get(
@@ -2919,6 +2939,8 @@ elif page == "Conferência de chapas e barramentos":
                                     )
                                     or ""
                                 ).strip(),
+                                "medida_encontrada": matched_dimension,
+                                "similaridade": similarity,
                                 "vinculo": match_origin,
                                 "observacao": (
                                     f"{parsed_internal['sheet']} · "
@@ -2971,6 +2993,16 @@ elif page == "Conferência de chapas e barramentos":
                                     ),
                                     "Descrição": row.get(
                                         "descricao"
+                                    ),
+                                    "Medida encontrada": row.get(
+                                        "medida_encontrada"
+                                    ),
+                                    "Semelhança": (
+                                        (
+                                            f"{float(row.get('similaridade')):.2f}%"
+                                        )
+                                        if row.get("similaridade") is not None
+                                        else ""
                                     ),
                                     "Vínculo": row.get(
                                         "vinculo"
@@ -3105,6 +3137,34 @@ elif page == "Conferência de chapas e barramentos":
                         use_container_width=True,
                         key="cb_import_internal",
                     ):
+                        for linked_row in internal_valid:
+                            if str(
+                                linked_row.get("vinculo")
+                                or ""
+                            ) not in {
+                                "CÓDIGO",
+                                "VÍNCULO SALVO",
+                            }:
+                                db.save_cb_physical_mapping(
+                                    "INTERNO_EXCEL",
+                                    str(
+                                        linked_row.get(
+                                            "chave_origem"
+                                        )
+                                        or ""
+                                    ),
+                                    str(
+                                        linked_row.get(
+                                            "identificador"
+                                        )
+                                        or ""
+                                    ),
+                                    str(
+                                        linked_row.get("codigo")
+                                        or ""
+                                    ),
+                                )
+
                         db.save_cb_counts_batch(
                             cb_month,
                             "INTERNO_EXCEL",
