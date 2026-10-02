@@ -1661,13 +1661,6 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    # Espaço real entre o título NAVEGAÇÃO e o início do primeiro botão.
-    # Mantido em um elemento Streamlit próprio para não ser colapsado pelo Markdown.
-    st.markdown(
-        '<div class="sidebar-nav-button-gap" aria-hidden="true"></div>',
-        unsafe_allow_html=True,
-    )
-
     for _index, internal_page in enumerate(PAGES):
         label = str(
             menu_labels.get(internal_page)
