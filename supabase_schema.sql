@@ -199,13 +199,23 @@ create table if not exists public.fm_cb_ajustes_itens (
   descricao text not null default '',
   um text not null default '',
   saldo_fechamento numeric(20,6) not null default 0,
+  saldo_atual numeric(20,6),
+  saldo_base_ajuste numeric(20,6),
+  base_origem text not null default '',
   fisico numeric(20,6),
+  contagem_assumida_zero boolean not null default false,
   diferenca_qtd numeric(20,6) not null default 0,
   custo_unitario numeric(20,6) not null default 0,
   previsao_valor numeric(18,2) not null default 0,
   finalizado_em timestamptz not null default now(),
   primary key (competencia, codigo)
 );
+
+alter table public.fm_cb_ajustes_itens
+  add column if not exists saldo_atual numeric(20,6),
+  add column if not exists saldo_base_ajuste numeric(20,6),
+  add column if not exists base_origem text not null default '',
+  add column if not exists contagem_assumida_zero boolean not null default false;
 
 alter table public.fm_cb_ajustes_historico enable row level security;
 alter table public.fm_cb_ajustes_itens enable row level security;
@@ -254,7 +264,8 @@ begin
 
   insert into public.fm_cb_ajustes_itens(
     competencia, codigo, categoria, descricao, um,
-    saldo_fechamento, fisico, diferenca_qtd,
+    saldo_fechamento, saldo_atual, saldo_base_ajuste, base_origem,
+    fisico, contagem_assumida_zero, diferenca_qtd,
     custo_unitario, previsao_valor, finalizado_em
   )
   select
@@ -264,7 +275,11 @@ begin
     coalesce(x.descricao, ''),
     upper(trim(coalesce(x.um, ''))),
     coalesce(x.saldo_fechamento, 0),
+    x.saldo_atual,
+    coalesce(x.saldo_base_ajuste, x.saldo_fechamento, 0),
+    upper(trim(coalesce(x.base_origem, ''))),
     x.fisico,
+    coalesce(x.contagem_assumida_zero, false),
     coalesce(x.diferenca_qtd, 0),
     coalesce(x.custo_unitario, 0),
     coalesce(x.previsao_valor, 0),
@@ -275,7 +290,11 @@ begin
     descricao text,
     um text,
     saldo_fechamento numeric,
+    saldo_atual numeric,
+    saldo_base_ajuste numeric,
+    base_origem text,
     fisico numeric,
+    contagem_assumida_zero boolean,
     diferenca_qtd numeric,
     custo_unitario numeric,
     previsao_valor numeric
