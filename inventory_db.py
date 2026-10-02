@@ -621,18 +621,32 @@ def list_cb_system_balances(
     else:
         key = str(competencia)[:10]
 
-    response = requests.get(
-        f"{supabase_url()}/rest/v1/fm_cb_saldos_sistema",
-        headers=_headers(),
-        params={
-            "select": "competencia,codigo,armz,saldo,valor_estoque,descricao,arquivo_nome,importado_em",
-            "competencia": f"eq.{key}",
-            "order": "codigo.asc,armz.asc",
-        },
-        timeout=30,
-    )
-    _raise(response)
-    return response.json() or []
+    rows: list[dict] = []
+    page_size = 1000
+    offset = 0
+
+    while True:
+        response = requests.get(
+            f"{supabase_url()}/rest/v1/fm_cb_saldos_sistema",
+            headers=_headers(),
+            params={
+                "select": "competencia,codigo,armz,saldo,valor_estoque,descricao,arquivo_nome,importado_em",
+                "competencia": f"eq.{key}",
+                "order": "codigo.asc,armz.asc",
+                "limit": str(page_size),
+                "offset": str(offset),
+            },
+            timeout=30,
+        )
+        _raise(response)
+        batch = response.json() or []
+        rows.extend(batch)
+
+        if len(batch) < page_size:
+            break
+        offset += page_size
+
+    return rows
 
 
 def save_cb_system_balances(
