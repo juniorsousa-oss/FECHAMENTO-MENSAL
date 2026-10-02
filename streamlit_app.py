@@ -592,6 +592,7 @@ def api_sources_summary(
             "css": "error",
             "healthy": 0,
             "total": 0,
+            "last_update": "—",
         }
 
     if not sources:
@@ -600,6 +601,7 @@ def api_sources_summary(
             "css": "warn",
             "healthy": 0,
             "total": 0,
+            "last_update": "—",
         }
 
     ok_statuses = {
@@ -634,11 +636,29 @@ def api_sources_summary(
         overall = "ATENÇÃO"
         css = "warn"
 
+    latest_update = None
+    for row in sources:
+        raw = str(row.get("last_update_at") or "").strip()
+        if not raw:
+            continue
+        stamp = pd.to_datetime(raw, errors="coerce", utc=True)
+        if pd.isna(stamp):
+            continue
+        if latest_update is None or stamp > latest_update:
+            latest_update = stamp
+
+    latest_label = (
+        central_data.format_dt(latest_update.isoformat())
+        if latest_update is not None
+        else "—"
+    )
+
     return {
         "status": overall,
         "css": css,
         "healthy": healthy,
         "total": len(sources),
+        "last_update": latest_label,
     }
 
 
@@ -1587,6 +1607,7 @@ _sidebar_html = (
       '<div class="sidebar-status-name">CONEXÕES</div>'
       f'<div class="sidebar-status-value {_sidebar_status_class}">{html.escape(str(api_summary["status"]))}</div>'
       '<div class="sidebar-status-meta">'
+        f'<div>ÚLTIMA ATUALIZAÇÃO: {html.escape(str(api_summary.get("last_update") or "—"))}</div>'
         f'<div>QNT DE BASES: {api_summary["healthy"]}/{api_summary["total"]}</div>'
       '</div>'
     '</div>'
