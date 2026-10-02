@@ -199,6 +199,107 @@ def dimension_value_mm(token: str, is_inch: bool) -> float | None:
     return value
 
 
+def bar_dimension_signature(value: Any) -> tuple[float, float] | None:
+    text = normalize_text(value).replace(",", ".")
+    if not text:
+        return None
+
+    largura = re.search(
+        r"LARGURA\s+([^ ]+)\s*(MM|POL)",
+        text,
+    )
+    espessura = re.search(
+        r"ESPESSURA\s+([^ ]+)\s*(MM|POL)",
+        text,
+    )
+
+    if largura and espessura:
+        a = dimension_value_mm(
+            largura.group(1),
+            largura.group(2) == "POL",
+        )
+        b = dimension_value_mm(
+            espessura.group(1),
+            espessura.group(2) == "POL",
+        )
+    else:
+        pair = re.search(
+            r"([^ ]+)\s*[X×]\s*([^ ]+)",
+            text,
+        )
+        if not pair:
+            return None
+
+        left = pair.group(1)
+        right = pair.group(2)
+        is_inch = (
+            "/" in left
+            or "/" in right
+            or "POL" in text
+        )
+        a = dimension_value_mm(left, is_inch)
+        b = dimension_value_mm(right, is_inch)
+
+    if a is None or b is None:
+        return None
+
+    values = sorted(
+        [float(a), float(b)],
+        reverse=True,
+    )
+    return round(values[0], 3), round(values[1], 3)
+
+
+def find_bar_catalog_matches(
+    identifier: Any,
+    catalog: list[dict],
+    tolerance_mm: float = 0.20,
+) -> list[dict]:
+    raw = str(identifier or "").strip()
+    if not raw:
+        return []
+
+    normalized = normalize_bar_identifier(raw)
+    exact = []
+
+    for item in catalog:
+        code = normalize_code(item.get("codigo"))
+        reference = normalize_bar_identifier(
+            item.get("referencia")
+        )
+        if normalized == code or (
+            reference and normalized == reference
+        ):
+            exact.append(item)
+
+    if exact:
+        return exact
+
+    wanted = bar_dimension_signature(raw)
+    if wanted is None:
+        return []
+
+    found = {}
+    for item in catalog:
+        signatures = [
+            bar_dimension_signature(item.get("referencia")),
+            bar_dimension_signature(item.get("descricao")),
+        ]
+        for signature in signatures:
+            if signature is None:
+                continue
+            if (
+                abs(signature[0] - wanted[0]) <= tolerance_mm
+                and abs(signature[1] - wanted[1]) <= tolerance_mm
+            ):
+                found[
+                    normalize_code(item.get("codigo"))
+                ] = item
+                break
+
+    return list(found.values())
+
+
 def _find_header_row(
     ws,
     required_labels: set[str],
