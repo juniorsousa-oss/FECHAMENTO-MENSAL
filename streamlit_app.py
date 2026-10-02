@@ -2140,6 +2140,15 @@ elif page == "Conferência de chapas e barramentos":
             ):
                 stock_positive_codes.add(code)
 
+        current_positive_codes = set()
+        for row in cb_current_stock_items:
+            code = normalize_code(row.get("codigo"))
+            if (
+                code in standby_lookup
+                and max(float(row.get("saldo") or 0), 0.0) > 0
+            ):
+                current_positive_codes.add(code)
+
         counted_codes = {
             normalize_code(row.get("codigo"))
             for row in cb_counts
@@ -2151,7 +2160,9 @@ elif page == "Conferência de chapas e barramentos":
             if bool(row.get("ativo", True))
         }
         source_analysis_codes = (
-            stock_positive_codes | counted_codes
+            stock_positive_codes
+            | current_positive_codes
+            | counted_codes
         )
         final_analysis_codes = (
             source_analysis_codes - excluded_codes_current
@@ -2169,7 +2180,7 @@ elif page == "Conferência de chapas e barramentos":
                 </div>
                 <div class="cb-compact-stat">
                     <span>COM SALDO</span>
-                    <strong>{len(stock_positive_codes)}</strong>
+                    <strong>{len(stock_positive_codes | current_positive_codes)}</strong>
                 </div>
                 <div class="cb-compact-stat">
                     <span>EM CONTAGEM</span>
