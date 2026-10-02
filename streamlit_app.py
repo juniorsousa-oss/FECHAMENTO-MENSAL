@@ -3140,76 +3140,78 @@ elif page == "Conferência de chapas e barramentos":
                         f"Não foi possível ler a planilha do almoxarifado: {exc}"
                     )
 
-            st.markdown("#### LANÇAMENTO MANUAL")
-
-            manual_options = [
-                (
-                    str(row.get("codigo")),
-                    str(row.get("descricao") or ""),
+            with st.expander(
+                "LANÇAMENTO MANUAL",
+                expanded=False,
+            ):
+                manual_options = [
                     (
-                        "KG"
-                        if row.get("categoria") == "CHAPA"
-                        else "MT"
-                    ),
-                )
-                for row in standby_catalog
-                if row.get("categoria") == "BARRA_COBRE"
-            ]
-            manual_labels = [
-                f"{code} · {description} · {unit}"
-                for code, description, unit in manual_options
-            ]
-
-            if manual_labels:
-                manual_selected = st.selectbox(
-                    "Material",
-                    manual_labels,
-                    key="cb_manual_code",
-                )
-                manual_code = manual_selected.split(
-                    " · ",
-                    1,
-                )[0].strip()
-                manual_unit = next(
-                    (
-                        unit
-                        for code, _, unit in manual_options
-                        if code == manual_code
-                    ),
-                    "",
-                )
-
-                manual_qty = st.number_input(
-                    f"Quantidade física ({manual_unit or 'U.M.'})",
-                    min_value=0.0,
-                    value=0.0,
-                    step=1.0,
-                    format="%.6f",
-                    key="cb_manual_qty",
-                )
-                manual_obs = st.text_input(
-                    "Observação",
-                    key="cb_manual_obs",
-                )
-
-                if st.button(
-                    "SALVAR CONTAGEM MANUAL",
-                    type="primary",
-                    use_container_width=True,
-                    key="cb_save_manual",
-                ):
-                    db.save_cb_count(
-                        cb_month,
-                        "INTERNO_MANUAL",
-                        manual_code,
-                        manual_qty,
-                        manual_obs,
-                        "Lançamento manual no aplicativo",
+                        str(row.get("codigo")),
+                        str(row.get("descricao") or ""),
+                        (
+                            "KG"
+                            if row.get("categoria") == "CHAPA"
+                            else "MT"
+                        ),
                     )
-                    st.session_state["_cb_count_flash"] = (
-                        "Contagem manual salva."
+                    for row in standby_catalog
+                    if row.get("categoria") == "BARRA_COBRE"
+                ]
+                manual_labels = [
+                    f"{code} · {description} · {unit}"
+                    for code, description, unit in manual_options
+                ]
+
+                if manual_labels:
+                    manual_selected = st.selectbox(
+                        "Material",
+                        manual_labels,
+                        key="cb_manual_code",
                     )
-                    st.rerun()
+                    manual_code = manual_selected.split(
+                        " · ",
+                        1,
+                    )[0].strip()
+                    manual_unit = next(
+                        (
+                            unit
+                            for code, _, unit in manual_options
+                            if code == manual_code
+                        ),
+                        "",
+                    )
+
+                    manual_qty = st.number_input(
+                        f"Quantidade física ({manual_unit or 'U.M.'})",
+                        min_value=0.0,
+                        value=0.0,
+                        step=1.0,
+                        format="%.6f",
+                        key="cb_manual_qty",
+                    )
+                    manual_obs = st.text_input(
+                        "Observação",
+                        key="cb_manual_obs",
+                    )
+
+                    if st.button(
+                        "SALVAR CONTAGEM MANUAL",
+                        type="primary",
+                        use_container_width=True,
+                        key="cb_save_manual",
+                    ):
+                        db.save_cb_count(
+                            cb_month,
+                            "INTERNO_MANUAL",
+                            manual_code,
+                            manual_qty,
+                            manual_obs,
+                            "Lançamento manual no aplicativo",
+                        )
+                        st.session_state["_cb_count_flash"] = (
+                            "Contagem manual salva."
+                        )
+                        st.rerun()
 
         flash_count = st.session_state.pop(
             "_cb_count_flash",
