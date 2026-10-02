@@ -1674,6 +1674,10 @@ with st.sidebar:
         )
 
     st.markdown(
+        '<div class="sidebar-nav-end-spacer"></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
         '<div class="sidebar-divider"></div>',
         unsafe_allow_html=True,
     )
