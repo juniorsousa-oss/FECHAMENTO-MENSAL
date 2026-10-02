@@ -64,6 +64,9 @@ jobs:
           assert "def _set_fm_page(target: str)" in app
           assert 'if "_fm_nav_initialized" not in st.session_state' in app
           assert "def load_global_visual_config()" in app
+          assert "sidebar-nav-end-spacer" in app
+          ui = Path("ui.py").read_text(encoding="utf-8")
+          assert "FECHAMENTO MENSAL — ajuste fino da sidebar" in ui
           assert "_saldo_codes = set(final_analysis_codes)" in app
           assert "CANDIDATOS/NÃO SELECIONADOS E ITENS REMOVIDOS NÃO COMPÕEM O SALDO" in app
           assert "Identidade visual" not in app
