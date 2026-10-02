@@ -879,8 +879,9 @@ def parse_interno_excel(raw: bytes, file_name: str) -> dict:
                         continue
 
                     blank_streak = 0
-                    quantidade = to_number(
-                        ws.cell(data_row, quantity_col).value
+                    quantidade = parse_bar_quantity(
+                        ws.cell(data_row, quantity_col).value,
+                        quantity_label,
                     )
                     rows.append(
                         {
