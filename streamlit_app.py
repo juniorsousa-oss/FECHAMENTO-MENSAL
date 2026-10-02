@@ -1978,6 +1978,7 @@ elif page == "Conferência de chapas e barramentos":
             index=visible_months.index(cb_default_month),
             format_func=month_label,
             key="cb_month",
+            label_visibility="collapsed",
         )
         st.query_params["mes_cb"] = cb_month.strftime("%Y-%m")
 
@@ -2035,16 +2036,6 @@ elif page == "Conferência de chapas e barramentos":
             if str(row.get("status") or "").upper() == "CONFIRMADO"
         }
 
-        st.markdown(
-            '<div class="topic-divider"></div>',
-            unsafe_allow_html=True,
-        )
-        section_band(
-            "01 · BASE DE SELEÇÃO",
-            "CADASTROS → STANDBY → BASE FINAL",
-            "O CADASTROS identifica todos os materiais compatíveis com CHAPA ou BARRA DE COBRE e os mantém em standby. O item só entra na análise final quando possui saldo no Analítico ou quando alguma contagem física é vinculada ao seu código.",
-        )
-
         stock_positive_codes = set()
         for row in cb_stock_items:
             code = normalize_code(row.get("codigo"))
@@ -2066,22 +2057,28 @@ elif page == "Conferência de chapas e barramentos":
             set(standby_lookup) - final_analysis_codes
         )
 
-        base_col1, base_col2, base_col3, base_col4 = st.columns(4)
-        base_col1.metric(
-            "COMPATÍVEIS EM CADASTROS",
-            len(standby_catalog),
-        )
-        base_col2.metric(
-            "COM SALDO ANALÍTICO",
-            len(stock_positive_codes),
-        )
-        base_col3.metric(
-            "VINCULADOS POR CONTAGEM",
-            len(counted_codes),
-        )
-        base_col4.metric(
-            "BASE FINAL",
-            len(final_analysis_codes),
+        st.markdown(
+            f"""
+            <div class="cb-compact-stats">
+                <div class="cb-compact-stat">
+                    <span>CADASTROS</span>
+                    <strong>{len(standby_catalog)}</strong>
+                </div>
+                <div class="cb-compact-stat">
+                    <span>COM SALDO</span>
+                    <strong>{len(stock_positive_codes)}</strong>
+                </div>
+                <div class="cb-compact-stat">
+                    <span>EM CONTAGEM</span>
+                    <strong>{len(counted_codes)}</strong>
+                </div>
+                <div class="cb-compact-stat cb-compact-stat-final">
+                    <span>BASE FINAL</span>
+                    <strong>{len(final_analysis_codes)}</strong>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
         flash_base = st.session_state.pop(
@@ -2092,7 +2089,7 @@ elif page == "Conferência de chapas e barramentos":
             st.success(flash_base)
 
         with st.expander(
-            f"MATERIAIS EM STANDBY ({len(standby_only_codes)})",
+            f"STANDBY · {len(standby_only_codes)} MATERIAIS",
             expanded=False,
         ):
             standby_view = pd.DataFrame(
@@ -2120,11 +2117,6 @@ elif page == "Conferência de chapas e barramentos":
                     "Todos os materiais compatíveis já participam da análise atual."
                 )
             else:
-                st.caption(
-                    "Estes materiais continuam disponíveis para os próximos "
-                    "fechamentos, mas não entram na análise desta competência "
-                    "enquanto não tiverem saldo ou vínculo com uma contagem."
-                )
                 st.dataframe(
                     standby_view,
                     use_container_width=True,
@@ -2195,44 +2187,11 @@ elif page == "Conferência de chapas e barramentos":
                     )
 
         st.markdown(
-            '<div class="topic-divider"></div>',
+            '<div class="topic-divider cb-tight-divider"></div>',
             unsafe_allow_html=True,
         )
-        section_band(
-            "02 · ALIMENTAÇÃO FÍSICA",
-            "RECEBER CONTAGENS",
-            "CHAPAS usa o e-mail .EML; BARRAMENTOS usa o Excel da produção; o setor interno aceita Excel ou lançamento manual. As fontes são complementares e são somadas por código.",
-        )
-
         st.markdown(
-            """
-            <div class="cb-source-grid">
-                <div class="cb-source-card">
-                    <div class="cb-source-title">CHAPAS · E-MAIL</div>
-                    <div class="cb-source-text">
-                        Leitura automática da tabela DIMENSÃO / DESCRIÇÃO / CHAPAS / PESO TOTAL.
-                        CHAPAS são sempre conferidas em KG, usando diretamente o PESO TOTAL informado no e-mail.
-                    </div>
-                    <div class="cb-source-tag">.EML AUTOMÁTICO</div>
-                </div>
-                <div class="cb-source-card">
-                    <div class="cb-source-title">BARRAMENTOS · PRODUÇÃO</div>
-                    <div class="cb-source-text">
-                        Leitura automática de CODIGO, Barras (m) e Processado (m).
-                        Físico Produção = Barras + Processado.
-                    </div>
-                    <div class="cb-source-tag">EXCEL AUTOMÁTICO</div>
-                </div>
-                <div class="cb-source-card">
-                    <div class="cb-source-title">ALMOXARIFADO · BARRAS</div>
-                    <div class="cb-source-text">
-                        Excel flexível com CODIGO + MTS/METROS/QUANTIDADE ou lançamento manual.
-                        Todos os itens precisam estar vinculados a um código de BARRA DE COBRE.
-                    </div>
-                    <div class="cb-source-tag">EXCEL + MANUAL</div>
-                </div>
-            </div>
-            """,
+            '<div class="cb-compact-section-title">ALIMENTAÇÃO FÍSICA</div>',
             unsafe_allow_html=True,
         )
 
