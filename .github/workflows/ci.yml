@@ -8,6 +8,8 @@ on:
       - 'central_fechamento_data.py'
       - 'report_parser.py'
       - 'cb_parser.py'
+      - 'inventory_db.py'
+      - 'supabase_schema.sql'
       - 'requirements.txt'
       - '.github/workflows/ci.yml'
   workflow_dispatch:
@@ -44,6 +46,13 @@ jobs:
           assert '"offset": str(offset)' in db
           assert "CHAPAS · ATUAL" in app
           assert "BARRAMENTOS · ATUAL" in app
+          assert "FINALIZAR E REGISTRAR AJUSTES" in app
+          assert "HISTÓRICO DE AJUSTES · MÊS A MÊS" in app
+          assert '"Códigos consolidados"' in app
+          assert '"Quantidade física"' in app
+          assert "def finalize_cb_adjustments(" in db
+          assert "def list_cb_adjustment_history(" in db
+          assert "def list_cb_adjustment_items(" in db
           assert "Identidade visual" not in app
           print("ESTRUTURA_OK")
           PY
