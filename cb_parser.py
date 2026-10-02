@@ -173,6 +173,32 @@ def parse_bar_quantity(
     }
 
 
+def dimension_value_mm(token: str, is_inch: bool) -> float | None:
+    raw = str(token or "").strip().replace(",", ".")
+    if not raw:
+        return None
+    try:
+        if "/" in raw:
+            compact = raw.replace(" ", "")
+            if "." in compact:
+                whole, frac = compact.split(".", 1)
+                num, den = frac.split("/", 1)
+                value = float(whole) + float(num) / float(den)
+            else:
+                num, den = compact.split("/", 1)
+                if num.isdigit() and len(num) == 2:
+                    value = float(num[0]) + float(num[1]) / float(den)
+                else:
+                    value = float(num) / float(den)
+        else:
+            value = float(raw)
+    except Exception:
+        return None
+    if is_inch:
+        value *= 25.4
+    return value
+
+
 def _find_header_row(
     ws,
     required_labels: set[str],
