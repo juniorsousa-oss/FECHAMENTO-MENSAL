@@ -929,19 +929,51 @@ def parse_interno_excel(raw: bytes, file_name: str) -> dict:
     )
     selected = candidates[0]
 
-    aggregated: dict[str, float] = defaultdict(float)
+    aggregated: dict[str, dict] = {}
+
     for row in selected["rows"]:
-        aggregated[row["codigo"]] += float(
-            row["quantidade_fisica"] or 0
+        key = str(row.get("chave_origem") or "").strip()
+        if not key:
+            continue
+
+        current = aggregated.setdefault(
+            key,
+            {
+                "identificador": row.get("identificador") or key,
+                "chave_origem": key,
+                "codigo_direto": row.get("codigo_direto") or "",
+                "quantidade_informada": 0.0,
+                "quantidade_fisica": 0.0,
+                "modo_quantidade": row.get("modo_quantidade") or "",
+                "quantidade_origem": [],
+            },
+        )
+        current["quantidade_informada"] += float(
+            row.get("quantidade_informada") or 0
+        )
+        current["quantidade_fisica"] += float(
+            row.get("quantidade_fisica") or 0
+        )
+        current["quantidade_origem"].append(
+            str(row.get("quantidade_origem") or "")
         )
 
-    rows = [
-        {
-            "codigo": codigo,
-            "quantidade_fisica": quantidade,
-        }
-        for codigo, quantidade in sorted(aggregated.items())
-    ]
+        if (
+            current["modo_quantidade"]
+            != str(row.get("modo_quantidade") or "")
+        ):
+            current["modo_quantidade"] = "MISTO"
+
+    rows = []
+    for item in aggregated.values():
+        item["quantidade_origem"] = " | ".join(
+            value
+            for value in item["quantidade_origem"]
+            if value
+        )
+        rows.append(item)
+
+    wb.close()
 
     return {
         "file_name": file_name,
@@ -950,7 +982,8 @@ def parse_interno_excel(raw: bytes, file_name: str) -> dict:
         "rows": rows,
         "total_rows": len(rows),
         "total_quantidade": sum(
-            row["quantidade_fisica"] for row in rows
+            row["quantidade_fisica"]
+            for row in rows
         ),
     }
 
