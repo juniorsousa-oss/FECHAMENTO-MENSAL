@@ -4305,7 +4305,11 @@ elif page == "Conferência de chapas e barramentos":
                             "descricao": "Descrição",
                             "um": "U.M.",
                             "saldo_fechamento": "Saldo fechamento",
+                            "saldo_atual": "Saldo atual",
+                            "saldo_base_ajuste": "Saldo base ajuste",
+                            "base_origem": "Base usada",
                             "fisico": "Físico",
+                            "contagem_assumida_zero": "Contagem assumida zero",
                             "diferenca_qtd": "Ajuste Qtd",
                             "custo_unitario": "Custo unitário",
                             "previsao_valor": "Previsão R$",
@@ -4319,7 +4323,11 @@ elif page == "Conferência de chapas e barramentos":
                                 "Descrição",
                                 "U.M.",
                                 "Saldo fechamento",
+                                "Saldo atual",
+                                "Saldo base ajuste",
+                                "Base usada",
                                 "Físico",
+                                "Contagem assumida zero",
                                 "Ajuste Qtd",
                                 "Custo unitário",
                                 "Previsão R$",
@@ -4331,6 +4339,17 @@ elif page == "Conferência de chapas e barramentos":
                             "Saldo fechamento": st.column_config.NumberColumn(
                                 "Saldo fechamento",
                                 format="localized",
+                            ),
+                            "Saldo atual": st.column_config.NumberColumn(
+                                "Saldo atual",
+                                format="localized",
+                            ),
+                            "Saldo base ajuste": st.column_config.NumberColumn(
+                                "Saldo base ajuste",
+                                format="localized",
+                            ),
+                            "Contagem assumida zero": st.column_config.CheckboxColumn(
+                                "Contagem assumida zero",
                             ),
                             "Físico": st.column_config.NumberColumn(
                                 "Físico",
