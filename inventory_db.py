@@ -706,6 +706,30 @@ def finalize_cb_adjustments(
                     else row.get("saldo_fechamento")
                     or 0
                 ),
+                "saldo_atual": (
+                    None
+                    if (
+                        row.get("Saldo atual")
+                        if "Saldo atual" in row
+                        else row.get("saldo_atual")
+                    ) is None
+                    else float(
+                        row.get("Saldo atual")
+                        if "Saldo atual" in row
+                        else row.get("saldo_atual")
+                    )
+                ),
+                "saldo_base_ajuste": float(
+                    row.get("Saldo base ajuste")
+                    if row.get("Saldo base ajuste") is not None
+                    else row.get("saldo_base_ajuste")
+                    or 0
+                ),
+                "base_origem": str(
+                    row.get("Base usada")
+                    or row.get("base_origem")
+                    or ""
+                ).strip(),
                 "fisico": (
                     None
                     if (
@@ -718,6 +742,12 @@ def finalize_cb_adjustments(
                         if "Físico" in row
                         else row.get("fisico")
                     )
+                ),
+                "contagem_assumida_zero": bool(
+                    row.get("Contagem assumida zero")
+                    if "Contagem assumida zero" in row
+                    else row.get("contagem_assumida_zero")
+                    or False
                 ),
                 "diferenca_qtd": float(
                     row.get("Diferença Qtd")
@@ -788,7 +818,8 @@ def list_cb_adjustment_items(
         params={
             "select": (
                 "competencia,codigo,categoria,descricao,um,"
-                "saldo_fechamento,fisico,diferenca_qtd,"
+                "saldo_fechamento,saldo_atual,saldo_base_ajuste,base_origem,"
+                "fisico,contagem_assumida_zero,diferenca_qtd,"
                 "custo_unitario,previsao_valor,finalizado_em"
             ),
             "competencia": f"eq.{key}",
