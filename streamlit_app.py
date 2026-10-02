@@ -168,6 +168,14 @@ def load_api_sources() -> list[dict]:
     ]
 
 
+@st.cache_data(show_spinner=False, ttl=30, max_entries=2)
+def load_inventory_overview() -> tuple[list[dict], list[dict]]:
+    return (
+        db.list_inventory_imports(),
+        db.list_inventory_summaries(),
+    )
+
+
 
 def month_start(value: date | datetime) -> date:
     return date(value.year, value.month, 1)
@@ -269,7 +277,7 @@ def section_band(kicker: str, title: str, note: str) -> None:
 
 
 
-@st.cache_data(show_spinner=False, ttl=60, max_entries=4)
+@st.cache_resource(show_spinner=False, ttl=300, max_entries=4)
 def load_central_analitico(version_token: str) -> tuple[dict, dict, dict]:
     del version_token
     raw, meta = central_data.download_analitico()
@@ -279,7 +287,7 @@ def load_central_analitico(version_token: str) -> tuple[dict, dict, dict]:
     return parsed, balance, meta
 
 
-@st.cache_data(show_spinner=False, ttl=300, max_entries=4)
+@st.cache_resource(show_spinner=False, ttl=300, max_entries=4)
 def load_central_cadastros(
     version_token: str,
 ) -> tuple[dict, dict]:
@@ -1674,25 +1682,17 @@ with st.sidebar:
         )
 
     st.markdown(
-        '<div class="sidebar-nav-end-spacer"></div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="sidebar-divider"></div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="sidebar-section-label">STATUS GERAL</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
         (
+            '<div class="sidebar-status-section">'
+            '<div class="sidebar-divider"></div>'
+            '<div class="sidebar-section-label sidebar-status-label">STATUS GERAL</div>'
             '<div class="sidebar-status-card">'
             '<div class="sidebar-status-name">CONEXÕES</div>'
             f'<div class="sidebar-status-value {_sidebar_status_class}">{html.escape(str(api_summary["status"]))}</div>'
             '<div class="sidebar-status-meta">'
             f'<div>ÚLTIMA ATUALIZAÇÃO: {html.escape(str(api_summary.get("last_update") or "—"))}</div>'
             f'<div>QNT DE BASES: {api_summary["healthy"]}/{api_summary["total"]}</div>'
+            '</div>'
             '</div>'
             '</div>'
         ),
@@ -1712,88 +1712,133 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-_force_central_fm = bool(st.session_state.pop("_force_central_fm", False))
-central_context = central_analitico_context(force=_force_central_fm)
-current_competencia = competencia_from_source_update(
-    central_context.get("meta") or {}
-)
-central_balance_preview = (
-    (central_context.get("balance") or {}).get("rows") or []
-    if central_context.get("available")
-    else []
-)
-
-try:
-    imports = db.list_inventory_imports()
-    summaries = db.list_inventory_summaries()
-    data_error = ""
-except Exception as exc:
-    imports = []
-    summaries = []
-    data_error = str(exc)
-
-persisted_import_keys = {
-    str(row.get("competencia") or "")[:10]
-    for row in imports
+_needs_inventory_core = page in {
+    "Dashboard",
+    "Conferência de chapas e barramentos",
 }
-central_parsed = central_context.get("parsed") or {}
-if (
-    central_context.get("available")
-    and central_parsed.get("rows")
-):
-    current_key = current_competencia.isoformat()
-    preview_errors = list(central_parsed.get("errors") or [])
-    imports = [
-        row for row in imports
-        if str(row.get("competencia") or "")[:10] != current_key
-    ]
-    summaries = [
-        row for row in summaries
-        if str(row.get("competencia") or "")[:10] != current_key
-    ]
-    imports.append(
-        {
-            "competencia": current_key,
-            "arquivo_nome": str(
-                (central_context.get("meta") or {}).get("last_file_name")
-                or "ANALITICO.xltx"
-            ),
-            "total_linhas": int(central_parsed.get("total_rows") or 0),
-            "linhas_validas": int(central_parsed.get("valid_rows") or 0),
-            "linhas_invalidas": int(central_parsed.get("invalid_rows") or len(preview_errors)),
-            "valor_total": float(central_parsed.get("total_value") or 0),
-            "status": "PENDENCIA" if preview_errors else "VALIDO",
-            "importado_em": (central_context.get("meta") or {}).get("last_update_at"),
-            "preview": True,
-        }
+
+central_context = {"available": False, "meta": {}}
+current_competencia = previous_month(
+    month_start(datetime.now(TZ).date())
+)
+central_balance_preview = []
+imports = []
+summaries = []
+data_error = ""
+persisted_import_keys = set()
+central_parsed = {}
+imports_by_month = {}
+summary_map = {}
+available_months = []
+visible_months = []
+
+if _needs_inventory_core:
+    _force_central_fm = bool(
+        st.session_state.pop("_force_central_fm", False)
     )
-    summaries.extend(
-        build_preview_summaries(
-            current_competencia,
-            central_parsed["rows"],
+    central_context = central_analitico_context(
+        force=_force_central_fm
+    )
+    current_competencia = competencia_from_source_update(
+        central_context.get("meta") or {}
+    )
+    central_balance_preview = (
+        (central_context.get("balance") or {}).get("rows") or []
+        if central_context.get("available")
+        else []
+    )
+
+    try:
+        imports, summaries = load_inventory_overview()
+    except Exception as exc:
+        imports = []
+        summaries = []
+        data_error = str(exc)
+
+    persisted_import_keys = {
+        str(row.get("competencia") or "")[:10]
+        for row in imports
+    }
+    central_parsed = central_context.get("parsed") or {}
+    if (
+        central_context.get("available")
+        and central_parsed.get("rows")
+    ):
+        current_key = current_competencia.isoformat()
+        preview_errors = list(
+            central_parsed.get("errors") or []
         )
+        imports = [
+            row for row in imports
+            if str(row.get("competencia") or "")[:10]
+            != current_key
+        ]
+        summaries = [
+            row for row in summaries
+            if str(row.get("competencia") or "")[:10]
+            != current_key
+        ]
+        imports.append(
+            {
+                "competencia": current_key,
+                "arquivo_nome": str(
+                    (central_context.get("meta") or {}).get(
+                        "last_file_name"
+                    )
+                    or "ANALITICO.xltx"
+                ),
+                "total_linhas": int(
+                    central_parsed.get("total_rows") or 0
+                ),
+                "linhas_validas": int(
+                    central_parsed.get("valid_rows") or 0
+                ),
+                "linhas_invalidas": int(
+                    central_parsed.get("invalid_rows")
+                    or len(preview_errors)
+                ),
+                "valor_total": float(
+                    central_parsed.get("total_value") or 0
+                ),
+                "status": (
+                    "PENDENCIA"
+                    if preview_errors
+                    else "VALIDO"
+                ),
+                "importado_em": (
+                    central_context.get("meta") or {}
+                ).get("last_update_at"),
+                "preview": True,
+            }
+        )
+        summaries.extend(
+            build_preview_summaries(
+                current_competencia,
+                central_parsed["rows"],
+            )
+        )
+
+    imports_by_month = {
+        str(row.get("competencia") or "")[:10]: row
+        for row in imports
+    }
+    summary_map = summary_lookup(summaries)
+    available_months = sorted(
+        [
+            parsed
+            for parsed in (
+                parse_competencia(row.get("competencia"))
+                for row in imports
+            )
+            if parsed is not None
+        ]
     )
 
-imports_by_month = {
-    str(row.get("competencia") or "")[:10]: row
-    for row in imports
-}
-summary_map = summary_lookup(summaries)
-available_months = sorted(
-    [
-        parsed
-        for parsed in (parse_competencia(row.get("competencia")) for row in imports)
-        if parsed is not None
+    visible_months = [
+        competencia
+        for competencia in available_months
+        if competencia >= date(2026, 1, 1)
     ]
-)
-
-# Dezembro/2025 é mantido somente como base de abertura de janeiro/2026.
-# Ele não aparece como competência analisável nem no histórico visual.
-visible_months = [
-    competencia
-    for competencia in available_months
-    if competencia >= date(2026, 1, 1)
-]
 
 
 if page == "Dashboard":
@@ -2051,6 +2096,7 @@ if page == "Dashboard":
                     _source_name,
                     central_parsed["rows"],
                 )
+                load_inventory_overview.clear()
                 st.session_state["_import_ok"] = (
                     f"{month_label(current_competencia)} gravado com sucesso."
                 )
@@ -4582,7 +4628,16 @@ else:
         ):
             load_central_analitico.clear()
             load_api_sources.clear()
-            st.session_state["_force_central_fm"] = True
+            result = central_analitico_context(force=True)
+            if result.get("available"):
+                st.session_state["_api_flash"] = (
+                    "ANALÍTICO REPROCESSADO COM SUCESSO."
+                )
+            else:
+                st.session_state["_api_flash"] = (
+                    "FALHA AO REPROCESSAR ANALÍTICO: "
+                    + str(result.get("error") or "")
+                )
             st.rerun()
 
         if control_c.button(
