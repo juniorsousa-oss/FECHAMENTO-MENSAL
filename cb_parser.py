@@ -250,27 +250,62 @@ def bar_dimension_signature(value: Any) -> tuple[float, float] | None:
     return round(values[0], 3), round(values[1], 3)
 
 
+def bar_dimension_similarity(
+    wanted: tuple[float, float],
+    candidate: tuple[float, float],
+) -> float:
+    """Percentual de proximidade entre duas dimensões já convertidas para mm."""
+    errors = []
+    for expected, found in zip(wanted, candidate):
+        base = max(abs(expected), abs(found), 0.001)
+        errors.append(abs(expected - found) / base)
+
+    # O pior eixo governa a similaridade para evitar que uma dimensão
+    # muito próxima esconda uma segunda dimensão incorreta.
+    score = 100.0 * (1.0 - max(errors))
+    return round(max(0.0, min(100.0, score)), 2)
+
+
 def find_bar_catalog_matches(
     identifier: Any,
     catalog: list[dict],
-    tolerance_mm: float = 0.20,
 ) -> list[dict]:
+    """Retorna candidatos ordenados do mais semelhante para o menos semelhante.
+
+    Prioridades:
+    1. código exato;
+    2. referência exata;
+    3. medida equivalente após conversão mm/polegada;
+    4. medida dimensional mais próxima.
+    """
     raw = str(identifier or "").strip()
     if not raw:
         return []
 
     normalized = normalize_bar_identifier(raw)
-    exact = []
 
+    exact = []
     for item in catalog:
         code = normalize_code(item.get("codigo"))
         reference = normalize_bar_identifier(
             item.get("referencia")
         )
-        if normalized == code or (
-            reference and normalized == reference
-        ):
-            exact.append(item)
+
+        if normalized == code:
+            match = dict(item)
+            match["_match_similarity"] = 100.0
+            match["_match_mode"] = "CÓDIGO EXATO"
+            match["_match_dimension"] = ""
+            return [match]
+
+        if reference and normalized == reference:
+            match = dict(item)
+            match["_match_similarity"] = 100.0
+            match["_match_mode"] = "REFERÊNCIA EXATA"
+            match["_match_dimension"] = str(
+                item.get("referencia") or ""
+            )
+            exact.append(match)
 
     if exact:
         return exact
@@ -279,26 +314,52 @@ def find_bar_catalog_matches(
     if wanted is None:
         return []
 
-    found = {}
+    ranked = []
     for item in catalog:
-        signatures = [
-            bar_dimension_signature(item.get("referencia")),
-            bar_dimension_signature(item.get("descricao")),
-        ]
-        for signature in signatures:
+        best_score = -1.0
+        best_dimension = ""
+        best_source = ""
+
+        for source_name, source_value in (
+            ("REFERÊNCIA", item.get("referencia")),
+            ("DESCRIÇÃO", item.get("descricao")),
+        ):
+            signature = bar_dimension_signature(
+                source_value
+            )
             if signature is None:
                 continue
-            if (
-                abs(signature[0] - wanted[0]) <= tolerance_mm
-                and abs(signature[1] - wanted[1]) <= tolerance_mm
-            ):
-                found[
-                    normalize_code(item.get("codigo"))
-                ] = item
-                break
 
-    return list(found.values())
+            score = bar_dimension_similarity(
+                wanted,
+                signature,
+            )
+            if score > best_score:
+                best_score = score
+                best_dimension = (
+                    f"{signature[0]:g} x "
+                    f"{signature[1]:g} mm"
+                )
+                best_source = source_name
 
+        if best_score >= 0:
+            match = dict(item)
+            match["_match_similarity"] = best_score
+            match["_match_mode"] = (
+                "MEDIDA EQUIVALENTE"
+                if best_score >= 99.99
+                else f"MEDIDA MAIS PRÓXIMA · {best_source}"
+            )
+            match["_match_dimension"] = best_dimension
+            ranked.append(match)
+
+    ranked.sort(
+        key=lambda item: (
+            -float(item.get("_match_similarity") or 0),
+            str(item.get("codigo") or ""),
+        )
+    )
+    return ranked
 
 def _find_header_row(
     ws,
