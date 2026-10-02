@@ -1544,88 +1544,57 @@ api_summary = api_sources_summary(
 )
 
 query_page = str(st.query_params.get("pagina", "") or "").strip()
-if "nav_page" not in st.session_state:
-    st.session_state.nav_page = query_page if query_page in PAGES else PAGES[0]
+if query_page in PAGES:
+    st.session_state.nav_page = query_page
+elif "nav_page" not in st.session_state:
+    st.session_state.nav_page = PAGES[0]
+
+page = str(st.session_state.get("nav_page") or PAGES[0])
+if page not in PAGES:
+    page = PAGES[0]
+    st.session_state.nav_page = page
+
+menu_labels = cfg.get("menu_labels") or {}
+_sidebar_links = []
+for internal_page in PAGES:
+    label = str(
+        menu_labels.get(internal_page)
+        or DEFAULT_CONFIG["menu_labels"].get(internal_page, internal_page)
+    ).strip()
+    active = " active" if page == internal_page else ""
+    href_page = html.escape(internal_page, quote=True)
+    _sidebar_links.append(
+        f'<a class="sidebar-nav-link{active}" href="?pagina={href_page}" target="_self">{html.escape(label)}</a>'
+    )
+
+_sidebar_status_class = {
+    "ok": "status-ok",
+    "warn": "status-warning",
+    "error": "status-error",
+}.get(str(api_summary.get("css") or ""), "status-warning")
+
+_sidebar_html = (
+    '<div class="setta-sidebar">'
+    '<div class="sidebar-brand">'
+      f'<div class="sidebar-brand-title">{html.escape(str(cfg["sidebar_title"]))}</div>'
+      f'<div class="sidebar-brand-sub">{html.escape(str(cfg["sidebar_subtitle"]))}</div>'
+    '</div>'
+    '<div class="sidebar-section-label">NAVEGAÇÃO</div>'
+    '<div class="sidebar-nav">' + "".join(_sidebar_links) + '</div>'
+    '<div class="sidebar-divider"></div>'
+    '<div class="sidebar-section-label">STATUS GERAL</div>'
+    '<div class="sidebar-status-card">'
+      '<div class="sidebar-status-name">CONEXÕES</div>'
+      f'<div class="sidebar-status-value {_sidebar_status_class}">{html.escape(str(api_summary["status"]))}</div>'
+      '<div class="sidebar-status-meta">'
+        f'<div>QNT DE BASES: {api_summary["healthy"]}/{api_summary["total"]}</div>'
+      '</div>'
+    '</div>'
+    '</div>'
+)
 
 with st.sidebar:
-    st.markdown(
-        f"""
-        <div class="sidebar-brand">
-            <div class="sidebar-brand-title">{cfg["sidebar_title"]}</div>
-            <div class="sidebar-brand-sub">{cfg["sidebar_subtitle"]}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        '<div class="sidebar-section-label">NAVEGAÇÃO</div>',
-        unsafe_allow_html=True,
-    )
-
-    page = st.session_state.nav_page
-    menu_labels = cfg.get("menu_labels") or {}
-
-    for index, internal_page in enumerate(PAGES):
-        label = str(
-            menu_labels.get(internal_page)
-            or DEFAULT_CONFIG["menu_labels"].get(
-                internal_page,
-                internal_page,
-            )
-        ).strip()
-
-        if st.button(
-            label,
-            key=f"nav_button_{index}",
-            type=(
-                "primary"
-                if page == internal_page
-                else "secondary"
-            ),
-            use_container_width=True,
-        ):
-            st.session_state.nav_page = internal_page
-            st.query_params["pagina"] = internal_page
-            st.rerun()
-
-    if str(st.query_params.get("pagina", "") or "") != page:
-        st.query_params["pagina"] = page
-
-    st.divider()
-    st.markdown(
-        """
-        <div class="sidebar-info-card">
-            <b>ALIMENTAÇÃO</b><br>
-            AUTOMÁTICA · CENTRAL DE DADOS
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.divider()
-    st.markdown(
-        '<div class="sidebar-section-label">STATUS GERAL</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        f"""
-        <div class="sidebar-status-card">
-            <div class="sidebar-status-name">CONEXÕES</div>
-            <div class="sidebar-status-value {api_summary["css"]}">
-                {api_summary["status"]}
-            </div>
-            <div class="sidebar-status-meta">
-                {api_summary["healthy"]}/{api_summary["total"]} FONTES ATUALIZADAS
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    if api_sources_error:
-        st.caption("FALHA AO CONSULTAR A CENTRAL DE DADOS.")
-
+    st.markdown(_sidebar_html, unsafe_allow_html=True)
 
 st.markdown(
     f'<div class="setta-logo-card">{logo_html(str(cfg.get("logo_data") or ""), str(cfg.get("logo_mime") or "image/svg+xml"))}</div>',
