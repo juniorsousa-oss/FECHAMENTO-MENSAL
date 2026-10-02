@@ -2943,15 +2943,44 @@ elif page == "Conferência de chapas e barramentos":
                         len(internal_issues),
                     )
 
+                    st.caption(
+                        "Na coluna QUANTIDADE, o valor é tratado como número "
+                        "de barras e convertido por × 3 m. Se a carga indicar "
+                        "MTS/METROS, o valor é usado diretamente. Medidas em "
+                        "milímetros e polegadas são comparadas automaticamente."
+                    )
+
                     if internal_valid:
-                        st.dataframe(
-                            pd.DataFrame(internal_valid).rename(
-                                columns={
-                                    "codigo": "Código sistema",
-                                    "quantidade_fisica": "Contagem almox. (m)",
-                                    "observacao": "Origem",
+                        preview_internal = pd.DataFrame(
+                            [
+                                {
+                                    "Barramento informado": row.get(
+                                        "identificador"
+                                    ),
+                                    "Quantidade informada": row.get(
+                                        "quantidade_informada"
+                                    ),
+                                    "Leitura": row.get(
+                                        "modo_quantidade"
+                                    ),
+                                    "Contagem (m)": row.get(
+                                        "quantidade_fisica"
+                                    ),
+                                    "Código sistema": row.get(
+                                        "codigo"
+                                    ),
+                                    "Descrição": row.get(
+                                        "descricao"
+                                    ),
+                                    "Vínculo": row.get(
+                                        "vinculo"
+                                    ),
                                 }
-                            ),
+                                for row in internal_valid
+                            ]
+                        )
+                        st.dataframe(
+                            preview_internal,
                             use_container_width=True,
                             hide_index=True,
                         )
@@ -2962,18 +2991,32 @@ elif page == "Conferência de chapas e barramentos":
                             "da contagem do almoxarifado estejam vinculados."
                         )
 
-                        internal_options = [
-                            f"{row.get('codigo')} · {row.get('descricao')}"
-                            for row in standby_catalog
-                            if row.get("categoria") == "BARRA_COBRE"
-                        ]
+                        internal_options = sorted(
+                            [
+                                (
+                                    f"{row.get('codigo')} · "
+                                    f"{row.get('descricao')}"
+                                )
+                                for row in internal_catalog_rows
+                            ]
+                        )
+
                         mapping_rows = [
                             {
                                 "ID": index,
-                                "Código origem": issue.get(
-                                    "Código origem"
+                                "Barramento informado": issue.get(
+                                    "Barramento informado"
                                 ),
-                                "Quantidade": issue.get("Quantidade"),
+                                "Quantidade informada": issue.get(
+                                    "Quantidade informada"
+                                ),
+                                "Leitura": issue.get("Leitura"),
+                                "Contagem (m)": issue.get(
+                                    "Contagem calculada (m)"
+                                ),
+                                "Sugestões encontradas": issue.get(
+                                    "Sugestões"
+                                ),
                                 "Vincular ao código": "",
                             }
                             for index, issue in enumerate(
@@ -2987,8 +3030,11 @@ elif page == "Conferência de chapas e barramentos":
                             hide_index=True,
                             disabled=[
                                 "ID",
-                                "Código origem",
-                                "Quantidade",
+                                "Barramento informado",
+                                "Quantidade informada",
+                                "Leitura",
+                                "Contagem (m)",
+                                "Sugestões encontradas",
                             ],
                             column_config={
                                 "Vincular ao código": (
@@ -3034,11 +3080,16 @@ elif page == "Conferência de chapas e barramentos":
                                         "INTERNO_EXCEL",
                                         str(
                                             issue.get(
-                                                "Código origem"
+                                                "Chave origem"
                                             )
                                             or ""
                                         ),
-                                        "CONTAGEM ALMOXARIFADO",
+                                        str(
+                                            issue.get(
+                                                "Barramento informado"
+                                            )
+                                            or ""
+                                        ),
                                         selected_code,
                                     )
                                 st.session_state[
