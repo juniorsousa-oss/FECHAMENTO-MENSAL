@@ -58,6 +58,9 @@ jobs:
           assert "FINALIZAR CONSIDERANDO" in app
           assert "contagem_assumida_zero" in db
           assert "saldo_base_ajuste" in db
+          assert "treatment_lookup" in app
+          assert "_saldo_codes = set(final_analysis_codes)" in app
+          assert "CANDIDATOS/NÃO SELECIONADOS E ITENS REMOVIDOS NÃO COMPÕEM O SALDO" in app
           assert "Identidade visual" not in app
           print("ESTRUTURA_OK")
           PY
