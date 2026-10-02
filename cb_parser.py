@@ -22,7 +22,7 @@ INITIAL_CONFIRMED_CODES = {
     "00110341","00110340","06000005","06000031","06000014","06000167",
     "06000168","06000169","06000187","06000170","06000011","06000055",
     "06000178","06000179","06000189","06000188","06000186","06000210",
-    "06000211",
+    "06000211","06000216","06000217","06000218","06000219",
 }
 
 INITIAL_CHAPA_MAP = {
@@ -45,13 +45,23 @@ INITIAL_CHAPA_MAP = {
     ("3000X1200", '1/8" XADREZ'): "06000055",
     ("VARIADAS", "MAGNELIS 1,55"): "06000178",
     ("VARIADAS", "MAGNELIS 1,95"): "06000179",
-    ("SIVACON", "#12 GALVANIZADA"): "06000167",
-    ("SIVACON", "#14 GALVANIZADA"): "06000168",
-    ("SIVACON", "#16 GALVANIZADA"): "06000169",
-    ("SIVACON", "#20 GALVANIZADA"): "06000186",
+    ("SIVACON", "#12 GALVANIZADA"): "06000219",
+    ("SIVACON", "#14 GALVANIZADA"): "06000218",
+    ("SIVACON", "#16 GALVANIZADA"): "06000217",
+    ("SIVACON", "#20 GALVANIZADA"): "06000216",
     ("SIVACON", "5MM ALUMINIO"): "06000210",
     ("SIVACON", "3MM ALUMINIO"): "06000211",
 }
+
+
+SIVACON_CANONICAL_CHAPA_MAP = {
+    ("SIVACON", "#12 GALVANIZADA"): "06000219",  # 2,5 mm
+    ("SIVACON", "#14 GALVANIZADA"): "06000218",  # 2,0 mm
+    ("SIVACON", "#16 GALVANIZADA"): "06000217",  # 1,5 mm
+    ("SIVACON", "#20 GALVANIZADA"): "06000216",  # 1,0 mm
+}
+
+
 
 
 def normalize_code(value: Any) -> str:
@@ -1214,6 +1224,14 @@ def resolve_chapa_rows(
             continue
         mapping_exact[(dim or "*", desc)] = row
         mapping_fallback[desc].append(row)
+
+    # A equivalência SIVACON é uma regra física validada do processo.
+    # Reaplicamos após os vínculos persistidos para impedir que um
+    # mapeamento histórico antigo sobrescreva os códigos corretos.
+    for (dim, desc), codigo in SIVACON_CANONICAL_CHAPA_MAP.items():
+        dim_norm = normalize_text(dim)
+        desc_norm = normalize_text(desc)
+        mapping_exact[(dim_norm, desc_norm)] = {"codigo": codigo}
 
     catalog_map = {
         str(row.get("codigo") or "").strip(): row
