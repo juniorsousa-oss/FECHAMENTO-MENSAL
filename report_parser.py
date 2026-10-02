@@ -320,9 +320,10 @@ def parse_inventory_balance_report(
 ) -> dict:
     """Parser simplificado para chapas e barramentos.
 
-    Usa somente CODIGO e SALDO EM ESTOQUE como campos obrigatórios.
-    Saldos negativos são ajustados para zero.
-    ARMZ e DESCRICAO são aproveitados apenas quando existirem.
+    Usa CODIGO e SALDO EM ESTOQUE como campos obrigatórios.
+    VALOR EM ESTOQUE é aproveitado quando existir para calcular o
+    custo médio unitário do material. Saldos negativos são ajustados
+    para zero. ARMZ e DESCRICAO são auxiliares.
     """
     sheet_name, rows = _parse_rows(raw)
 
@@ -365,6 +366,7 @@ def parse_inventory_balance_report(
 
     code_col = find_column("CODIGO")
     saldo_col = find_column("SALDO EM ESTOQUE")
+    valor_col = find_column("VALOR EM ESTOQUE")
     armz_col = find_column("ARMZ")
     desc_col = find_column("DESCRICAO")
 
@@ -403,6 +405,17 @@ def parse_inventory_balance_report(
             saldo = 0.0
             adjusted_negative += 1
 
+        valor_estoque_raw = (
+            _to_number(row.get(valor_col))
+            if valor_col
+            else None
+        )
+        valor_estoque = (
+            max(float(valor_estoque_raw), 0.0)
+            if valor_estoque_raw is not None
+            else 0.0
+        )
+
         parsed.append(
             {
                 "linha": row_number,
@@ -412,6 +425,7 @@ def parse_inventory_balance_report(
                     or ""
                 ).strip(),
                 "saldo": saldo,
+                "valor_estoque": valor_estoque,
                 "descricao": str(
                     row.get(desc_col) if desc_col else ""
                     or ""
