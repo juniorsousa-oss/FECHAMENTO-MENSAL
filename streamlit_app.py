@@ -1656,7 +1656,7 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="sidebar-section-label">NAVEGAÇÃO</div>',
+        '<div class="sidebar-section-label sidebar-nav-label">NAVEGAÇÃO</div>',
         unsafe_allow_html=True,
     )
 
