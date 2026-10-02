@@ -2734,11 +2734,50 @@ elif page == "Conferência de chapas e barramentos":
                     )
 
         with tab_internal:
+            st.markdown("#### LAYOUT DA CARGA")
+
+            st.caption(
+                "Utilize preferencialmente somente as duas colunas abaixo. "
+                "O CÓDIGO deve corresponder ao código Protheus e a quantidade "
+                "deve ser informada em metros."
+            )
+
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "CODIGO": "00110159",
+                            "MTS": 45.750,
+                        },
+                        {
+                            "CODIGO": "00110172",
+                            "MTS": 167.100,
+                        },
+                        {
+                            "CODIGO": "00110171",
+                            "MTS": 309.385,
+                        },
+                    ]
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            st.info(
+                "PADRÃO RECOMENDADO: CODIGO | MTS. "
+                "Também são aceitos METROS, QUANTIDADE, QUANTIDADE FISICA, "
+                "QTD, QNT, SALDO CONTAGEM ou CONTAGEM como nome da coluna "
+                "de quantidade. Códigos repetidos são somados automaticamente. "
+                "Todos os itens da planilha precisam possuir vínculo com um "
+                "código do sistema para liberar a importação."
+            )
+
             internal_file = st.file_uploader(
                 "Planilha do almoxarifado de barras",
                 type=["xlsx", "xltx"],
                 key="cb_internal_file",
                 help=(
+                    "Layout recomendado: CODIGO + MTS. "
                     "Todos os itens precisam estar vinculados a um código "
                     "de BARRA DE COBRE antes da importação."
                 ),
