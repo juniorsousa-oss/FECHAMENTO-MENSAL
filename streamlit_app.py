@@ -1999,6 +1999,7 @@ elif page == "Conferência de chapas e barramentos":
             cb_mappings = db.list_cb_sheet_mappings()
             cb_physical_mappings = db.list_cb_physical_mappings()
             cb_imports = db.list_cb_imports(cb_month)
+            cb_exclusions = db.list_cb_exclusions(cb_month)
             cb_error = ""
         except Exception as exc:
             cb_stock_items = []
@@ -2007,6 +2008,7 @@ elif page == "Conferência de chapas e barramentos":
             cb_mappings = []
             cb_physical_mappings = []
             cb_imports = []
+            cb_exclusions = []
             cb_error = str(exc)
 
         if cb_error:
@@ -2191,7 +2193,7 @@ elif page == "Conferência de chapas e barramentos":
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div class="cb-compact-section-title">ALIMENTAÇÃO FÍSICA</div>',
+            '<div class="cb-compact-section-title">01 · ALIMENTAÇÃO FÍSICA</div>',
             unsafe_allow_html=True,
         )
 
