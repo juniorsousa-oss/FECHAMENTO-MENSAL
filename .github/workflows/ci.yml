@@ -9,6 +9,7 @@ on:
       - 'report_parser.py'
       - 'cb_parser.py'
       - 'inventory_db.py'
+      - 'ui.py'
       - 'supabase_schema.sql'
       - 'requirements.txt'
       - '.github/workflows/ci.yml'
@@ -70,13 +71,17 @@ jobs:
           assert 'class="sidebar-status-section"' in app
           assert "sidebar-status-section" in app
           ui = Path("ui.py").read_text(encoding="utf-8")
-          assert "SETTA SIDEBAR SPACING LOCK — WRAPPERS STREAMLIT" in ui
+          assert "SIDEBAR SETTA — BLOCO ÚNICO" in ui
+          assert "SIDEBAR SETTA V1 — PADRÃO VALIDADO" not in ui
+          assert "SETTA SIDEBAR SPACING LOCK — WRAPPERS STREAMLIT" not in ui
+          assert ui.count('section[data-testid="stSidebar"] .block-container{') == 1
+          assert ui.count('section[data-testid="stSidebar"] .sidebar-brand{') == 1
           assert "sidebar-nav-label" in ui
-          assert "margin:0 0 20px 0!important" in ui
-          assert "margin:0 0 8px 0!important" in ui
+          assert ".st-key-fm_nav_0" in ui
+          assert "margin-top:8px!important" in ui
           assert "height:42px!important" in ui
           assert "margin:0 0 2px 0!important" in ui
-          assert "margin:0 0 20px 0!important" in ui
+          assert not Path("db.py").exists()
           assert "_saldo_codes = set(final_analysis_codes)" in app
           assert "CANDIDATOS/NÃO SELECIONADOS E ITENS REMOVIDOS NÃO COMPÕEM O SALDO" in app
           assert "Identidade visual" not in app
