@@ -3446,37 +3446,47 @@ elif page == "Conferência de chapas e barramentos":
                     False,
                 )
 
-                editable = st.data_editor(
-                    shown_display,
-                    use_container_width=True,
-                    hide_index=True,
-                    disabled=[
-                        col
-                        for col in shown_display.columns
-                        if col != "Remover"
-                    ],
-                    column_config={
-                        "Remover": st.column_config.CheckboxColumn(
-                            "Remover",
-                            help=(
-                                "Remove o item somente da análise desta competência."
-                            ),
-                        )
-                    },
-                    key="cb_reconciliation_editor",
-                )
+                with st.form(
+                    "cb_remove_analysis_form",
+                    clear_on_submit=False,
+                ):
+                    editable = st.data_editor(
+                        shown_display,
+                        use_container_width=True,
+                        hide_index=True,
+                        disabled=[
+                            col
+                            for col in shown_display.columns
+                            if col != "Remover"
+                        ],
+                        column_config={
+                            "Remover": st.column_config.CheckboxColumn(
+                                "Remover",
+                                help=(
+                                    "Marque todos os itens desejados. "
+                                    "A tela só será atualizada ao confirmar."
+                                ),
+                            )
+                        },
+                        key="cb_reconciliation_editor",
+                    )
 
-                selected_to_remove = editable[
-                    editable["Remover"] == True
-                ]
-
-                if not selected_to_remove.empty:
-                    if st.button(
+                    remove_submitted = st.form_submit_button(
                         "REMOVER SELECIONADOS DA ANÁLISE",
                         type="secondary",
                         use_container_width=True,
-                        key="cb_remove_analysis_items",
-                    ):
+                    )
+
+                if remove_submitted:
+                    selected_to_remove = editable[
+                        editable["Remover"] == True
+                    ]
+
+                    if selected_to_remove.empty:
+                        st.warning(
+                            "Selecione pelo menos um item para remover."
+                        )
+                    else:
                         for code in selected_to_remove[
                             "Código"
                         ].astype(str):
