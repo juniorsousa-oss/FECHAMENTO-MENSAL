@@ -687,6 +687,119 @@ def save_cb_system_balances(
 
 
 
+def finalize_cb_adjustments(
+    competencia: date,
+    data_fechamento: date,
+    rows: list[dict],
+) -> dict:
+    payload = []
+    for row in rows:
+        payload.append(
+            {
+                "codigo": str(row.get("Código") or row.get("codigo") or "").strip(),
+                "categoria": str(row.get("Categoria") or row.get("categoria") or "").strip(),
+                "descricao": str(row.get("Descrição") or row.get("descricao") or "").strip(),
+                "um": str(row.get("U.M.") or row.get("um") or "").strip(),
+                "saldo_fechamento": float(
+                    row.get("Saldo fechamento")
+                    if row.get("Saldo fechamento") is not None
+                    else row.get("saldo_fechamento")
+                    or 0
+                ),
+                "fisico": (
+                    None
+                    if (
+                        row.get("Físico")
+                        if "Físico" in row
+                        else row.get("fisico")
+                    ) is None
+                    else float(
+                        row.get("Físico")
+                        if "Físico" in row
+                        else row.get("fisico")
+                    )
+                ),
+                "diferenca_qtd": float(
+                    row.get("Diferença Qtd")
+                    if row.get("Diferença Qtd") is not None
+                    else row.get("diferenca_qtd")
+                    or 0
+                ),
+                "custo_unitario": float(
+                    row.get("Custo unitário")
+                    if row.get("Custo unitário") is not None
+                    else row.get("custo_unitario")
+                    or 0
+                ),
+                "previsao_valor": float(
+                    row.get("Diferença R$")
+                    if row.get("Diferença R$") is not None
+                    else row.get("previsao_valor")
+                    or 0
+                ),
+            }
+        )
+
+    result = rpc(
+        "fm_cb_finalizar_ajustes",
+        {
+            "p_competencia": competencia.replace(day=1).isoformat(),
+            "p_data_fechamento": data_fechamento.isoformat(),
+            "p_rows": payload,
+        },
+        timeout=120,
+    )
+    return result or {}
+
+
+def list_cb_adjustment_history() -> list[dict]:
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/fm_cb_ajustes_historico",
+        headers=_headers(),
+        params={
+            "select": (
+                "competencia,data_fechamento,status,itens_ajuste,"
+                "chapas_entrada_qtd,chapas_saida_qtd,"
+                "chapas_entrada_valor,chapas_saida_valor,"
+                "barramentos_entrada_qtd,barramentos_saida_qtd,"
+                "barramentos_entrada_valor,barramentos_saida_valor,"
+                "previsao_valor_liquido,previsao_valor_movimentado,"
+                "finalizado_em,atualizado_em"
+            ),
+            "order": "competencia.desc",
+        },
+        timeout=30,
+    )
+    _raise(response)
+    return response.json() or []
+
+
+def list_cb_adjustment_items(
+    competencia: date | str,
+) -> list[dict]:
+    if isinstance(competencia, date):
+        key = competencia.replace(day=1).isoformat()
+    else:
+        key = str(competencia)[:10]
+
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/fm_cb_ajustes_itens",
+        headers=_headers(),
+        params={
+            "select": (
+                "competencia,codigo,categoria,descricao,um,"
+                "saldo_fechamento,fisico,diferenca_qtd,"
+                "custo_unitario,previsao_valor,finalizado_em"
+            ),
+            "competencia": f"eq.{key}",
+            "order": "categoria.asc,codigo.asc",
+        },
+        timeout=30,
+    )
+    _raise(response)
+    return response.json() or []
+
+
 def list_data_sources() -> list[dict]:
     result = rpc(
         "fm_list_data_sources_status",
