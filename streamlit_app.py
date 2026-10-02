@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import html
 import io
+from functools import lru_cache
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -83,7 +84,7 @@ CB_SOURCE_LABELS = {
 }
 
 
-@st.cache_data(show_spinner=False, ttl=300, max_entries=2)
+@lru_cache(maxsize=1)
 def load_global_visual_config() -> dict:
     try:
         return central_data.load_visual_config() or {}
