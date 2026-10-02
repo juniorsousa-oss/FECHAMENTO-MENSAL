@@ -456,11 +456,21 @@ section[data-testid="stSidebar"] .sidebar-section-label{
   font-size:12px!important;
   line-height:15px!important;
 }
-section[data-testid="stSidebar"] .sidebar-nav-gap{
+section[data-testid="stSidebar"] .sidebar-nav-button-gap{
   display:block!important;
   width:100%!important;
   height:8px!important;
   min-height:8px!important;
+  max-height:8px!important;
+  margin:0!important;
+  padding:0!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > .sidebar-nav-button-gap){
+  display:block!important;
+  width:100%!important;
+  height:8px!important;
+  min-height:8px!important;
+  max-height:8px!important;
   margin:0!important;
   padding:0!important;
 }
@@ -533,23 +543,6 @@ section[data-testid="stSidebar"] .sidebar-status-section .sidebar-status-card{
   padding:12px 14px!important;
 }
 
-/* Navegação: somente a página ativa deve parecer um card.
-   Estados hover/focus dos botões secundários permanecem transparentes. */
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"],
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover,
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:focus,
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:focus-visible,
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:active{
-  background:transparent!important;
-  border-color:transparent!important;
-  box-shadow:none!important;
-  outline:none!important;
-  color:#374151!important;
-}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] p{
-  color:#374151!important;
-  font-weight:500!important;
-}
 </style>
 """
 
