@@ -462,8 +462,14 @@ def central_cadastros_context(
             token
         )
         sync = central_data.sync_state_for("cadastros")
+        try:
+            _catalog_empty = not bool(db.list_cb_catalog())
+        except Exception:
+            _catalog_empty = False
+
         needs_sync = (
             force
+            or _catalog_empty
             or str(sync.get("version_token") or "") != token
             or str(sync.get("status") or "").upper()
             != "ATUALIZADO"
