@@ -3516,32 +3516,21 @@ elif page == "Conferência de chapas e barramentos":
                     errors="ignore",
                 )
 
+                # Mantém todas as colunas quantitativas como números
+                # reais. Isso permite classificação matemática correta no
+                # data_editor e evita ordenação lexicográfica de textos.
                 for col in [
                     "Saldo sistema",
                     "Físico",
                     "Consumo informado",
                     "Diferença Qtd",
+                    "Diferença R$",
                 ]:
                     if col in shown_display.columns:
-                        shown_display[col] = shown_display[col].map(
-                            lambda value: (
-                                f"{0.0:,.6f}"
-                                if pd.isna(value)
-                                else f"{float(value):,.6f}"
-                            )
-                            .replace(",", "X")
-                            .replace(".", ",")
-                            .replace("X", ".")
-                        )
-
-                if "Diferença R$" in shown_display.columns:
-                    shown_display["Diferença R$"] = shown_display[
-                        "Diferença R$"
-                    ].map(
-                        lambda value: money_br(
-                            0 if pd.isna(value) else value
-                        )
-                    )
+                        shown_display[col] = pd.to_numeric(
+                            shown_display[col],
+                            errors="coerce",
+                        ).fillna(0.0)
 
                 shown_display.insert(
                     0,
@@ -3569,7 +3558,27 @@ elif page == "Conferência de chapas e barramentos":
                                     "Marque todos os itens desejados. "
                                     "A tela só será atualizada ao confirmar."
                                 ),
-                            )
+                            ),
+                            "Saldo sistema": st.column_config.NumberColumn(
+                                "Saldo sistema",
+                                format="localized",
+                            ),
+                            "Físico": st.column_config.NumberColumn(
+                                "Físico",
+                                format="localized",
+                            ),
+                            "Consumo informado": st.column_config.NumberColumn(
+                                "Consumo informado",
+                                format="localized",
+                            ),
+                            "Diferença Qtd": st.column_config.NumberColumn(
+                                "Diferença Qtd",
+                                format="localized",
+                            ),
+                            "Diferença R$": st.column_config.NumberColumn(
+                                "Diferença R$",
+                                format="R$ %.2f",
+                            ),
                         },
                         key="cb_reconciliation_editor",
                     )
