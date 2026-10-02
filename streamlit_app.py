@@ -71,6 +71,9 @@ MONTHS_PT = {
 }
 
 
+ALMOX_MODEL_XLSX_B64 = """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"""
+
+
 CB_SOURCE_LABELS = {
     "CHAPAS_EMAIL": "CHAPAS · E-MAIL",
     "BARRAMENTOS_EXCEL": "BARRAMENTOS · EXCEL",
@@ -2734,42 +2737,21 @@ elif page == "Conferência de chapas e barramentos":
                     )
 
         with tab_internal:
-            st.markdown("#### LAYOUT DA CARGA")
-
-            st.caption(
-                "Utilize preferencialmente somente as duas colunas abaixo. "
-                "O CÓDIGO deve corresponder ao código Protheus e a quantidade "
-                "deve ser informada em metros."
-            )
-
-            st.dataframe(
-                pd.DataFrame(
-                    [
-                        {
-                            "CODIGO": "00110159",
-                            "MTS": 45.750,
-                        },
-                        {
-                            "CODIGO": "00110172",
-                            "MTS": 167.100,
-                        },
-                        {
-                            "CODIGO": "00110171",
-                            "MTS": 309.385,
-                        },
-                    ]
+            st.download_button(
+                "BAIXAR CARGA MODELO",
+                data=base64.b64decode(ALMOX_MODEL_XLSX_B64),
+                file_name="MODELO_CONTAGEM_ALMOX_BARRAS.xlsx",
+                mime=(
+                    "application/vnd.openxmlformats-officedocument."
+                    "spreadsheetml.sheet"
                 ),
                 use_container_width=True,
-                hide_index=True,
+                key="cb_download_internal_model",
             )
 
-            st.info(
-                "PADRÃO RECOMENDADO: CODIGO | MTS. "
-                "Também são aceitos METROS, QUANTIDADE, QUANTIDADE FISICA, "
-                "QTD, QNT, SALDO CONTAGEM ou CONTAGEM como nome da coluna "
-                "de quantidade. Códigos repetidos são somados automaticamente. "
-                "Todos os itens da planilha precisam possuir vínculo com um "
-                "código do sistema para liberar a importação."
+            st.caption(
+                "Preencha a carga modelo com CODIGO e MTS. "
+                "Códigos repetidos serão somados automaticamente."
             )
 
             internal_file = st.file_uploader(
