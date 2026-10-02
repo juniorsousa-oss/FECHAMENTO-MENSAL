@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import html
 import io
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -171,6 +171,15 @@ def previous_month(value: date) -> date:
     if value.month == 1:
         return date(value.year - 1, 12, 1)
     return date(value.year, value.month - 1, 1)
+
+
+def closing_date(competencia: date) -> date:
+    """Último dia do mês da competência, usado como data efetiva do fechamento."""
+    if competencia.month == 12:
+        next_month = date(competencia.year + 1, 1, 1)
+    else:
+        next_month = date(competencia.year, competencia.month + 1, 1)
+    return next_month - timedelta(days=1)
 
 
 def competencia_from_source_update(meta: dict) -> date:
@@ -1202,7 +1211,8 @@ def dimension_value(
 
 
 def build_cb_reconciliation(
-    stock_items: list[dict],
+    closing_stock_items: list[dict],
+    current_stock_items: list[dict],
     catalog: list[dict],
     counts: list[dict],
 ) -> pd.DataFrame:
@@ -1217,7 +1227,7 @@ def build_cb_reconciliation(
     }
 
     stock_by_code: dict[str, dict] = {}
-    for row in stock_items:
+    for row in closing_stock_items:
         codigo = normalize_code(row.get("codigo"))
         if codigo not in standby_catalog:
             continue
@@ -1247,6 +1257,20 @@ def build_cb_reconciliation(
                 row.get("descricao") or ""
             ).strip()
 
+    current_by_code: dict[str, dict] = {}
+    for row in current_stock_items:
+        codigo = normalize_code(row.get("codigo"))
+        if codigo not in standby_catalog:
+            continue
+        current = current_by_code.setdefault(
+            codigo,
+            {"saldo": 0.0},
+        )
+        current["saldo"] += max(
+            float(row.get("saldo") or 0),
+            0.0,
+        )
+
     counts_by_code: dict[str, list[dict]] = {}
     for row in counts:
         codigo = normalize_code(row.get("codigo"))
@@ -1254,7 +1278,8 @@ def build_cb_reconciliation(
             continue
         counts_by_code.setdefault(codigo, []).append(row)
 
-    # Base final = saldo sistêmico positivo OU item presente em contagem.
+    # Base final = saldo do fechamento positivo OU item presente em contagem.
+    # O saldo atual é apenas informativo e nunca participa do cálculo.
     analysis_codes = {
         codigo
         for codigo, data in stock_by_code.items()
@@ -1300,6 +1325,10 @@ def build_cb_reconciliation(
             )
 
         saldo = max(float(stock_data.get("saldo") or 0), 0.0)
+        saldo_atual = max(
+            float((current_by_code.get(codigo) or {}).get("saldo") or 0),
+            0.0,
+        )
         valor_estoque = max(
             float(stock_data.get("valor_estoque") or 0),
             0.0,
@@ -1363,8 +1392,8 @@ def build_cb_reconciliation(
                 )
             source_parts.append(source_text)
 
-        # Regra definida: diferença = contagem física - estoque sistêmico.
-        # Físico maior que sistema = diferença positiva.
+        # Regra definida: diferença = contagem física - saldo do fechamento.
+        # O saldo atual não interfere no resultado da conferência.
         diferenca_qtd = (
             None if physical is None else physical - saldo
         )
@@ -1412,7 +1441,8 @@ def build_cb_reconciliation(
                 "ARMZ": ", ".join(
                     sorted(stock_data.get("armz") or set())
                 ),
-                "Saldo sistema": saldo,
+                "Saldo fechamento": saldo,
+                "Saldo atual": saldo_atual,
                 "Físico": physical,
                 "Consumo informado": (
                     consumo_informado
@@ -2029,7 +2059,7 @@ elif page == "Conferência de chapas e barramentos":
         )
 
         try:
-            cb_stock_items = db.list_cb_system_balances(cb_month)
+            cb_closing_stock_items = db.list_cb_system_balances(cb_month)
             cb_catalog = db.list_cb_catalog()
             cb_counts = db.list_cb_counts(cb_month)
             cb_mappings = db.list_cb_sheet_mappings()
@@ -2038,7 +2068,7 @@ elif page == "Conferência de chapas e barramentos":
             cb_exclusions = db.list_cb_exclusions(cb_month)
             cb_error = ""
         except Exception as exc:
-            cb_stock_items = []
+            cb_closing_stock_items = []
             cb_catalog = []
             cb_counts = []
             cb_mappings = []
@@ -2052,8 +2082,10 @@ elif page == "Conferência de chapas e barramentos":
                 f"Não foi possível carregar a conferência: {cb_error}"
             )
 
-        if cb_month == current_competencia and central_balance_preview:
-            cb_stock_items = central_balance_preview
+        # O Analítico da Central representa o saldo sistêmico atual.
+        # O saldo do fechamento é uma fotografia separada, alimentada manualmente
+        # e persistida por competência.
+        cb_current_stock_items = list(central_balance_preview or [])
 
         standby_catalog = [
             row
@@ -2075,7 +2107,7 @@ elif page == "Conferência de chapas e barramentos":
         }
 
         stock_positive_codes = set()
-        for row in cb_stock_items:
+        for row in cb_closing_stock_items:
             code = normalize_code(row.get("codigo"))
             if (
                 code in standby_lookup
@@ -2169,21 +2201,68 @@ elif page == "Conferência de chapas e barramentos":
                     hide_index=True,
                 )
 
-        if not cb_stock_items:
+        _closing_day = closing_date(cb_month)
+        _closing_label = _closing_day.strftime("%d/%m/%Y")
+        _current_updated = central_data.format_dt(
+            (central_context.get("meta") or {}).get("last_update_at")
+        )
+
+        st.markdown(
+            '<div class="cb-compact-section-title">00 · SALDOS DO SISTEMA</div>',
+            unsafe_allow_html=True,
+        )
+
+        _saldo_atual_total = sum(
+            max(float(row.get("saldo") or 0), 0.0)
+            for row in cb_current_stock_items
+        )
+        _saldo_fechamento_total = sum(
+            max(float(row.get("saldo") or 0), 0.0)
+            for row in cb_closing_stock_items
+        )
+        _s1, _s2 = st.columns(2)
+        _s1.metric(
+            "SALDO ATUAL",
+            f"{_saldo_atual_total:,.3f}".replace(",", "X").replace(".", ",").replace("X", "."),
+            help="Fotografia atual do Relatório Analítico da Central de Dados.",
+        )
+        _s2.metric(
+            f"SALDO DO FECHAMENTO · {_closing_label}",
+            (
+                f"{_saldo_fechamento_total:,.3f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                if cb_closing_stock_items
+                else "NÃO INFORMADO"
+            ),
+            help="Este é o saldo usado em todos os cálculos da conferência.",
+        )
+        st.caption(
+            "SALDO ATUAL: Central de Dados"
+            + (f" · {_current_updated}" if _current_updated and _current_updated != "—" else "")
+            + f" · SALDO DO FECHAMENTO: posição de {_closing_label}. "
+            "TODAS AS DIVERGÊNCIAS E VALORES SÃO CALCULADOS EXCLUSIVAMENTE COM O SALDO DO FECHAMENTO."
+        )
+
+        if not cb_closing_stock_items:
             st.warning(
-                "A competência selecionada ainda não possui o SALDO SISTÊMICO "
-                "da conferência de chapas e barramentos. Carregue abaixo o Relatório "
-                "Analítico. Esta carga é independente do fechamento geral."
+                f"O fechamento de {month_label(cb_month)} corresponde à posição de {_closing_label}. "
+                "Carregue o Relatório Analítico extraído nessa data para liberar o cálculo definitivo."
             )
 
+        with st.expander(
+            (
+                f"ALIMENTAR SALDO DO FECHAMENTO · {_closing_label}"
+                if not cb_closing_stock_items
+                else f"ATUALIZAR SALDO DO FECHAMENTO · {_closing_label}"
+            ),
+            expanded=not bool(cb_closing_stock_items),
+        ):
             cb_analytic_file = st.file_uploader(
-                "Carregar Relatório Analítico para saldo sistêmico",
+                f"Relatório Analítico da posição de {_closing_label}",
                 type=["xlsx", "xltx"],
                 key="cb_analytic_file",
                 help=(
-                    "Neste módulo são usados CODIGO, SALDO EM ESTOQUE e, "
-                    "quando disponível, VALOR EM ESTOQUE para calcular o custo "
-                    "unitário médio. Saldo negativo é convertido para zero."
+                    "Esta carga é a fotografia do último dia da competência. "
+                    "O saldo atual continuará vindo automaticamente da Central de Dados."
                 ),
             )
 
@@ -2209,12 +2288,12 @@ elif page == "Conferência de chapas e barramentos":
                     )
 
                     st.caption(
-                        "Nesta carga, o VALOR EM ESTOQUE é usado apenas para "
-                        "valorização da divergência; ele não bloqueia a conferência."
+                        "O VALOR EM ESTOQUE desta carga será usado para valorizar "
+                        "as divergências do fechamento. O saldo atual não substitui esta fotografia."
                     )
 
                     if st.button(
-                        "SALVAR SALDO SISTÊMICO DESTA COMPETÊNCIA",
+                        "SALVAR SALDO DO FECHAMENTO",
                         type="primary",
                         use_container_width=True,
                         key="cb_save_analytic",
@@ -2225,12 +2304,12 @@ elif page == "Conferência de chapas e barramentos":
                             parsed_cb_analytic["rows"],
                         )
                         st.session_state["_cb_base_flash"] = (
-                            "Saldo sistêmico da conferência salvo."
+                            f"Saldo do fechamento de {_closing_label} salvo."
                         )
                         st.rerun()
                 except Exception as exc:
                     st.error(
-                        f"Não foi possível ler o Relatório Analítico: {exc}"
+                        f"Não foi possível ler o Relatório Analítico do fechamento: {exc}"
                     )
 
         st.markdown(
@@ -2278,10 +2357,15 @@ elif page == "Conferência de chapas e barramentos":
                             if _data_contagem
                             else "—"
                         )
+                        _fechamento_txt = closing_date(
+                            detected_comp
+                        ).strftime("%d/%m/%Y")
                         st.caption(
                             "Data da contagem: "
                             + _data_txt
-                            + " · Competência do fechamento: "
+                            + " · Fechamento considerado em: "
+                            + _fechamento_txt
+                            + " · Competência: "
                             + month_label(detected_comp)
                             + f" · {parsed_email['tables_found']} tabela(s) de histórico encontrada(s)"
                         )
@@ -2432,8 +2516,8 @@ elif page == "Conferência de chapas e barramentos":
                         )
                         if mismatch:
                             st.error(
-                                "A competência do e-mail não corresponde à "
-                                "competência selecionada no módulo."
+                                "A contagem pertence a outro fechamento. "
+                                "Selecione a competência correspondente ao último dia do mês anterior."
                             )
                         elif st.button(
                             "IMPORTAR CONTAGEM DE CHAPAS",
@@ -3313,25 +3397,26 @@ elif page == "Conferência de chapas e barramentos":
         )
         section_band(
             "02 · CONFERÊNCIA",
-            "SISTEMA × CONTAGEM FÍSICA",
-            "Diferença = Contagem física − Estoque do sistema. Barras com |diferença| < 3 m são aceitas automaticamente.",
+            "FECHAMENTO × CONTAGEM FÍSICA",
+            "Diferença = Contagem física − Saldo do fechamento. O saldo atual é apenas informativo. Barras com |diferença| < 3 m são aceitas automaticamente.",
         )
 
-        if not cb_stock_items and not cb_counts:
+        if not cb_closing_stock_items and not cb_counts:
             st.info(
                 "A base final será formada quando houver saldo no Analítico "
                 "ou alguma contagem física vinculada."
             )
         else:
             reconciliation = build_cb_reconciliation(
-                cb_stock_items,
+                cb_closing_stock_items,
+                cb_current_stock_items,
                 cb_catalog,
                 cb_counts,
             )
 
             if not reconciliation.empty:
                 saldo_num = pd.to_numeric(
-                    reconciliation["Saldo sistema"],
+                    reconciliation["Saldo fechamento"],
                     errors="coerce",
                 ).fillna(0)
                 fisico_num = pd.to_numeric(
@@ -3551,7 +3636,8 @@ elif page == "Conferência de chapas e barramentos":
                 # reais. Isso permite classificação matemática correta no
                 # data_editor e evita ordenação lexicográfica de textos.
                 for col in [
-                    "Saldo sistema",
+                    "Saldo fechamento",
+                    "Saldo atual",
                     "Físico",
                     "Consumo informado",
                     "Diferença Qtd",
@@ -3590,9 +3676,15 @@ elif page == "Conferência de chapas e barramentos":
                                     "A tela só será atualizada ao confirmar."
                                 ),
                             ),
-                            "Saldo sistema": st.column_config.NumberColumn(
-                                "Saldo sistema",
+                            "Saldo fechamento": st.column_config.NumberColumn(
+                                "Saldo fechamento",
                                 format="localized",
+                                help="Base oficial do cálculo. Posição do último dia da competência.",
+                            ),
+                            "Saldo atual": st.column_config.NumberColumn(
+                                "Saldo atual",
+                                format="localized",
+                                help="Saldo do Analítico atual. Exibido apenas para referência.",
                             ),
                             "Físico": st.column_config.NumberColumn(
                                 "Físico",
