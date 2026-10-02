@@ -532,6 +532,24 @@ section[data-testid="stSidebar"] .sidebar-status-section .sidebar-status-card{
   margin:0!important;
   padding:12px 14px!important;
 }
+
+/* Navegação: somente a página ativa deve parecer um card.
+   Estados hover/focus dos botões secundários permanecem transparentes. */
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"],
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover,
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:focus,
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:focus-visible,
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:active{
+  background:transparent!important;
+  border-color:transparent!important;
+  box-shadow:none!important;
+  outline:none!important;
+  color:#374151!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] p{
+  color:#374151!important;
+  font-weight:500!important;
+}
 </style>
 """
 
