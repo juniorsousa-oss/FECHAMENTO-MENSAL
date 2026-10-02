@@ -456,18 +456,28 @@ section[data-testid="stSidebar"] .sidebar-section-label{
   font-size:12px!important;
   line-height:15px!important;
 }
-/* O espaço entre NAVEGAÇÃO e o primeiro botão faz parte do próprio título.
-   Assim o Streamlit não consegue colapsar o gap em um wrapper separado. */
+/* O título não carrega mais o espaçamento do menu.
+   O gap é aplicado diretamente no primeiro widget da navegação. */
 section[data-testid="stSidebar"] .sidebar-nav-label{
   display:block!important;
   margin:0!important;
-  padding:0 0 8px 0!important;
+  padding:0!important;
   font-size:12px!important;
   line-height:15px!important;
 }
 section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){
   margin:0 0 2px 0!important;
   padding:0!important;
+}
+
+/* Gap real entre NAVEGAÇÃO e o primeiro botão.
+   O key do widget gera a classe st-key-fm_nav_0 no wrapper do DASHBOARD. */
+section[data-testid="stSidebar"] .st-key-fm_nav_0{
+  margin-top:8px!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"].st-key-fm_nav_0{
+  margin-top:8px!important;
+  margin-bottom:2px!important;
 }
 section[data-testid="stSidebar"] div[data-testid="stButton"]{
   width:100%!important;
