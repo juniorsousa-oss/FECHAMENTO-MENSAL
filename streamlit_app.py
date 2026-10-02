@@ -3259,9 +3259,9 @@ elif page == "Conferência de chapas e barramentos":
             unsafe_allow_html=True,
         )
         section_band(
-            "03 · CONFERÊNCIA",
+            "02 · CONFERÊNCIA",
             "SISTEMA × CONTAGEM FÍSICA",
-            "Diferença = ESTOQUE DO SISTEMA − CONTAGEM FÍSICA. O item entra na base final quando possui saldo no Analítico ou quando uma fonte física é vinculada ao seu código. Se houver contagem sem saldo no Analítico, o saldo sistema é zero. Para barramentos, o CONSUMO é apenas contexto de análise. A estimativa em R$ usa o Últ. Preço do CADASTROS.",
+            "Diferença = Estoque do sistema − Contagem física.",
         )
 
         if not cb_stock_items and not cb_counts:
@@ -3276,9 +3276,48 @@ elif page == "Conferência de chapas e barramentos":
                 cb_counts,
             )
 
+            if not reconciliation.empty:
+                saldo_num = pd.to_numeric(
+                    reconciliation["Saldo sistema"],
+                    errors="coerce",
+                ).fillna(0)
+                fisico_num = pd.to_numeric(
+                    reconciliation["Físico"],
+                    errors="coerce",
+                ).fillna(0)
+                diff_num = pd.to_numeric(
+                    reconciliation["Diferença Qtd"],
+                    errors="coerce",
+                ).fillna(0)
+
+                useful_mask = (
+                    saldo_num.abs().gt(1e-9)
+                    | fisico_num.abs().gt(1e-9)
+                    | diff_num.abs().gt(1e-9)
+                )
+                reconciliation = reconciliation[
+                    useful_mask
+                ].copy()
+
+            excluded_codes = {
+                str(row.get("codigo") or "").strip()
+                for row in cb_exclusions
+                if bool(row.get("ativo", True))
+            }
+
+            reconciliation_all = reconciliation.copy()
+
+            if excluded_codes and not reconciliation.empty:
+                reconciliation = reconciliation[
+                    ~reconciliation["Código"].astype(str).isin(
+                        excluded_codes
+                    )
+                ].copy()
+
             if reconciliation.empty:
                 st.info(
-                    "Nenhum material foi ativado para a análise desta competência."
+                    "Nenhum material com saldo, contagem ou diferença "
+                    "permanece na análise desta competência."
                 )
             else:
                 counted_mask = reconciliation["Físico"].notna()
@@ -3302,35 +3341,67 @@ elif page == "Conferência de chapas e barramentos":
                     unsafe_allow_html=True,
                 )
 
-                filter_category = st.multiselect(
-                    "Categoria",
-                    ["CHAPA", "BARRA DE COBRE"],
-                    default=["CHAPA", "BARRA DE COBRE"],
-                    key="cb_category_filter",
-                )
-                filter_status = st.multiselect(
-                    "Status",
-                    [
-                        "DIVERGÊNCIA",
-                        "CONFERIDO",
-                        "SEM CONTAGEM",
-                    ],
-                    default=[
-                        "DIVERGÊNCIA",
-                        "CONFERIDO",
-                        "SEM CONTAGEM",
-                    ],
-                    key="cb_status_filter",
+                filter_col1, filter_col2, filter_col3 = st.columns(
+                    [1, 1, 2]
                 )
 
-                shown = reconciliation[
-                    reconciliation["Categoria"].isin(
-                        filter_category
+                with filter_col1:
+                    filter_category = st.selectbox(
+                        "Categoria",
+                        [
+                            "TODOS",
+                            "CHAPA",
+                            "BARRA DE COBRE",
+                        ],
+                        key="cb_category_filter_select",
                     )
-                    & reconciliation["Status"].isin(
-                        filter_status
+
+                with filter_col2:
+                    filter_status = st.selectbox(
+                        "Status",
+                        [
+                            "TODOS",
+                            "DIVERGÊNCIA",
+                            "CONFERIDO",
+                            "SEM CONTAGEM",
+                        ],
+                        key="cb_status_filter_select",
                     )
-                ].copy()
+
+                with filter_col3:
+                    filter_search = st.text_input(
+                        "Código ou descrição",
+                        value="",
+                        placeholder="Filtrar material",
+                        key="cb_search_filter",
+                    ).strip()
+
+                shown = reconciliation.copy()
+
+                if filter_category != "TODOS":
+                    shown = shown[
+                        shown["Categoria"] == filter_category
+                    ]
+
+                if filter_status != "TODOS":
+                    shown = shown[
+                        shown["Status"] == filter_status
+                    ]
+
+                if filter_search:
+                    needle = filter_search.upper()
+                    shown = shown[
+                        shown["Código"].astype(str).str.upper().str.contains(
+                            needle,
+                            regex=False,
+                        )
+                        | shown["Descrição"].astype(str).str.upper().str.contains(
+                            needle,
+                            regex=False,
+                        )
+                    ]
+
+                shown_display = shown.copy()
 
                 for col in [
                     "Saldo sistema",
@@ -3338,7 +3409,7 @@ elif page == "Conferência de chapas e barramentos":
                     "Consumo informado",
                     "Diferença Qtd",
                 ]:
-                    shown[col] = shown[col].map(
+                    shown_display[col] = shown_display[col].map(
                         lambda value: (
                             ""
                             if pd.isna(value)
@@ -3353,7 +3424,7 @@ elif page == "Conferência de chapas e barramentos":
                     "Custo unitário",
                     "Diferença R$",
                 ]:
-                    shown[col] = shown[col].map(
+                    shown_display[col] = shown_display[col].map(
                         lambda value: (
                             ""
                             if pd.isna(value)
@@ -3361,51 +3432,100 @@ elif page == "Conferência de chapas e barramentos":
                         )
                     )
 
-                st.dataframe(
-                    shown,
+                shown_display.insert(
+                    0,
+                    "Remover",
+                    False,
+                )
+
+                editable = st.data_editor(
+                    shown_display,
                     use_container_width=True,
                     hide_index=True,
+                    disabled=[
+                        col
+                        for col in shown_display.columns
+                        if col != "Remover"
+                    ],
+                    column_config={
+                        "Remover": st.column_config.CheckboxColumn(
+                            "Remover",
+                            help=(
+                                "Remove o item somente da análise desta competência."
+                            ),
+                        )
+                    },
+                    key="cb_reconciliation_editor",
                 )
 
-                st.markdown(
-                    '<div class="topic-divider"></div>',
-                    unsafe_allow_html=True,
-                )
-                section_band(
-                    "04 · TRATATIVAS",
-                    "PENDÊNCIAS DO FECHAMENTO",
-                    "Exibe somente materiais com divergência ou sem contagem física para facilitar a correção antes do fechamento.",
-                )
+                selected_to_remove = editable[
+                    editable["Remover"] == True
+                ]
 
-                pending = reconciliation[
-                    reconciliation["Status"].isin(
-                        ["DIVERGÊNCIA", "SEM CONTAGEM"]
+                if not selected_to_remove.empty:
+                    if st.button(
+                        "REMOVER SELECIONADOS DA ANÁLISE",
+                        type="secondary",
+                        use_container_width=True,
+                        key="cb_remove_analysis_items",
+                    ):
+                        for code in selected_to_remove[
+                            "Código"
+                        ].astype(str):
+                            db.set_cb_exclusion(
+                                cb_month,
+                                code,
+                                True,
+                                "REMOVIDO MANUALMENTE NA CONFERÊNCIA",
+                            )
+
+                        st.session_state["_cb_count_flash"] = (
+                            f"{len(selected_to_remove)} item(ns) removido(s) "
+                            "da análise desta competência."
+                        )
+                        st.rerun()
+
+            if excluded_codes:
+                excluded_view = reconciliation_all[
+                    reconciliation_all["Código"].astype(str).isin(
+                        excluded_codes
                     )
                 ].copy()
 
-                if pending.empty:
-                    st.success(
-                        "Nenhuma pendência de chapas ou barramentos nesta competência."
-                    )
-                else:
-                    st.dataframe(
-                        pending[
-                            [
-                                "Categoria",
-                                "Código",
-                                "Descrição",
-                                "U.M.",
-                                "Saldo sistema",
-                                "Físico",
-                                "Consumo informado",
-                                "Diferença Qtd",
-                                "Diferença R$",
-                                "Status",
-                            ]
-                        ],
-                        use_container_width=True,
-                        hide_index=True,
-                    )
+                with st.expander(
+                    f"REMOVIDOS DA ANÁLISE · {len(excluded_codes)}",
+                    expanded=False,
+                ):
+                    restore_options = [
+                        (
+                            f"{row['Código']} · {row['Descrição']}"
+                        )
+                        for _, row in excluded_view.iterrows()
+                    ]
+
+                    if restore_options:
+                        restore_selected = st.selectbox(
+                            "Restaurar item",
+                            restore_options,
+                            key="cb_restore_item",
+                        )
+                        restore_code = restore_selected.split(
+                            " · ",
+                            1,
+                        )[0].strip()
+
+                        if st.button(
+                            "RESTAURAR NA ANÁLISE",
+                            use_container_width=True,
+                            key="cb_restore_analysis_item",
+                        ):
+                            db.set_cb_exclusion(
+                                cb_month,
+                                restore_code,
+                                False,
+                                "",
+                            )
+                            st.rerun()
 
 elif page == "Conferência de baixas":
     st.markdown(
