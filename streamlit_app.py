@@ -1657,8 +1657,14 @@ with st.sidebar:
             '</div>'
             '<div class="sidebar-brand-gap" aria-hidden="true"></div>'
             '<div class="sidebar-section-label sidebar-nav-label">NAVEGAÇÃO</div>'
-            '<div class="sidebar-nav-gap" aria-hidden="true"></div>'
         ),
+        unsafe_allow_html=True,
+    )
+
+    # Espaço real entre o título NAVEGAÇÃO e o início do primeiro botão.
+    # Mantido em um elemento Streamlit próprio para não ser colapsado pelo Markdown.
+    st.markdown(
+        '<div class="sidebar-nav-button-gap" aria-hidden="true"></div>',
         unsafe_allow_html=True,
     )
 
