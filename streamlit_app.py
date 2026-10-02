@@ -2398,17 +2398,38 @@ elif page == "Conferência de chapas e barramentos":
                         cb_catalog,
                     )
 
-                    em1, em2, em3 = st.columns(3)
+                    _email_total_chapas = sum(
+                        max(float(row.get("chapas") or 0), 0.0)
+                        for row in parsed_email["rows"]
+                    )
+                    _email_total_peso = sum(
+                        max(float(row.get("peso_total") or 0), 0.0)
+                        for row in parsed_email["rows"]
+                    )
+
+                    em1, em2, em3, em4, em5 = st.columns(5)
                     em1.metric(
                         "Linhas do e-mail",
                         len(parsed_email["rows"]),
                     )
                     em2.metric(
-                        "Vinculadas",
+                        "Códigos consolidados",
                         len(resolved_email["resolved"]),
                     )
                     em3.metric(
-                        "Não vinculadas",
+                        "Quantidade física",
+                        f"{_email_total_chapas:,.0f} chapas"
+                        .replace(",", "."),
+                    )
+                    em4.metric(
+                        "Peso físico",
+                        f"{_email_total_peso:,.3f} kg"
+                        .replace(",", "X")
+                        .replace(".", ",")
+                        .replace("X", "."),
+                    )
+                    em5.metric(
+                        "Sem vínculo",
                         len(resolved_email["unresolved"]),
                     )
 
@@ -3423,6 +3444,9 @@ elif page == "Conferência de chapas e barramentos":
             "Diferença = Contagem física − Saldo do fechamento. O saldo atual é apenas informativo. Barras com |diferença| < 3 m são aceitas automaticamente.",
         )
 
+        cb_adjustment_snapshot = pd.DataFrame()
+        cb_missing_count = 0
+
         if not cb_closing_stock_items and not cb_counts:
             st.info(
                 "A base final será formada quando houver saldo no Analítico "
@@ -3482,6 +3506,14 @@ elif page == "Conferência de chapas e barramentos":
                     ~reconciliation["Código"].astype(str).isin(
                         excluded_codes
                     )
+                ].copy()
+
+            if not reconciliation.empty:
+                cb_missing_count = int(
+                    (reconciliation["Status"] == "SEM CONTAGEM").sum()
+                )
+                cb_adjustment_snapshot = reconciliation[
+                    reconciliation["Status"] == "DIVERGÊNCIA"
                 ].copy()
 
             if reconciliation.empty:
@@ -3801,6 +3833,314 @@ elif page == "Conferência de chapas e barramentos":
                                 "",
                             )
                             st.rerun()
+
+        st.markdown(
+            '<div class="topic-divider"></div>',
+            unsafe_allow_html=True,
+        )
+        section_band(
+            "03 · FINALIZAÇÃO",
+            "REGISTRO MENSAL DOS AJUSTES",
+            "Ao finalizar, o sistema grava uma fotografia dos ajustes de Chapas em KG e Barramentos em MT, incluindo a previsão financeira. O histórico permanece separado por competência.",
+        )
+
+        _adj_chapa = (
+            cb_adjustment_snapshot[
+                cb_adjustment_snapshot["Categoria"] == "CHAPA"
+            ].copy()
+            if not cb_adjustment_snapshot.empty
+            else pd.DataFrame()
+        )
+        _adj_barra = (
+            cb_adjustment_snapshot[
+                cb_adjustment_snapshot["Categoria"] == "BARRA DE COBRE"
+            ].copy()
+            if not cb_adjustment_snapshot.empty
+            else pd.DataFrame()
+        )
+
+        def _adj_sum(frame, column):
+            if frame.empty or column not in frame.columns:
+                return 0.0
+            return float(
+                pd.to_numeric(
+                    frame[column],
+                    errors="coerce",
+                ).fillna(0).sum()
+            )
+
+        _chapa_qtd_prev = _adj_sum(_adj_chapa, "Diferença Qtd")
+        _chapa_val_prev = _adj_sum(_adj_chapa, "Diferença R$")
+        _barra_qtd_prev = _adj_sum(_adj_barra, "Diferença Qtd")
+        _barra_val_prev = _adj_sum(_adj_barra, "Diferença R$")
+        _total_val_prev = _chapa_val_prev + _barra_val_prev
+
+        _fp1, _fp2, _fp3, _fp4, _fp5 = st.columns(5)
+        _fp1.metric(
+            "CHAPAS · AJUSTE",
+            f"{_chapa_qtd_prev:+,.3f} KG"
+            .replace(",", "X").replace(".", ",").replace("X", "."),
+        )
+        _fp2.metric(
+            "CHAPAS · PREVISÃO",
+            money_br(_chapa_val_prev),
+        )
+        _fp3.metric(
+            "BARRAMENTOS · AJUSTE",
+            f"{_barra_qtd_prev:+,.3f} MT"
+            .replace(",", "X").replace(".", ",").replace("X", "."),
+        )
+        _fp4.metric(
+            "BARRAMENTOS · PREVISÃO",
+            money_br(_barra_val_prev),
+        )
+        _fp5.metric(
+            "IMPACTO LÍQUIDO PREVISTO",
+            money_br(_total_val_prev),
+        )
+
+        st.caption(
+            "SINAL POSITIVO = entrada/acréscimo de estoque · "
+            "SINAL NEGATIVO = baixa/redução. A previsão em R$ usa o custo "
+            "unitário registrado na conferência no momento da finalização."
+        )
+
+        try:
+            _adjustment_history = db.list_cb_adjustment_history()
+            _adjustment_history_error = ""
+        except Exception as exc:
+            _adjustment_history = []
+            _adjustment_history_error = str(exc)
+
+        _current_adjustment_record = next(
+            (
+                row
+                for row in _adjustment_history
+                if str(row.get("competencia") or "")[:10]
+                == cb_month.isoformat()
+            ),
+            None,
+        )
+
+        if _current_adjustment_record:
+            st.success(
+                "AJUSTES DE "
+                + month_label(cb_month)
+                + " JÁ REGISTRADOS · última gravação "
+                + central_data.format_dt(
+                    _current_adjustment_record.get("atualizado_em")
+                    or _current_adjustment_record.get("finalizado_em")
+                )
+            )
+
+        _can_finalize_adjustments = (
+            bool(cb_closing_stock_items)
+            and cb_missing_count == 0
+        )
+
+        if cb_missing_count > 0:
+            st.warning(
+                f"Existem {cb_missing_count} material(is) sem contagem. "
+                "O registro mensal só é liberado após concluir ou remover "
+                "essas pendências da análise."
+            )
+        elif not cb_closing_stock_items:
+            st.warning(
+                "Carregue o saldo do fechamento antes de registrar os ajustes."
+            )
+
+        _finalize_label = (
+            "ATUALIZAR REGISTRO DOS AJUSTES"
+            if _current_adjustment_record
+            else "FINALIZAR E REGISTRAR AJUSTES"
+        )
+
+        if st.button(
+            _finalize_label,
+            type="primary",
+            use_container_width=True,
+            disabled=not _can_finalize_adjustments,
+            key="cb_finalize_adjustments",
+        ):
+            _rows_to_save = (
+                cb_adjustment_snapshot.to_dict("records")
+                if not cb_adjustment_snapshot.empty
+                else []
+            )
+            db.finalize_cb_adjustments(
+                cb_month,
+                closing_date(cb_month),
+                _rows_to_save,
+            )
+            st.session_state["_cb_count_flash"] = (
+                "Ajustes de "
+                + month_label(cb_month)
+                + " registrados no histórico mensal."
+            )
+            st.rerun()
+
+        if _adjustment_history_error:
+            st.warning(
+                "Não foi possível carregar o histórico de ajustes: "
+                + _adjustment_history_error
+            )
+        elif _adjustment_history:
+            with st.expander(
+                "HISTÓRICO DE AJUSTES · MÊS A MÊS",
+                expanded=False,
+            ):
+                _history_rows = []
+                for row in _adjustment_history:
+                    _comp = pd.to_datetime(
+                        row.get("competencia"),
+                        errors="coerce",
+                    )
+                    _label = (
+                        month_label(_comp.date())
+                        if not pd.isna(_comp)
+                        else str(row.get("competencia") or "")
+                    )
+                    _history_rows.append(
+                        {
+                            "Competência": _label,
+                            "Chapas · ajuste (KG)": (
+                                float(row.get("chapas_entrada_qtd") or 0)
+                                - float(row.get("chapas_saida_qtd") or 0)
+                            ),
+                            "Chapas · previsão (R$)": (
+                                float(row.get("chapas_entrada_valor") or 0)
+                                - float(row.get("chapas_saida_valor") or 0)
+                            ),
+                            "Barramentos · ajuste (MT)": (
+                                float(row.get("barramentos_entrada_qtd") or 0)
+                                - float(row.get("barramentos_saida_qtd") or 0)
+                            ),
+                            "Barramentos · previsão (R$)": (
+                                float(row.get("barramentos_entrada_valor") or 0)
+                                - float(row.get("barramentos_saida_valor") or 0)
+                            ),
+                            "Impacto líquido (R$)": float(
+                                row.get("previsao_valor_liquido") or 0
+                            ),
+                            "Movimentação prevista (R$)": float(
+                                row.get("previsao_valor_movimentado") or 0
+                            ),
+                            "Itens": int(row.get("itens_ajuste") or 0),
+                            "Finalizado em": central_data.format_dt(
+                                row.get("finalizado_em")
+                            ),
+                        }
+                    )
+
+                st.dataframe(
+                    pd.DataFrame(_history_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Chapas · ajuste (KG)": st.column_config.NumberColumn(
+                            "Chapas · ajuste (KG)",
+                            format="localized",
+                        ),
+                        "Chapas · previsão (R$)": st.column_config.NumberColumn(
+                            "Chapas · previsão (R$)",
+                            format="R$ %.2f",
+                        ),
+                        "Barramentos · ajuste (MT)": st.column_config.NumberColumn(
+                            "Barramentos · ajuste (MT)",
+                            format="localized",
+                        ),
+                        "Barramentos · previsão (R$)": st.column_config.NumberColumn(
+                            "Barramentos · previsão (R$)",
+                            format="R$ %.2f",
+                        ),
+                        "Impacto líquido (R$)": st.column_config.NumberColumn(
+                            "Impacto líquido (R$)",
+                            format="R$ %.2f",
+                        ),
+                        "Movimentação prevista (R$)": st.column_config.NumberColumn(
+                            "Movimentação prevista (R$)",
+                            format="R$ %.2f",
+                        ),
+                    },
+                )
+
+                _history_month_options = [
+                    str(row.get("competencia") or "")[:10]
+                    for row in _adjustment_history
+                ]
+                _history_month_selected = st.selectbox(
+                    "Detalhar competência",
+                    _history_month_options,
+                    format_func=lambda value: month_label(
+                        date.fromisoformat(value)
+                    ),
+                    key="cb_adjustment_history_month",
+                )
+
+                try:
+                    _history_items = db.list_cb_adjustment_items(
+                        _history_month_selected
+                    )
+                except Exception as exc:
+                    _history_items = []
+                    st.warning(
+                        "Não foi possível carregar os itens do histórico: "
+                        + str(exc)
+                    )
+
+                if _history_items:
+                    _history_items_df = pd.DataFrame(_history_items).rename(
+                        columns={
+                            "codigo": "Código",
+                            "categoria": "Categoria",
+                            "descricao": "Descrição",
+                            "um": "U.M.",
+                            "saldo_fechamento": "Saldo fechamento",
+                            "fisico": "Físico",
+                            "diferenca_qtd": "Ajuste Qtd",
+                            "custo_unitario": "Custo unitário",
+                            "previsao_valor": "Previsão R$",
+                        }
+                    )
+                    st.dataframe(
+                        _history_items_df[
+                            [
+                                "Categoria",
+                                "Código",
+                                "Descrição",
+                                "U.M.",
+                                "Saldo fechamento",
+                                "Físico",
+                                "Ajuste Qtd",
+                                "Custo unitário",
+                                "Previsão R$",
+                            ]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Saldo fechamento": st.column_config.NumberColumn(
+                                "Saldo fechamento",
+                                format="localized",
+                            ),
+                            "Físico": st.column_config.NumberColumn(
+                                "Físico",
+                                format="localized",
+                            ),
+                            "Ajuste Qtd": st.column_config.NumberColumn(
+                                "Ajuste Qtd",
+                                format="localized",
+                            ),
+                            "Custo unitário": st.column_config.NumberColumn(
+                                "Custo unitário",
+                                format="R$ %.4f",
+                            ),
+                            "Previsão R$": st.column_config.NumberColumn(
+                                "Previsão R$",
+                                format="R$ %.2f",
+                            ),
+                        },
+                    )
 
 elif page == "Conferência de baixas":
     st.markdown(
