@@ -455,6 +455,13 @@ section[data-testid="stSidebar"] .sidebar-section-label{
   font-size:12px!important;
   line-height:15px!important;
 }
+section[data-testid="stSidebar"] .sidebar-nav-label{
+  margin-bottom:0!important;
+}
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-nav-label)
++ div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){
+  margin-top:8px!important;
+}
 section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){
   margin:0 0 2px 0!important;
   padding:0!important;
