@@ -70,7 +70,10 @@ jobs:
           assert 'class="sidebar-status-section"' in app
           assert "sidebar-status-section" in app
           ui = Path("ui.py").read_text(encoding="utf-8")
-          assert "SETTA SIDEBAR SPACING LOCK — PADRÃO VALIDADO" in ui
+          assert "SETTA SIDEBAR SPACING LOCK — WRAPPERS STREAMLIT" in ui
+          assert "sidebar-nav-label" in ui
+          assert "margin:0 0 20px 0!important" in ui
+          assert "margin:0 0 8px 0!important" in ui
           assert "height:42px!important" in ui
           assert "margin:0 0 2px 0!important" in ui
           assert "margin:0 0 20px 0!important" in ui
