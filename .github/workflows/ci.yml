@@ -34,6 +34,11 @@ jobs:
           assert "ACOMPANHAMENTO DE API" in app
           assert "GRAVAR FECHAMENTO DA COMPETÊNCIA" in app
           assert "render_manual_contingency" in app
+          assert "def closing_date(" in app
+          assert "SALVAR SALDO DO FECHAMENTO" in app
+          assert '"Saldo fechamento"' in app
+          assert '"Saldo atual"' in app
+          assert "O saldo atual não interfere no resultado da conferência." in app
           assert "Identidade visual" not in app
           print("ESTRUTURA_OK")
           PY
