@@ -31,7 +31,7 @@ jobs:
           from pathlib import Path
           app = Path("streamlit_app.py").read_text(encoding="utf-8")
           assert app.count("st.set_page_config(") == 1
-          assert "ACOMPANHAMENTO DE API" in app
+          assert "STATUS API" in app
           assert "GRAVAR FECHAMENTO DA COMPETÊNCIA" in app
           assert "render_manual_contingency" in app
           assert "def closing_date(" in app
