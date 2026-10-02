@@ -103,6 +103,76 @@ def to_number(value: Any) -> float:
         return 0.0
 
 
+def normalize_bar_identifier(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+
+    if re.fullmatch(r"\d+(?:\.0+)?", raw):
+        return str(int(float(raw))).zfill(8)
+
+    text = normalize_text(raw).replace(",", ".")
+    text = re.sub(
+        r"(?<!\d)(\d+)[ .]+(\d+\s*/\s*\d+)",
+        lambda m: f"{m.group(1)}+{m.group(2)}",
+        text,
+    )
+    text = re.sub(r"\s*[X×]\s*", "X", text)
+    text = re.sub(r"\s*/\s*", "/", text)
+    text = re.sub(r"\s+", "", text)
+    text = text.replace("MM", "")
+    return text
+
+
+def parse_bar_quantity(
+    value: Any,
+    quantity_header: str = "",
+) -> dict:
+    raw = str(value or "").strip()
+    header = normalize_text(quantity_header)
+
+    if isinstance(value, (int, float)):
+        number = float(value)
+    else:
+        match = re.search(
+            r"[-+]?\d+(?:[.,]\d+)?",
+            raw.replace(" ", ""),
+        )
+        number = (
+            float(match.group(0).replace(",", "."))
+            if match
+            else 0.0
+        )
+
+    raw_norm = normalize_text(raw)
+    explicit_meters = (
+        header in {"MTS", "MT", "METROS", "METRO"}
+        or bool(
+            re.search(
+                r"\b(?:M|MT|MTS|METRO|METROS)\b",
+                raw_norm,
+            )
+        )
+    )
+    explicit_bars = bool(
+        re.search(r"\bBARRA(?:S)?\b", raw_norm)
+    )
+
+    if explicit_meters and not explicit_bars:
+        mode = "METROS"
+        meters = number
+    else:
+        mode = "BARRAS"
+        meters = number * 3.0
+
+    return {
+        "quantidade_informada": number,
+        "modo_quantidade": mode,
+        "quantidade_fisica": meters,
+        "quantidade_origem": raw,
+    }
+
+
 def _find_header_row(
     ws,
     required_labels: set[str],
