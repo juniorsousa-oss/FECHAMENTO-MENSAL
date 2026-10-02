@@ -1298,13 +1298,20 @@ def build_cb_reconciliation(
             continue
         counts_by_code.setdefault(codigo, []).append(row)
 
-    # Base final = saldo do fechamento positivo OU item presente em contagem.
-    # O saldo atual é apenas informativo e nunca participa do cálculo.
+    # Base final de VISUALIZAÇÃO = saldo no fechamento, saldo atual
+    # ou item presente em contagem. Isso garante que aumentos ocorridos
+    # depois da virada também apareçam na comparação item a item.
     analysis_codes = {
         codigo
         for codigo, data in stock_by_code.items()
         if float(data.get("saldo") or 0) > 0
     }
+    if current_stock_items:
+        analysis_codes.update(
+            codigo
+            for codigo, data in current_by_code.items()
+            if float(data.get("saldo") or 0) > 0
+        )
     analysis_codes.update(counts_by_code.keys())
 
     result: list[dict] = []
@@ -1345,9 +1352,30 @@ def build_cb_reconciliation(
             )
 
         saldo = max(float(stock_data.get("saldo") or 0), 0.0)
-        saldo_atual = max(
-            float((current_by_code.get(codigo) or {}).get("saldo") or 0),
-            0.0,
+        _has_current_snapshot = bool(current_stock_items)
+        saldo_atual = (
+            max(
+                float((current_by_code.get(codigo) or {}).get("saldo") or 0),
+                0.0,
+            )
+            if _has_current_snapshot
+            else None
+        )
+        saldo_base_ajuste = (
+            min(saldo, float(saldo_atual))
+            if saldo_atual is not None
+            else saldo
+        )
+        base_origem = (
+            "ATUAL"
+            if saldo_atual is not None
+            and float(saldo_atual) < saldo - 1e-9
+            else "FECHAMENTO"
+        )
+        variacao_saldo = (
+            None
+            if saldo_atual is None
+            else float(saldo_atual) - saldo
         )
         valor_estoque = max(
             float(stock_data.get("valor_estoque") or 0),
@@ -1412,10 +1440,13 @@ def build_cb_reconciliation(
                 )
             source_parts.append(source_text)
 
-        # Regra definida: diferença = contagem física - saldo do fechamento.
-        # O saldo atual não interfere no resultado da conferência.
+        # Regra operacional: confrontar a contagem com o MENOR saldo
+        # entre a posição do fechamento e a posição atual. Se uma baixa
+        # posterior já reduziu o estoque, ela não deve ser baixada novamente.
         diferenca_qtd = (
-            None if physical is None else physical - saldo
+            None
+            if physical is None
+            else physical - saldo_base_ajuste
         )
         diferenca_rs = (
             None
@@ -1463,7 +1494,11 @@ def build_cb_reconciliation(
                 ),
                 "Saldo fechamento": saldo,
                 "Saldo atual": saldo_atual,
+                "Variação atual x fechamento": variacao_saldo,
+                "Saldo base ajuste": saldo_base_ajuste,
+                "Base usada": base_origem,
                 "Físico": physical,
+                "Contagem assumida zero": False,
                 "Consumo informado": (
                     consumo_informado
                     if item.get("categoria") == "BARRA_COBRE"
@@ -1508,7 +1543,7 @@ def cb_kpi_html(
         <div class="cb-kpi" style="--cb-accent:#d97706">
             <div class="cb-kpi-label">DIFERENÇA EM R$</div>
             <div class="cb-kpi-value">{money_br(divergence_rs)}</div>
-            <div class="cb-kpi-note">Físico − estoque × custo unitário</div>
+            <div class="cb-kpi-note">Físico − menor saldo × custo unitário</div>
         </div>
     </div>
     """
