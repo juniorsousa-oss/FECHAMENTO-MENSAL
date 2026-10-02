@@ -106,9 +106,6 @@ section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid=
   background:#ef4444;
   transform:translateY(-50%)
 }
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){
-  margin-bottom:-.45rem!important
-}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked){background:#111827!important;border-color:#111827!important;box-shadow:0 5px 14px rgba(17,24,39,.14)!important}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)::before{content:"";position:absolute;left:.42rem;top:50%;width:4px;height:20px;border-radius:999px;background:#ef4444;transform:translateY(-50%)}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p{color:#fff!important;font-weight:700!important}
@@ -437,24 +434,20 @@ section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{
   gap:0!important;
   row-gap:0!important;
 }
-/* O espaçamento precisa ficar no wrapper do Streamlit.
-   Margem no HTML interno era colapsada/cortada e aproximava NAVEGAÇÃO do card. */
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > .sidebar-brand){
-  margin:0 0 20px 0!important;
-  padding:0!important;
-}
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > .sidebar-nav-label){
-  margin:0 0 8px 0!important;
-  padding:0!important;
-}
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > .sidebar-status-section){
-  margin:0!important;
-  padding:0!important;
-}
+/* Espaçamento estável da sidebar.
+   Não depende de :has() nem da árvore interna de wrappers do Streamlit. */
 section[data-testid="stSidebar"] .sidebar-brand{
   width:100%!important;
   padding:14px 16px!important;
   margin:0!important;
+}
+section[data-testid="stSidebar"] .sidebar-brand-gap{
+  display:block!important;
+  width:100%!important;
+  height:20px!important;
+  min-height:20px!important;
+  margin:0!important;
+  padding:0!important;
 }
 section[data-testid="stSidebar"] .sidebar-section-label{
   display:block!important;
@@ -462,6 +455,14 @@ section[data-testid="stSidebar"] .sidebar-section-label{
   padding:0!important;
   font-size:12px!important;
   line-height:15px!important;
+}
+section[data-testid="stSidebar"] .sidebar-nav-gap{
+  display:block!important;
+  width:100%!important;
+  height:8px!important;
+  min-height:8px!important;
+  margin:0!important;
+  padding:0!important;
 }
 section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){
   margin:0 0 2px 0!important;
@@ -499,7 +500,15 @@ section[data-testid="stSidebar"] div[data-testid="stButton"] button p{
 section[data-testid="stSidebar"] .sidebar-status-section{
   display:block!important;
   width:100%!important;
-  margin:18px 0 0 0!important;
+  margin:0!important;
+  padding:0!important;
+}
+section[data-testid="stSidebar"] .sidebar-status-top-gap{
+  display:block!important;
+  width:100%!important;
+  height:18px!important;
+  min-height:18px!important;
+  margin:0!important;
   padding:0!important;
 }
 section[data-testid="stSidebar"] .sidebar-status-section .sidebar-divider{
