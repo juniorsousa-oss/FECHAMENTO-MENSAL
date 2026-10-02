@@ -1374,8 +1374,16 @@ def build_cb_reconciliation(
             else diferenca_qtd * custo_unitario
         )
 
+        tolerancia_automatica = (
+            item.get("categoria") == "BARRA_COBRE"
+            and physical is not None
+            and abs(float(diferenca_qtd or 0)) < 3.0
+        )
+
         if physical is None:
             status = "SEM CONTAGEM"
+        elif tolerancia_automatica:
+            status = "CONFERIDO"
         elif abs(float(diferenca_qtd or 0)) <= 1e-9:
             status = "CONFERIDO"
         else:
@@ -1417,6 +1425,7 @@ def build_cb_reconciliation(
                 "Origem custo": custo_origem,
                 "Diferença R$": diferenca_rs,
                 "Fontes físicas": " | ".join(source_parts),
+                "Tolerância automática": tolerancia_automatica,
                 "Status": status,
             }
         )
@@ -3294,7 +3303,7 @@ elif page == "Conferência de chapas e barramentos":
         section_band(
             "02 · CONFERÊNCIA",
             "SISTEMA × CONTAGEM FÍSICA",
-            "Diferença = Contagem física − Estoque do sistema.",
+            "Diferença = Contagem física − Estoque do sistema. Barras com |diferença| < 3 m são aceitas automaticamente.",
         )
 
         if not cb_stock_items and not cb_counts:
@@ -3331,6 +3340,16 @@ elif page == "Conferência de chapas e barramentos":
                 reconciliation = reconciliation[
                     useful_mask
                 ].copy()
+
+                # Barras com diferença inferior a uma barra padrão (3 m),
+                # para mais ou para menos, são aceitas automaticamente e
+                # deixam de compor a análise ativa.
+                if "Tolerância automática" in reconciliation.columns:
+                    reconciliation = reconciliation[
+                        ~reconciliation[
+                            "Tolerância automática"
+                        ].fillna(False)
+                    ].copy()
 
             excluded_codes = {
                 str(row.get("codigo") or "").strip()
@@ -3512,6 +3531,7 @@ elif page == "Conferência de chapas e barramentos":
                         "Custo unitário",
                         "Origem custo",
                         "Fontes físicas",
+                        "Tolerância automática",
                     ],
                     errors="ignore",
                 )
