@@ -76,6 +76,6 @@ jobs:
           parser = Path("cb_parser.py").read_text(encoding="utf-8")
           app = Path("streamlit_app.py").read_text(encoding="utf-8")
           assert "table_date.month - 1" in parser
-          assert "Competência do fechamento:" in app
+          assert "Fechamento considerado em:" in app
           print("COMPETENCIA_CHAPAS_OK")
           PY
