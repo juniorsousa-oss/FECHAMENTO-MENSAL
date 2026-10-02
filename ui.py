@@ -422,26 +422,35 @@ div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{min-width:100%!
 .history-cell::before{content:attr(data-label);display:inline-block;min-width:118px;margin-right:.65rem;font-size:.65rem;font-weight:900;text-transform:uppercase;color:#64748b}
 }
 
-/* FECHAMENTO MENSAL — ajuste fino da sidebar após navegação sem reload */
-section[data-testid="stSidebar"] .sidebar-nav-end-spacer{
+/* FECHAMENTO MENSAL — bloco único e estável entre navegação e status */
+section[data-testid="stSidebar"] .sidebar-status-section{
   display:block!important;
-  height:12px!important;
-  min-height:12px!important;
   width:100%!important;
+  margin:18px 0 0 0!important;
+  padding:0!important;
 }
-section[data-testid="stSidebar"] .sidebar-divider{
-  margin:10px 0 16px 0!important;
+section[data-testid="stSidebar"] .sidebar-status-section .sidebar-divider{
+  display:block!important;
+  width:100%!important;
+  height:1px!important;
+  min-height:1px!important;
+  margin:0 0 16px 0!important;
+  padding:0!important;
+  background:#d1d5db!important;
 }
-section[data-testid="stSidebar"] .sidebar-section-label{
+section[data-testid="stSidebar"] .sidebar-status-section .sidebar-status-label{
+  display:block!important;
   margin:0 0 8px 0!important;
+  padding:0!important;
+  line-height:15px!important;
 }
-section[data-testid="stSidebar"] .sidebar-status-card{
+section[data-testid="stSidebar"] .sidebar-status-section .sidebar-status-card{
+  display:block!important;
+  width:100%!important;
   margin:0!important;
+  padding:12px 14px!important;
 }
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-nav-end-spacer),
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-divider),
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-section-label),
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-status-card){
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-status-section){
   margin:0!important;
   padding:0!important;
 }
