@@ -483,28 +483,56 @@ def save_cb_counts_batch(
     arquivo_nome: str,
     rows: list[dict],
 ) -> dict:
-    payload = []
+    grouped: dict[str, dict] = {}
+
     for row in rows:
-        payload.append(
+        codigo = str(row.get("codigo") or "").strip()
+        if not codigo:
+            continue
+
+        current = grouped.setdefault(
+            codigo,
             {
-                "codigo": str(row.get("codigo") or "").strip(),
-                "quantidade_fisica": float(
-                    row.get("quantidade_fisica") or 0
-                ),
-                "consumo": max(
-                    float(row.get("consumo") or 0),
-                    0.0,
-                ),
-                "observacao": str(
-                    row.get("observacao") or ""
-                ).strip(),
-                "origem_ref": str(
-                    row.get("origem_ref")
-                    or arquivo_nome
-                    or ""
-                ).strip(),
-            }
+                "codigo": codigo,
+                "quantidade_fisica": 0.0,
+                "consumo": 0.0,
+                "observacoes": [],
+                "origens": [],
+            },
         )
+
+        current["quantidade_fisica"] += float(
+            row.get("quantidade_fisica") or 0
+        )
+        current["consumo"] += max(
+            float(row.get("consumo") or 0),
+            0.0,
+        )
+
+        observacao = str(
+            row.get("observacao") or ""
+        ).strip()
+        if observacao and observacao not in current["observacoes"]:
+            current["observacoes"].append(observacao)
+
+        origem = str(
+            row.get("origem_ref")
+            or arquivo_nome
+            or ""
+        ).strip()
+        if origem and origem not in current["origens"]:
+            current["origens"].append(origem)
+
+    payload = [
+        {
+            "codigo": item["codigo"],
+            "quantidade_fisica": item["quantidade_fisica"],
+            "consumo": item["consumo"],
+            "observacao": " | ".join(item["observacoes"]),
+            "origem_ref": " | ".join(item["origens"]),
+        }
+        for item in grouped.values()
+    ]
 
     result = rpc(
         "fm_cb_salvar_contagens_lote",
