@@ -9,6 +9,7 @@ on:
       - 'report_parser.py'
       - 'cb_parser.py'
       - 'inventory_db.py'
+      - 'db.py'
       - 'ui.py'
       - 'supabase_schema.sql'
       - 'requirements.txt'
