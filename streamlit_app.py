@@ -130,7 +130,7 @@ def cached_parse_cadastros(raw: bytes, file_name: str) -> dict:
 def build_almox_barras_model() -> bytes:
     output = io.BytesIO()
     model = pd.DataFrame(
-        columns=["CODIGO", "MTS"]
+        columns=["BARRAMENTO", "QUANTIDADE"]
     )
     with pd.ExcelWriter(
         output,
