@@ -83,10 +83,15 @@ CB_SOURCE_LABELS = {
 }
 
 
-try:
-    GLOBAL_VISUAL_CONFIG = central_data.load_visual_config()
-except Exception:
-    GLOBAL_VISUAL_CONFIG = {}
+@st.cache_data(show_spinner=False, ttl=300, max_entries=2)
+def load_global_visual_config() -> dict:
+    try:
+        return central_data.load_visual_config() or {}
+    except Exception:
+        return {}
+
+
+GLOBAL_VISUAL_CONFIG = load_global_visual_config()
 
 
 def browser_icon():
@@ -1598,59 +1603,96 @@ api_summary = api_sources_summary(
     api_sources_error,
 )
 
-query_page = str(st.query_params.get("pagina", "") or "").strip()
-if query_page in PAGES:
-    st.session_state.nav_page = query_page
-elif "nav_page" not in st.session_state:
-    st.session_state.nav_page = PAGES[0]
+# A URL é lida somente na primeira execução da sessão.
+# Depois disso, a navegação é 100% via session_state, evitando reload completo do navegador.
+if "_fm_nav_initialized" not in st.session_state:
+    query_page = str(
+        st.query_params.get("pagina", "") or ""
+    ).strip()
+    st.session_state.nav_page = (
+        query_page if query_page in PAGES else PAGES[0]
+    )
+    st.session_state["_fm_nav_initialized"] = True
 
-page = str(st.session_state.get("nav_page") or PAGES[0])
+page = str(
+    st.session_state.get("nav_page") or PAGES[0]
+)
 if page not in PAGES:
     page = PAGES[0]
     st.session_state.nav_page = page
 
+def _set_fm_page(target: str) -> None:
+    if target in PAGES:
+        st.session_state.nav_page = target
+
 menu_labels = cfg.get("menu_labels") or {}
-_sidebar_links = []
-for internal_page in PAGES:
-    label = str(
-        menu_labels.get(internal_page)
-        or DEFAULT_CONFIG["menu_labels"].get(internal_page, internal_page)
-    ).strip()
-    active = " active" if page == internal_page else ""
-    href_page = html.escape(internal_page, quote=True)
-    _sidebar_links.append(
-        f'<a class="sidebar-nav-link{active}" href="?pagina={href_page}" target="_self">{html.escape(label)}</a>'
-    )
 
 _sidebar_status_class = {
     "ok": "status-ok",
     "warn": "status-warning",
     "error": "status-error",
-}.get(str(api_summary.get("css") or ""), "status-warning")
-
-_sidebar_html = (
-    '<div class="setta-sidebar">'
-    '<div class="sidebar-brand">'
-      f'<div class="sidebar-brand-title">{html.escape(str(cfg["sidebar_title"]))}</div>'
-      f'<div class="sidebar-brand-sub">{html.escape(str(cfg["sidebar_subtitle"]))}</div>'
-    '</div>'
-    '<div class="sidebar-section-label">NAVEGAÇÃO</div>'
-    '<div class="sidebar-nav">' + "".join(_sidebar_links) + '</div>'
-    '<div class="sidebar-divider"></div>'
-    '<div class="sidebar-section-label">STATUS GERAL</div>'
-    '<div class="sidebar-status-card">'
-      '<div class="sidebar-status-name">CONEXÕES</div>'
-      f'<div class="sidebar-status-value {_sidebar_status_class}">{html.escape(str(api_summary["status"]))}</div>'
-      '<div class="sidebar-status-meta">'
-        f'<div>ÚLTIMA ATUALIZAÇÃO: {html.escape(str(api_summary.get("last_update") or "—"))}</div>'
-        f'<div>QNT DE BASES: {api_summary["healthy"]}/{api_summary["total"]}</div>'
-      '</div>'
-    '</div>'
-    '</div>'
+}.get(
+    str(api_summary.get("css") or ""),
+    "status-warning",
 )
 
 with st.sidebar:
-    st.markdown(_sidebar_html, unsafe_allow_html=True)
+    st.markdown(
+        (
+            '<div class="sidebar-brand">'
+            f'<div class="sidebar-brand-title">{html.escape(str(cfg["sidebar_title"]))}</div>'
+            f'<div class="sidebar-brand-sub">{html.escape(str(cfg["sidebar_subtitle"]))}</div>'
+            '</div>'
+        ),
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="sidebar-section-label">NAVEGAÇÃO</div>',
+        unsafe_allow_html=True,
+    )
+
+    for _index, internal_page in enumerate(PAGES):
+        label = str(
+            menu_labels.get(internal_page)
+            or DEFAULT_CONFIG["menu_labels"].get(
+                internal_page,
+                internal_page,
+            )
+        ).strip()
+        st.button(
+            label,
+            key=f"fm_nav_{_index}",
+            type=(
+                "primary"
+                if page == internal_page
+                else "secondary"
+            ),
+            use_container_width=True,
+            on_click=_set_fm_page,
+            args=(internal_page,),
+        )
+
+    st.markdown(
+        '<div class="sidebar-divider"></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="sidebar-section-label">STATUS GERAL</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        (
+            '<div class="sidebar-status-card">'
+            '<div class="sidebar-status-name">CONEXÕES</div>'
+            f'<div class="sidebar-status-value {_sidebar_status_class}">{html.escape(str(api_summary["status"]))}</div>'
+            '<div class="sidebar-status-meta">'
+            f'<div>ÚLTIMA ATUALIZAÇÃO: {html.escape(str(api_summary.get("last_update") or "—"))}</div>'
+            f'<div>QNT DE BASES: {api_summary["healthy"]}/{api_summary["total"]}</div>'
+            '</div>'
+            '</div>'
+        ),
+        unsafe_allow_html=True,
+    )
 
 st.markdown(
     f'<div class="setta-logo-card">{logo_html(str(cfg.get("logo_data") or ""), str(cfg.get("logo_mime") or "image/svg+xml"))}</div>',
@@ -1776,7 +1818,9 @@ if page == "Dashboard":
             index=visible_months.index(default_month),
             format_func=month_label,
         )
-        st.query_params["mes"] = selected_month.strftime("%Y-%m")
+        _selected_month_query = selected_month.strftime("%Y-%m")
+        if str(st.query_params.get("mes", "") or "") != _selected_month_query:
+            st.query_params["mes"] = _selected_month_query
 
         import_info = imports_by_month.get(selected_month.isoformat(), {})
         status = str(import_info.get("status") or "")
@@ -2071,7 +2115,9 @@ elif page == "Conferência de chapas e barramentos":
             key="cb_month",
             label_visibility="collapsed",
         )
-        st.query_params["mes_cb"] = cb_month.strftime("%Y-%m")
+        _cb_month_query = cb_month.strftime("%Y-%m")
+        if str(st.query_params.get("mes_cb", "") or "") != _cb_month_query:
+            st.query_params["mes_cb"] = _cb_month_query
 
         force_cadastros = bool(
             st.session_state.pop(
