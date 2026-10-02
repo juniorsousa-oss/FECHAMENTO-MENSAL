@@ -2436,27 +2436,66 @@ elif page == "Conferência de chapas e barramentos":
                         for row in standby_catalog
                         if row.get("categoria") == "BARRA_COBRE"
                     }
+                    cad_master_lookup = (
+                        (cadastros_context.get("parsed") or {})
+                        .get("master_lookup")
+                        or {}
+                    )
 
                     valid_bar_rows = []
                     bar_issues = []
+                    auto_bar_catalog = {}
 
                     for row in parsed_bar["rows"]:
                         source_code = normalize_code(
                             row.get("codigo")
                         )
+
+                        # 1) Já existe como barra no standby.
                         mapped_code = (
                             source_code
                             if source_code in catalog_bar
-                            else physical_mapping_lookup.get(
+                            else ""
+                        )
+
+                        # 2) Já existe vínculo persistente de meses anteriores.
+                        if not mapped_code:
+                            mapped_code = physical_mapping_lookup.get(
                                 (
                                     "BARRAMENTOS_EXCEL",
                                     source_code,
                                 ),
                                 "",
                             )
-                        )
 
-                        item = catalog_bar.get(mapped_code)
+                        # 3) Correspondência direta com o CADASTROS.
+                        # A própria origem BARRAMENTOS valida a categoria.
+                        if (
+                            not mapped_code
+                            and source_code in cad_master_lookup
+                        ):
+                            mapped_code = source_code
+                            cadastro_item = cad_master_lookup[source_code]
+                            auto_bar_catalog[source_code] = {
+                                "descricao": str(
+                                    cadastro_item.get("descricao")
+                                    or ""
+                                ).strip(),
+                                "referencia": str(
+                                    cadastro_item.get("referencia")
+                                    or row.get("modelo")
+                                    or ""
+                                ).strip(),
+                                "ult_preco": float(
+                                    cadastro_item.get("ult_preco")
+                                    or 0
+                                ),
+                            }
+
+                        item = (
+                            catalog_bar.get(mapped_code)
+                            or cad_master_lookup.get(mapped_code)
+                        )
                         if item is None:
                             bar_issues.append(
                                 {
@@ -2529,7 +2568,9 @@ elif page == "Conferência de chapas e barramentos":
 
                     st.caption(
                         "O CONSUMO é contexto para investigar divergências. "
-                        "Não altera automaticamente o saldo nem a diferença."
+                        "Não altera automaticamente o saldo nem a diferença. "
+                        "Quando o código do relatório existir exatamente no "
+                        "CADASTROS, o vínculo é automático."
                     )
 
                     if valid_bar_rows:
@@ -2659,6 +2700,23 @@ elif page == "Conferência de chapas e barramentos":
                         use_container_width=True,
                         key="cb_import_bars",
                     ):
+                        # Se o código veio diretamente do CADASTROS e ainda
+                        # não estava classificado no standby, a própria
+                        # contagem de barramentos confirma sua categoria.
+                        for auto_code, auto_item in (
+                            auto_bar_catalog.items()
+                        ):
+                            db.confirm_cb_catalog_item(
+                                auto_code,
+                                "BARRA_COBRE",
+                                auto_item.get("descricao") or "",
+                                auto_item.get("referencia") or "",
+                                float(
+                                    auto_item.get("ult_preco")
+                                    or 0
+                                ),
+                            )
+
                         db.save_cb_counts_batch(
                             cb_month,
                             "BARRAMENTOS_EXCEL",
