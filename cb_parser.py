@@ -776,11 +776,15 @@ def parse_chapas_eml(raw: bytes, file_name: str) -> dict:
     )
     selected = valid_tables[0]
     table_date = selected["data"]
-    competencia = (
-        date(table_date.year, table_date.month, 1)
-        if table_date
-        else None
-    )
+    # A contagem de chapas chega no início do mês seguinte e pertence
+    # ao fechamento do mês imediatamente anterior, mesma regra do Analítico.
+    if table_date:
+        if table_date.month == 1:
+            competencia = date(table_date.year - 1, 12, 1)
+        else:
+            competencia = date(table_date.year, table_date.month - 1, 1)
+    else:
+        competencia = None
 
     return {
         "file_name": file_name,
