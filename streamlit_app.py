@@ -21,6 +21,7 @@ from cb_parser import (
     normalize_code,
     parse_barramentos_excel,
     parse_cadastros,
+    parse_cadastros_frame,
     parse_chapas_eml,
     parse_interno_excel,
     resolve_chapa_rows,
@@ -280,10 +281,20 @@ def section_band(kicker: str, title: str, note: str) -> None:
 @st.cache_resource(show_spinner=False, ttl=300, max_entries=4)
 def load_central_analitico(version_token: str) -> tuple[dict, dict, dict]:
     del version_token
-    raw, meta = central_data.download_analitico()
+    source, meta = central_data.download_preferred_source("analitico")
     file_name = str(meta.get("last_file_name") or "ANALITICO.xltx")
-    parsed = parse_inventory_report(raw, file_name)
-    balance = parse_inventory_balance_report(raw, file_name)
+    if source.get("normalized"):
+        frame = central_data.normalized_frame(
+            source["pack"],
+            sheet_contains="saldos em estoque",
+            fallback_last=True,
+        )
+        parsed = parse_inventory_report(frame, file_name)
+        balance = parse_inventory_balance_report(frame, file_name)
+    else:
+        raw = source["raw"]
+        parsed = parse_inventory_report(raw, file_name)
+        balance = parse_inventory_balance_report(raw, file_name)
     return parsed, balance, meta
 
 
@@ -292,11 +303,15 @@ def load_central_cadastros(
     version_token: str,
 ) -> tuple[dict, dict]:
     del version_token
-    raw, meta = central_data.download_source("cadastros")
+    source, meta = central_data.download_preferred_source("cadastros")
     file_name = str(
         meta.get("last_file_name") or "CADASTROS.xltx"
     )
-    parsed = parse_cadastros(raw, file_name)
+    if source.get("normalized"):
+        frame = central_data.normalized_frame(source["pack"])
+        parsed = parse_cadastros_frame(frame, file_name)
+    else:
+        parsed = parse_cadastros(source["raw"], file_name)
     return parsed, meta
 
 
