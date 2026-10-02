@@ -170,3 +170,189 @@ create table if not exists public.fm_importacao_erros (
   motivo text not null,
   criado_em timestamptz not null default now()
 );
+
+
+-- Histórico mensal dos ajustes de Chapas e Barramentos
+create table if not exists public.fm_cb_ajustes_historico (
+  competencia date primary key,
+  data_fechamento date not null,
+  status text not null default 'FINALIZADO',
+  itens_ajuste integer not null default 0,
+  chapas_entrada_qtd numeric(20,6) not null default 0,
+  chapas_saida_qtd numeric(20,6) not null default 0,
+  chapas_entrada_valor numeric(18,2) not null default 0,
+  chapas_saida_valor numeric(18,2) not null default 0,
+  barramentos_entrada_qtd numeric(20,6) not null default 0,
+  barramentos_saida_qtd numeric(20,6) not null default 0,
+  barramentos_entrada_valor numeric(18,2) not null default 0,
+  barramentos_saida_valor numeric(18,2) not null default 0,
+  previsao_valor_liquido numeric(18,2) not null default 0,
+  previsao_valor_movimentado numeric(18,2) not null default 0,
+  finalizado_em timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+
+create table if not exists public.fm_cb_ajustes_itens (
+  competencia date not null,
+  codigo text not null,
+  categoria text not null,
+  descricao text not null default '',
+  um text not null default '',
+  saldo_fechamento numeric(20,6) not null default 0,
+  fisico numeric(20,6),
+  diferenca_qtd numeric(20,6) not null default 0,
+  custo_unitario numeric(20,6) not null default 0,
+  previsao_valor numeric(18,2) not null default 0,
+  finalizado_em timestamptz not null default now(),
+  primary key (competencia, codigo)
+);
+
+alter table public.fm_cb_ajustes_historico enable row level security;
+alter table public.fm_cb_ajustes_itens enable row level security;
+
+drop policy if exists fm_cb_ajustes_historico_read on public.fm_cb_ajustes_historico;
+create policy fm_cb_ajustes_historico_read
+on public.fm_cb_ajustes_historico
+for select
+to anon, authenticated
+using (true);
+
+drop policy if exists fm_cb_ajustes_itens_read on public.fm_cb_ajustes_itens;
+create policy fm_cb_ajustes_itens_read
+on public.fm_cb_ajustes_itens
+for select
+to anon, authenticated
+using (true);
+
+create or replace function public.fm_cb_finalizar_ajustes(
+  p_competencia date,
+  p_data_fechamento date,
+  p_rows jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_competencia date := date_trunc('month', p_competencia)::date;
+  v_rows jsonb := coalesce(p_rows, '[]'::jsonb);
+  v_itens integer := 0;
+  v_chapas_entrada_qtd numeric := 0;
+  v_chapas_saida_qtd numeric := 0;
+  v_chapas_entrada_valor numeric := 0;
+  v_chapas_saida_valor numeric := 0;
+  v_barras_entrada_qtd numeric := 0;
+  v_barras_saida_qtd numeric := 0;
+  v_barras_entrada_valor numeric := 0;
+  v_barras_saida_valor numeric := 0;
+  v_valor_liquido numeric := 0;
+  v_valor_movimentado numeric := 0;
+begin
+  delete from public.fm_cb_ajustes_itens
+  where competencia = v_competencia;
+
+  insert into public.fm_cb_ajustes_itens(
+    competencia, codigo, categoria, descricao, um,
+    saldo_fechamento, fisico, diferenca_qtd,
+    custo_unitario, previsao_valor, finalizado_em
+  )
+  select
+    v_competencia,
+    trim(coalesce(x.codigo, '')),
+    upper(trim(coalesce(x.categoria, ''))),
+    coalesce(x.descricao, ''),
+    upper(trim(coalesce(x.um, ''))),
+    coalesce(x.saldo_fechamento, 0),
+    x.fisico,
+    coalesce(x.diferenca_qtd, 0),
+    coalesce(x.custo_unitario, 0),
+    coalesce(x.previsao_valor, 0),
+    now()
+  from jsonb_to_recordset(v_rows) as x(
+    codigo text,
+    categoria text,
+    descricao text,
+    um text,
+    saldo_fechamento numeric,
+    fisico numeric,
+    diferenca_qtd numeric,
+    custo_unitario numeric,
+    previsao_valor numeric
+  )
+  where trim(coalesce(x.codigo, '')) <> '';
+
+  select
+    count(*),
+    coalesce(sum(case when categoria = 'CHAPA' and diferenca_qtd > 0 then diferenca_qtd else 0 end), 0),
+    coalesce(sum(case when categoria = 'CHAPA' and diferenca_qtd < 0 then abs(diferenca_qtd) else 0 end), 0),
+    coalesce(sum(case when categoria = 'CHAPA' and previsao_valor > 0 then previsao_valor else 0 end), 0),
+    coalesce(sum(case when categoria = 'CHAPA' and previsao_valor < 0 then abs(previsao_valor) else 0 end), 0),
+    coalesce(sum(case when categoria = 'BARRA DE COBRE' and diferenca_qtd > 0 then diferenca_qtd else 0 end), 0),
+    coalesce(sum(case when categoria = 'BARRA DE COBRE' and diferenca_qtd < 0 then abs(diferenca_qtd) else 0 end), 0),
+    coalesce(sum(case when categoria = 'BARRA DE COBRE' and previsao_valor > 0 then previsao_valor else 0 end), 0),
+    coalesce(sum(case when categoria = 'BARRA DE COBRE' and previsao_valor < 0 then abs(previsao_valor) else 0 end), 0),
+    coalesce(sum(previsao_valor), 0),
+    coalesce(sum(abs(previsao_valor)), 0)
+  into
+    v_itens,
+    v_chapas_entrada_qtd,
+    v_chapas_saida_qtd,
+    v_chapas_entrada_valor,
+    v_chapas_saida_valor,
+    v_barras_entrada_qtd,
+    v_barras_saida_qtd,
+    v_barras_entrada_valor,
+    v_barras_saida_valor,
+    v_valor_liquido,
+    v_valor_movimentado
+  from public.fm_cb_ajustes_itens
+  where competencia = v_competencia;
+
+  insert into public.fm_cb_ajustes_historico(
+    competencia, data_fechamento, status, itens_ajuste,
+    chapas_entrada_qtd, chapas_saida_qtd,
+    chapas_entrada_valor, chapas_saida_valor,
+    barramentos_entrada_qtd, barramentos_saida_qtd,
+    barramentos_entrada_valor, barramentos_saida_valor,
+    previsao_valor_liquido, previsao_valor_movimentado,
+    finalizado_em, atualizado_em
+  )
+  values (
+    v_competencia, p_data_fechamento, 'FINALIZADO', v_itens,
+    v_chapas_entrada_qtd, v_chapas_saida_qtd,
+    v_chapas_entrada_valor, v_chapas_saida_valor,
+    v_barras_entrada_qtd, v_barras_saida_qtd,
+    v_barras_entrada_valor, v_barras_saida_valor,
+    v_valor_liquido, v_valor_movimentado,
+    now(), now()
+  )
+  on conflict (competencia) do update set
+    data_fechamento = excluded.data_fechamento,
+    status = excluded.status,
+    itens_ajuste = excluded.itens_ajuste,
+    chapas_entrada_qtd = excluded.chapas_entrada_qtd,
+    chapas_saida_qtd = excluded.chapas_saida_qtd,
+    chapas_entrada_valor = excluded.chapas_entrada_valor,
+    chapas_saida_valor = excluded.chapas_saida_valor,
+    barramentos_entrada_qtd = excluded.barramentos_entrada_qtd,
+    barramentos_saida_qtd = excluded.barramentos_saida_qtd,
+    barramentos_entrada_valor = excluded.barramentos_entrada_valor,
+    barramentos_saida_valor = excluded.barramentos_saida_valor,
+    previsao_valor_liquido = excluded.previsao_valor_liquido,
+    previsao_valor_movimentado = excluded.previsao_valor_movimentado,
+    finalizado_em = now(),
+    atualizado_em = now();
+
+  return jsonb_build_object(
+    'ok', true,
+    'competencia', v_competencia,
+    'itens_ajuste', v_itens,
+    'previsao_valor_liquido', v_valor_liquido,
+    'previsao_valor_movimentado', v_valor_movimentado
+  );
+end;
+$$;
+
+grant execute on function public.fm_cb_finalizar_ajustes(date, date, jsonb)
+to anon, authenticated;
