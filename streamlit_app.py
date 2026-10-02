@@ -2768,9 +2768,10 @@ elif page == "Conferência de chapas e barramentos":
                 type=["xlsx", "xltx"],
                 key="cb_internal_file",
                 help=(
-                    "Layout recomendado: CODIGO + MTS. "
-                    "Todos os itens precisam estar vinculados a um código "
-                    "de BARRA DE COBRE antes da importação."
+                    "Layout recomendado: BARRAMENTO + QUANTIDADE. "
+                    "BARRAMENTO pode ser código, referência ou medida em "
+                    "mm/polegadas. QUANTIDADE é tratada como número de barras "
+                    "de 3 m, salvo quando a célula indicar metros."
                 ),
             )
 
