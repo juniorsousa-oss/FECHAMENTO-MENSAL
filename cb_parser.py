@@ -862,8 +862,15 @@ def parse_interno_excel(raw: bytes, file_name: str) -> dict:
                     row_index + 1,
                     ws.max_row + 1,
                 ):
-                    codigo = normalize_code(
-                        ws.cell(data_row, code_col).value
+                    identificador_raw = ws.cell(
+                        data_row,
+                        code_col,
+                    ).value
+                    identificador = str(
+                        identificador_raw or ""
+                    ).strip()
+                    codigo = normalize_bar_identifier(
+                        identificador_raw
                     )
                     if not codigo:
                         blank_streak += 1
