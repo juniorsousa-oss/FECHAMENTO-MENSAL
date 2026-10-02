@@ -1243,7 +1243,7 @@ def build_cb_reconciliation(
         str(row.get("codigo") or "").strip(): row
         for row in catalog
         if bool(row.get("ativo", True))
-        and str(row.get("status") or "").upper() != "IGNORADO"
+        and str(row.get("status") or "").upper() == "CONFIRMADO"
     }
 
     stock_by_code: dict[str, dict] = {}
@@ -2122,6 +2122,20 @@ elif page == "Conferência de chapas e barramentos":
             str(row.get("codigo") or "").strip(): row
             for row in standby_catalog
         }
+
+        # Tratativa efetiva = material selecionado/confirmado e ainda não removido.
+        # CANDIDATO permanece disponível no standby, mas não participa de saldo,
+        # conferência, diferença ou previsão enquanto não for confirmado.
+        treatment_catalog = [
+            row
+            for row in cb_catalog
+            if bool(row.get("ativo", True))
+            and str(row.get("status") or "").upper() == "CONFIRMADO"
+        ]
+        treatment_lookup = {
+            str(row.get("codigo") or "").strip(): row
+            for row in treatment_catalog
+        }
         physical_mapping_lookup = {
             (
                 str(row.get("fonte") or "").strip(),
@@ -2135,7 +2149,7 @@ elif page == "Conferência de chapas e barramentos":
         for row in cb_closing_stock_items:
             code = normalize_code(row.get("codigo"))
             if (
-                code in standby_lookup
+                code in treatment_lookup
                 and max(float(row.get("saldo") or 0), 0.0) > 0
             ):
                 stock_positive_codes.add(code)
@@ -2144,7 +2158,7 @@ elif page == "Conferência de chapas e barramentos":
         for row in cb_current_stock_items:
             code = normalize_code(row.get("codigo"))
             if (
-                code in standby_lookup
+                code in treatment_lookup
                 and max(float(row.get("saldo") or 0), 0.0) > 0
             ):
                 current_positive_codes.add(code)
@@ -2152,7 +2166,7 @@ elif page == "Conferência de chapas e barramentos":
         counted_codes = {
             normalize_code(row.get("codigo"))
             for row in cb_counts
-            if normalize_code(row.get("codigo")) in standby_lookup
+            if normalize_code(row.get("codigo")) in treatment_lookup
         }
         excluded_codes_current = {
             str(row.get("codigo") or "").strip()
@@ -2179,8 +2193,8 @@ elif page == "Conferência de chapas e barramentos":
                     <strong>{len(standby_catalog)}</strong>
                 </div>
                 <div class="cb-compact-stat">
-                    <span>COM SALDO</span>
-                    <strong>{len(stock_positive_codes | current_positive_codes)}</strong>
+                    <span>COM SALDO · TRATATIVA</span>
+                    <strong>{len((stock_positive_codes | current_positive_codes) - excluded_codes_current)}</strong>
                 </div>
                 <div class="cb-compact-stat">
                     <span>EM CONTAGEM</span>
@@ -2248,26 +2262,45 @@ elif page == "Conferência de chapas e barramentos":
             unsafe_allow_html=True,
         )
 
-        def _saldo_categoria(rows, categoria):
+        def _saldo_categoria(rows, categoria, eligible_codes):
             total = 0.0
             for row in rows:
                 code = normalize_code(row.get("codigo"))
-                item = standby_lookup.get(code) or {}
+                if code not in eligible_codes:
+                    continue
+                item = treatment_lookup.get(code) or {}
                 if str(item.get("categoria") or "").upper() != categoria:
                     continue
                 total += max(float(row.get("saldo") or 0), 0.0)
             return total
 
-        _chapa_atual = _saldo_categoria(cb_current_stock_items, "CHAPA")
-        _chapa_fechamento = _saldo_categoria(cb_closing_stock_items, "CHAPA")
-        _barra_atual = _saldo_categoria(cb_current_stock_items, "BARRA_COBRE")
-        _barra_fechamento = _saldo_categoria(cb_closing_stock_items, "BARRA_COBRE")
+        _saldo_codes = set(final_analysis_codes)
+        _chapa_atual = _saldo_categoria(
+            cb_current_stock_items,
+            "CHAPA",
+            _saldo_codes,
+        )
+        _chapa_fechamento = _saldo_categoria(
+            cb_closing_stock_items,
+            "CHAPA",
+            _saldo_codes,
+        )
+        _barra_atual = _saldo_categoria(
+            cb_current_stock_items,
+            "BARRA_COBRE",
+            _saldo_codes,
+        )
+        _barra_fechamento = _saldo_categoria(
+            cb_closing_stock_items,
+            "BARRA_COBRE",
+            _saldo_codes,
+        )
 
         _s1, _s2, _s3, _s4 = st.columns(4)
         _s1.metric(
             "CHAPAS · ATUAL",
             f"{_chapa_atual:,.3f} KG".replace(",", "X").replace(".", ",").replace("X", "."),
-            help="Saldo atual das chapas monitoradas, vindo da Central de Dados.",
+            help="Somente chapas confirmadas e ainda em tratativa, não removidas da análise.",
         )
         _s2.metric(
             f"CHAPAS · FECHAMENTO {_closing_label}",
@@ -2276,12 +2309,12 @@ elif page == "Conferência de chapas e barramentos":
                 if cb_closing_stock_items
                 else "NÃO INFORMADO"
             ),
-            help="Saldo das chapas no último dia da competência. Base oficial do cálculo.",
+            help="Somente chapas confirmadas e ainda em tratativa, não removidas da análise.",
         )
         _s3.metric(
             "BARRAMENTOS · ATUAL",
             f"{_barra_atual:,.3f} MT".replace(",", "X").replace(".", ",").replace("X", "."),
-            help="Saldo atual dos barramentos monitorados, vindo da Central de Dados.",
+            help="Somente barramentos confirmados e ainda em tratativa, não removidos da análise.",
         )
         _s4.metric(
             f"BARRAMENTOS · FECHAMENTO {_closing_label}",
@@ -2290,7 +2323,7 @@ elif page == "Conferência de chapas e barramentos":
                 if cb_closing_stock_items
                 else "NÃO INFORMADO"
             ),
-            help="Saldo dos barramentos no último dia da competência. Base oficial do cálculo.",
+            help="Somente barramentos confirmados e ainda em tratativa, não removidos da análise.",
         )
         _chapa_variacao_total = _chapa_atual - _chapa_fechamento
         _barra_variacao_total = _barra_atual - _barra_fechamento
@@ -2303,7 +2336,9 @@ elif page == "Conferência de chapas e barramentos":
             + f"{_chapa_variacao_total:+,.3f} KG".replace(",", "X").replace(".", ",").replace("X", ".")
             + " · VARIAÇÃO BARRAMENTOS: "
             + f"{_barra_variacao_total:+,.3f} MT".replace(",", "X").replace(".", ",").replace("X", ".")
-            + ". NO CÁLCULO ITEM A ITEM, O SISTEMA USA O MENOR SALDO ENTRE FECHAMENTO E ATUAL."
+            + ". ESTES TOTAIS CONSIDERAM SOMENTE MATERIAIS CONFIRMADOS E AINDA EM TRATATIVA; "
+            + "CANDIDATOS/NÃO SELECIONADOS E ITENS REMOVIDOS NÃO COMPÕEM O SALDO. "
+            + "NO CÁLCULO ITEM A ITEM, O SISTEMA USA O MENOR SALDO ENTRE FECHAMENTO E ATUAL."
         )
 
         if not cb_closing_stock_items:
