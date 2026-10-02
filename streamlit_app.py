@@ -15,6 +15,8 @@ import inventory_db as db
 import central_fechamento_data as central_data
 from report_parser import parse_inventory_report, parse_inventory_balance_report
 from cb_parser import (
+    find_bar_catalog_matches,
+    normalize_bar_identifier,
     normalize_code,
     parse_barramentos_excel,
     parse_cadastros,
