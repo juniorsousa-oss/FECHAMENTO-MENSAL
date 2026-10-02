@@ -3137,7 +3137,7 @@ elif page == "Conferência de chapas e barramentos":
                         st.rerun()
                 except Exception as exc:
                     st.error(
-                        f"Não foi possível ler a planilha do almoxarifado: {exc}"
+                        f"Não foi possível processar a contagem do almoxarifado: {exc}"
                     )
 
             with st.expander(
