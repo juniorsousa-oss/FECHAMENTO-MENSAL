@@ -53,6 +53,11 @@ jobs:
           assert "def finalize_cb_adjustments(" in db
           assert "def list_cb_adjustment_history(" in db
           assert "def list_cb_adjustment_items(" in db
+          assert '"Saldo base ajuste"' in app
+          assert "DETALHAR MOVIMENTAÇÃO · SALDO ATUAL × FECHAMENTO" in app
+          assert "FINALIZAR CONSIDERANDO" in app
+          assert "contagem_assumida_zero" in db
+          assert "saldo_base_ajuste" in db
           assert "Identidade visual" not in app
           print("ESTRUTURA_OK")
           PY
