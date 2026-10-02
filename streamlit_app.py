@@ -3349,40 +3349,98 @@ elif page == "Conferência de chapas e barramentos":
                     unsafe_allow_html=True,
                 )
 
-                filter_col1, filter_col2, filter_col3 = st.columns(
-                    [1, 1, 2]
-                )
+                if "cb_filter_applied_category" not in st.session_state:
+                    st.session_state["cb_filter_applied_category"] = "TODOS"
+                if "cb_filter_applied_status" not in st.session_state:
+                    st.session_state["cb_filter_applied_status"] = "TODOS"
+                if "cb_filter_applied_search" not in st.session_state:
+                    st.session_state["cb_filter_applied_search"] = ""
 
-                with filter_col1:
-                    filter_category = st.selectbox(
-                        "Categoria",
-                        [
-                            "TODOS",
-                            "CHAPA",
-                            "BARRA DE COBRE",
-                        ],
-                        key="cb_category_filter_select",
+                with st.form(
+                    "cb_filters_form",
+                    clear_on_submit=False,
+                ):
+                    filter_col1, filter_col2, filter_col3 = st.columns(
+                        [1, 1, 2]
                     )
 
-                with filter_col2:
-                    filter_status = st.selectbox(
-                        "Status",
-                        [
-                            "TODOS",
-                            "DIVERGÊNCIA",
-                            "CONFERIDO",
-                            "SEM CONTAGEM",
-                        ],
-                        key="cb_status_filter_select",
+                    with filter_col1:
+                        draft_category = st.selectbox(
+                            "Categoria",
+                            [
+                                "TODOS",
+                                "CHAPA",
+                                "BARRA DE COBRE",
+                            ],
+                            index=[
+                                "TODOS",
+                                "CHAPA",
+                                "BARRA DE COBRE",
+                            ].index(
+                                st.session_state[
+                                    "cb_filter_applied_category"
+                                ]
+                            ),
+                            key="cb_filter_draft_category",
+                        )
+
+                    with filter_col2:
+                        draft_status = st.selectbox(
+                            "Status",
+                            [
+                                "TODOS",
+                                "DIVERGÊNCIA",
+                                "CONFERIDO",
+                                "SEM CONTAGEM",
+                            ],
+                            index=[
+                                "TODOS",
+                                "DIVERGÊNCIA",
+                                "CONFERIDO",
+                                "SEM CONTAGEM",
+                            ].index(
+                                st.session_state[
+                                    "cb_filter_applied_status"
+                                ]
+                            ),
+                            key="cb_filter_draft_status",
+                        )
+
+                    with filter_col3:
+                        draft_search = st.text_input(
+                            "Código ou descrição",
+                            value=st.session_state[
+                                "cb_filter_applied_search"
+                            ],
+                            placeholder="Filtrar material",
+                            key="cb_filter_draft_search",
+                        ).strip()
+
+                    apply_filters = st.form_submit_button(
+                        "APLICAR FILTROS",
+                        use_container_width=True,
                     )
 
-                with filter_col3:
-                    filter_search = st.text_input(
-                        "Código ou descrição",
-                        value="",
-                        placeholder="Filtrar material",
-                        key="cb_search_filter",
-                    ).strip()
+                if apply_filters:
+                    st.session_state[
+                        "cb_filter_applied_category"
+                    ] = draft_category
+                    st.session_state[
+                        "cb_filter_applied_status"
+                    ] = draft_status
+                    st.session_state[
+                        "cb_filter_applied_search"
+                    ] = draft_search
+
+                filter_category = st.session_state[
+                    "cb_filter_applied_category"
+                ]
+                filter_status = st.session_state[
+                    "cb_filter_applied_status"
+                ]
+                filter_search = st.session_state[
+                    "cb_filter_applied_search"
+                ]
 
                 shown = reconciliation.copy()
 
