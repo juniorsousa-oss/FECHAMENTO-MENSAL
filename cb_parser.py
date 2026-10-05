@@ -61,6 +61,15 @@ CHAPA_EMAIL_BASE_MAP = {
     ("SIVACON", "3MM ALUMINIO"): "06000211",
 }
 
+# Chapas de alumínio SIVACON são controladas pelo ERP em peças.
+# No e-mail, a coluna PESO TOTAL pode vir vazia; nesses casos a coluna
+# CHAPAS é a contagem física válida e deve ser confrontada diretamente
+# com o saldo do sistema.
+CHAPA_EMAIL_PIECE_CODES = {
+    "06000210",  # 5 mm alumínio · 3000x1250
+    "06000211",  # 3 mm alumínio · 3000x1250
+}
+
 
 def normalize_code(value: Any) -> str:
     if value is None:
@@ -1461,8 +1470,15 @@ def resolve_chapa_rows(
             unresolved.append(source_row)
             continue
 
-        quantidade = float(source_row.get("peso_total") or 0)
-        criterio = "PESO TOTAL · KG"
+        peso_total = float(source_row.get("peso_total") or 0)
+        chapas = float(source_row.get("chapas") or 0)
+
+        if codigo in CHAPA_EMAIL_PIECE_CODES and peso_total <= 0 and chapas >= 0:
+            quantidade = chapas
+            criterio = "CHAPAS · PC"
+        else:
+            quantidade = peso_total
+            criterio = "PESO TOTAL · KG"
 
         resolved.append(
             {
