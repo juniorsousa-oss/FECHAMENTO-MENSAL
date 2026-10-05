@@ -158,6 +158,101 @@ def build_almox_barras_model() -> bytes:
     return output.getvalue()
 
 
+def build_cb_protheus_movement_report(
+    items: list[dict],
+    competencia: date,
+) -> bytes:
+    """Gera o relatório operacional dos ajustes para lançamento no Protheus."""
+    rows = []
+    for item in items or []:
+        try:
+            ajuste = float(item.get("diferenca_qtd") or 0)
+        except Exception:
+            ajuste = 0.0
+
+        if abs(ajuste) <= 1e-9:
+            continue
+
+        try:
+            previsao = float(item.get("previsao_valor") or 0)
+        except Exception:
+            previsao = 0.0
+
+        rows.append(
+            {
+                "COMPETÊNCIA": month_label(competencia),
+                "CATEGORIA": str(item.get("categoria") or ""),
+                "CÓDIGO": str(item.get("codigo") or ""),
+                "DESCRIÇÃO": str(item.get("descricao") or ""),
+                "U.M.": str(item.get("um") or ""),
+                "AÇÃO PROTHEUS": "INSERIR" if ajuste > 0 else "BAIXAR",
+                "QUANTIDADE PROTHEUS": abs(ajuste),
+                "AJUSTE QTD (SINAL)": ajuste,
+                "SALDO FECHAMENTO": float(item.get("saldo_fechamento") or 0),
+                "SALDO ATUAL": float(item.get("saldo_atual") or 0),
+                "SALDO BASE AJUSTE": float(item.get("saldo_base_ajuste") or 0),
+                "BASE USADA": str(item.get("base_origem") or ""),
+                "FÍSICO": float(item.get("fisico") or 0),
+                "CUSTO UNITÁRIO (R$)": float(item.get("custo_unitario") or 0),
+                "IMPACTO (R$)": previsao,
+                "VALOR MOVIMENTAÇÃO (R$)": abs(previsao),
+                "CONTAGEM ASSUMIDA ZERO": bool(
+                    item.get("contagem_assumida_zero")
+                ),
+            }
+        )
+
+    report = pd.DataFrame(rows)
+    output = io.BytesIO()
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        report.to_excel(
+            writer,
+            index=False,
+            sheet_name="MOVIMENTAÇÃO PROTHEUS",
+        )
+
+        ws = writer.book["MOVIMENTAÇÃO PROTHEUS"]
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+
+        widths = {
+            "A": 18,
+            "B": 20,
+            "C": 16,
+            "D": 48,
+            "E": 10,
+            "F": 18,
+            "G": 22,
+            "H": 20,
+            "I": 20,
+            "J": 18,
+            "K": 20,
+            "L": 18,
+            "M": 16,
+            "N": 22,
+            "O": 18,
+            "P": 26,
+            "Q": 24,
+        }
+        for column, width in widths.items():
+            ws.column_dimensions[column].width = width
+
+        qty_format = '#,##0.000'
+        money_format = 'R$ #,##0.00;[Red]R$ -#,##0.00'
+        unit_money_format = 'R$ #,##0.0000;[Red]R$ -#,##0.0000'
+
+        for row_idx in range(2, ws.max_row + 1):
+            for col_idx in [7, 8, 9, 10, 11, 13]:
+                ws.cell(row_idx, col_idx).number_format = qty_format
+            ws.cell(row_idx, 14).number_format = unit_money_format
+            ws.cell(row_idx, 15).number_format = money_format
+            ws.cell(row_idx, 16).number_format = money_format
+
+    output.seek(0)
+    return output.getvalue()
+
+
 @st.cache_data(show_spinner=False, ttl=30)
 def load_api_sources() -> list[dict]:
     sources = db.list_data_sources()
@@ -230,7 +325,19 @@ def money_br(value: object) -> str:
         return "—"
     sign = "-" if number < 0 else ""
     text = f"{abs(number):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    return f"{sign}R$ {text}"
+    return f"R$ {sign}{text}"
+
+
+def number_br(value: object, decimals: int = 3) -> str:
+    if value is None:
+        return "—"
+    try:
+        number = float(value)
+    except Exception:
+        return "—"
+    pattern = f"{{:,.{max(0, int(decimals))}f}}"
+    text = pattern.format(number)
+    return text.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def delta_class(value: float | None) -> str:
@@ -4383,36 +4490,26 @@ elif page == "Conferência de chapas e barramentos":
                         }
                     )
 
+                _history_df = pd.DataFrame(_history_rows)
+                for _col in [
+                    "Chapas · previsão (R$)",
+                    "Barramentos · previsão (R$)",
+                    "Impacto líquido (R$)",
+                    "Movimentação prevista (R$)",
+                ]:
+                    _history_df[_col] = _history_df[_col].map(money_br)
+
+                _history_df["Chapas · ajuste (KG)"] = _history_df[
+                    "Chapas · ajuste (KG)"
+                ].map(lambda value: number_br(value, 3))
+                _history_df["Barramentos · ajuste (MT)"] = _history_df[
+                    "Barramentos · ajuste (MT)"
+                ].map(lambda value: number_br(value, 3))
+
                 st.dataframe(
-                    pd.DataFrame(_history_rows),
+                    _history_df,
                     use_container_width=True,
                     hide_index=True,
-                    column_config={
-                        "Chapas · ajuste (KG)": st.column_config.NumberColumn(
-                            "Chapas · ajuste (KG)",
-                            format="localized",
-                        ),
-                        "Chapas · previsão (R$)": st.column_config.NumberColumn(
-                            "Chapas · previsão (R$)",
-                            format="R$ %.2f",
-                        ),
-                        "Barramentos · ajuste (MT)": st.column_config.NumberColumn(
-                            "Barramentos · ajuste (MT)",
-                            format="localized",
-                        ),
-                        "Barramentos · previsão (R$)": st.column_config.NumberColumn(
-                            "Barramentos · previsão (R$)",
-                            format="R$ %.2f",
-                        ),
-                        "Impacto líquido (R$)": st.column_config.NumberColumn(
-                            "Impacto líquido (R$)",
-                            format="R$ %.2f",
-                        ),
-                        "Movimentação prevista (R$)": st.column_config.NumberColumn(
-                            "Movimentação prevista (R$)",
-                            format="R$ %.2f",
-                        ),
-                    },
                 )
 
                 _history_month_options = [
@@ -4457,59 +4554,95 @@ elif page == "Conferência de chapas e barramentos":
                             "previsao_valor": "Previsão R$",
                         }
                     )
+                    _history_detail_view = _history_items_df[
+                        [
+                            "Categoria",
+                            "Código",
+                            "Descrição",
+                            "U.M.",
+                            "Saldo fechamento",
+                            "Saldo atual",
+                            "Saldo base ajuste",
+                            "Base usada",
+                            "Físico",
+                            "Contagem assumida zero",
+                            "Ajuste Qtd",
+                            "Custo unitário",
+                            "Previsão R$",
+                        ]
+                    ].copy()
+
+                    for _col in [
+                        "Saldo fechamento",
+                        "Saldo atual",
+                        "Saldo base ajuste",
+                        "Físico",
+                        "Ajuste Qtd",
+                    ]:
+                        _history_detail_view[_col] = _history_detail_view[
+                            _col
+                        ].map(lambda value: number_br(value, 3))
+
+                    _history_detail_view["Custo unitário"] = (
+                        _history_detail_view["Custo unitário"]
+                        .map(
+                            lambda value: (
+                                "—"
+                                if pd.isna(value)
+                                else (
+                                    "R$ "
+                                    + f"{float(value):,.4f}"
+                                    .replace(",", "X")
+                                    .replace(".", ",")
+                                    .replace("X", ".")
+                                )
+                            )
+                        )
+                    )
+                    _history_detail_view["Previsão R$"] = (
+                        _history_detail_view["Previsão R$"].map(money_br)
+                    )
+
                     st.dataframe(
-                        _history_items_df[
-                            [
-                                "Categoria",
-                                "Código",
-                                "Descrição",
-                                "U.M.",
-                                "Saldo fechamento",
-                                "Saldo atual",
-                                "Saldo base ajuste",
-                                "Base usada",
-                                "Físico",
-                                "Contagem assumida zero",
-                                "Ajuste Qtd",
-                                "Custo unitário",
-                                "Previsão R$",
-                            ]
-                        ],
+                        _history_detail_view,
                         use_container_width=True,
                         hide_index=True,
                         column_config={
-                            "Saldo fechamento": st.column_config.NumberColumn(
-                                "Saldo fechamento",
-                                format="localized",
-                            ),
-                            "Saldo atual": st.column_config.NumberColumn(
-                                "Saldo atual",
-                                format="localized",
-                            ),
-                            "Saldo base ajuste": st.column_config.NumberColumn(
-                                "Saldo base ajuste",
-                                format="localized",
-                            ),
                             "Contagem assumida zero": st.column_config.CheckboxColumn(
                                 "Contagem assumida zero",
                             ),
-                            "Físico": st.column_config.NumberColumn(
-                                "Físico",
-                                format="localized",
-                            ),
-                            "Ajuste Qtd": st.column_config.NumberColumn(
-                                "Ajuste Qtd",
-                                format="localized",
-                            ),
-                            "Custo unitário": st.column_config.NumberColumn(
-                                "Custo unitário",
-                                format="R$ %.4f",
-                            ),
-                            "Previsão R$": st.column_config.NumberColumn(
-                                "Previsão R$",
-                                format="R$ %.2f",
-                            ),
                         },
+                    )
+
+                    _history_competencia_date = date.fromisoformat(
+                        _history_month_selected
+                    )
+                    _movement_report = build_cb_protheus_movement_report(
+                        _history_items,
+                        _history_competencia_date,
+                    )
+                    st.download_button(
+                        "EXPORTAR RELATÓRIO DE MOVIMENTAÇÃO · PROTHEUS",
+                        data=_movement_report,
+                        file_name=(
+                            "MOVIMENTACAO_PROTHEUS_"
+                            + _history_competencia_date.strftime("%Y-%m")
+                            + ".xlsx"
+                        ),
+                        mime=(
+                            "application/vnd.openxmlformats-officedocument."
+                            "spreadsheetml.sheet"
+                        ),
+                        use_container_width=True,
+                        key=(
+                            "cb_download_protheus_movement_"
+                            + _history_month_selected
+                        ),
+                    )
+                    st.caption(
+                        "No relatório, a quantidade para lançamento é sempre "
+                        "positiva. A coluna AÇÃO PROTHEUS informa se o item deve "
+                        "ser BAIXADO ou INSERIDO."
                     )
 
 elif page == "Conferência de baixas":
