@@ -494,6 +494,108 @@ def build_preview_summaries(competencia: date, rows: list[dict]) -> list[dict]:
     return output
 
 
+def build_manual_closing_context(
+    competencia: date,
+    balance_rows: list[dict],
+    central_parsed: dict,
+) -> dict:
+    """Converte a fotografia manual do último dia em uma base de fechamento."""
+    metadata_rows = list(central_parsed.get("rows") or []) + list(
+        central_parsed.get("errors") or []
+    )
+
+    by_pair: dict[tuple[str, str], dict] = {}
+    by_code: dict[str, list[dict]] = {}
+    for row in metadata_rows:
+        code = normalize_code(row.get("codigo"))
+        armz = str(row.get("armz") or "").strip()
+        if not code:
+            continue
+        by_pair[(code, armz)] = row
+        by_code.setdefault(code, []).append(row)
+
+    parsed: list[dict] = []
+    errors: list[dict] = []
+
+    for index, row in enumerate(balance_rows or [], start=1):
+        code = normalize_code(row.get("codigo"))
+        armz = str(row.get("armz") or "").strip()
+        meta = by_pair.get((code, armz))
+        if meta is None:
+            candidates = by_code.get(code) or []
+            if len(candidates) == 1:
+                meta = candidates[0]
+        meta = meta or {}
+
+        tp = str(row.get("tp") or meta.get("tp") or "").strip()
+        descricao = str(
+            row.get("descricao") or meta.get("descricao") or ""
+        ).strip()
+        descricao_armazem = str(
+            row.get("descricao_armazem")
+            or meta.get("descricao_armazem")
+            or ""
+        ).strip()
+
+        try:
+            saldo = float(row.get("saldo") or 0)
+        except Exception:
+            saldo = 0.0
+        try:
+            valor_estoque = float(row.get("valor_estoque") or 0)
+        except Exception:
+            valor_estoque = 0.0
+
+        item = {
+            "linha": index,
+            "codigo": code,
+            "tp": tp,
+            "armz": armz,
+            "saldo": saldo,
+            "valor_estoque": valor_estoque,
+            "descricao": descricao,
+            "descricao_armazem": descricao_armazem,
+        }
+
+        reasons = []
+        if not tp:
+            reasons.append("TP NÃO INFORMADO")
+        if not armz:
+            reasons.append("ARMZ NÃO INFORMADO")
+        if saldo <= 0:
+            reasons.append("SEM SALDO OU SALDO NEGATIVO")
+        if valor_estoque <= 0:
+            reasons.append("SEM CUSTO OU VALOR NEGATIVO")
+
+        if reasons:
+            errors.append({**item, "motivo": " / ".join(reasons)})
+        else:
+            parsed.append(
+                {
+                    key: value
+                    for key, value in item.items()
+                    if key != "linha"
+                }
+            )
+
+    first = (balance_rows or [{}])[0] if balance_rows else {}
+    return {
+        "file_name": str(first.get("arquivo_nome") or "CARGA_MANUAL.xlsx"),
+        "rows": parsed,
+        "errors": errors,
+        "total_rows": len(parsed) + len(errors),
+        "valid_rows": len(parsed),
+        "invalid_rows": len(errors),
+        "total_value": sum(
+            float(item.get("valor_estoque") or 0)
+            for item in parsed
+        ),
+        "source_updated_at": first.get("importado_em"),
+        "source_kind": "manual_closing",
+        "competencia": competencia.isoformat(),
+    }
+
+
 def central_analitico_context(force: bool = False) -> dict:
     try:
         meta = central_data.source_state()
@@ -1976,6 +2078,17 @@ if _needs_inventory_core:
 
 
 if page == "Dashboard":
+    _closing_source_parsed = central_parsed
+    _closing_source_name = str(
+        (central_context.get("meta") or {}).get("last_file_name")
+        or "ANALITICO.xltx"
+    )
+    _closing_source_kind = "central"
+    _closing_source_available = bool(
+        central_context.get("available")
+        and central_parsed.get("rows")
+    )
+
     if data_error:
         st.error(f"Não foi possível carregar a base do fechamento: {data_error}")
 
@@ -2006,10 +2119,135 @@ if page == "Dashboard":
         if str(st.query_params.get("mes", "") or "") != _selected_month_query:
             st.query_params["mes"] = _selected_month_query
 
-        import_info = imports_by_month.get(selected_month.isoformat(), {})
+        _dashboard_summaries = list(summaries)
+        _dashboard_imports_by_month = dict(imports_by_month)
+        _dashboard_summary_map = dict(summary_map)
+        _dashboard_selected_context = central_parsed
+        _dashboard_source_choice = "ESTOQUE ATUAL"
+
+        _manual_snapshot_rows = []
+        _manual_snapshot_error = ""
+        if selected_month == current_competencia:
+            try:
+                _manual_snapshot_rows = db.list_cb_system_balances(
+                    selected_month
+                )
+            except Exception as exc:
+                _manual_snapshot_error = str(exc)
+
+            if _manual_snapshot_rows:
+                _closing_day_label = closing_date(
+                    selected_month
+                ).strftime("%d/%m/%Y")
+                _dashboard_source_choice = st.radio(
+                    "Fonte do estoque da competência",
+                    [
+                        "ESTOQUE ATUAL",
+                        f"CARGA MANUAL · {_closing_day_label}",
+                    ],
+                    horizontal=True,
+                    key="fm_dashboard_stock_source",
+                    help=(
+                        "ESTOQUE ATUAL usa o Analítico mais recente da Central. "
+                        "CARGA MANUAL usa a fotografia do último dia da competência "
+                        "salva em Chapas e Barramentos."
+                    ),
+                )
+
+                _manual_file_name = str(
+                    _manual_snapshot_rows[0].get("arquivo_nome")
+                    or "CARGA_MANUAL.xlsx"
+                )
+                _manual_imported_at = central_data.format_dt(
+                    _manual_snapshot_rows[0].get("importado_em")
+                )
+                st.caption(
+                    "Carga manual disponível: "
+                    + _manual_file_name
+                    + " · importada em "
+                    + _manual_imported_at
+                )
+
+                if _dashboard_source_choice.startswith("CARGA MANUAL"):
+                    _dashboard_selected_context = (
+                        build_manual_closing_context(
+                            selected_month,
+                            _manual_snapshot_rows,
+                            central_parsed,
+                        )
+                    )
+                    _manual_key = selected_month.isoformat()
+                    _manual_errors = list(
+                        _dashboard_selected_context.get("errors") or []
+                    )
+
+                    _dashboard_summaries = [
+                        row
+                        for row in _dashboard_summaries
+                        if str(row.get("competencia") or "")[:10]
+                        != _manual_key
+                    ]
+                    _manual_summaries = build_preview_summaries(
+                        selected_month,
+                        _dashboard_selected_context.get("rows") or [],
+                    )
+                    _dashboard_summaries.extend(_manual_summaries)
+                    _dashboard_summary_map = summary_lookup(
+                        _dashboard_summaries
+                    )
+
+                    _dashboard_imports_by_month[_manual_key] = {
+                        "competencia": _manual_key,
+                        "arquivo_nome": _manual_file_name,
+                        "total_linhas": int(
+                            _dashboard_selected_context.get("total_rows") or 0
+                        ),
+                        "linhas_validas": int(
+                            _dashboard_selected_context.get("valid_rows") or 0
+                        ),
+                        "linhas_invalidas": int(
+                            _dashboard_selected_context.get("invalid_rows")
+                            or len(_manual_errors)
+                        ),
+                        "valor_total": float(
+                            _dashboard_selected_context.get("total_value") or 0
+                        ),
+                        "status": (
+                            "PENDENCIA"
+                            if _manual_errors
+                            else "VALIDO"
+                        ),
+                        "importado_em": (
+                            _dashboard_selected_context.get(
+                                "source_updated_at"
+                            )
+                        ),
+                        "preview": True,
+                        "manual_snapshot": True,
+                    }
+
+                    _closing_source_parsed = _dashboard_selected_context
+                    _closing_source_name = _manual_file_name
+                    _closing_source_kind = "manual"
+                    _closing_source_available = bool(
+                        _dashboard_selected_context.get("rows")
+                    )
+
+            elif _manual_snapshot_error:
+                st.warning(
+                    "Não foi possível consultar a carga manual do fechamento: "
+                    + _manual_snapshot_error
+                )
+
+        import_info = _dashboard_imports_by_month.get(
+            selected_month.isoformat(),
+            {},
+        )
         status = str(import_info.get("status") or "")
         previous = previous_month(selected_month)
-        previous_exists = previous.isoformat() in imports_by_month
+        previous_exists = (
+            previous.isoformat() in _dashboard_imports_by_month
+        )
 
         if status != "VALIDO":
             st.warning(
@@ -2017,7 +2255,11 @@ if page == "Dashboard":
                 f"({int(import_info.get('linhas_invalidas') or 0)} item(ns)). "
                 "A análise permanece disponível com as linhas válidas; apenas a gravação do fechamento fica bloqueada."
             )
-            if bool(import_info.get("preview")) and selected_month == current_competencia:
+            if bool(import_info.get("manual_snapshot")):
+                historical_errors = list(
+                    _dashboard_selected_context.get("errors") or []
+                )
+            elif bool(import_info.get("preview")) and selected_month == current_competencia:
                 historical_errors = list(central_parsed.get("errors") or [])
             else:
                 historical_errors = db.list_import_errors(selected_month)
@@ -2029,7 +2271,7 @@ if page == "Dashboard":
                 )
 
         previous_status = str(
-            imports_by_month.get(previous.isoformat(), {}).get("status") or ""
+            _dashboard_imports_by_month.get(previous.isoformat(), {}).get("status") or ""
         )
         if previous_exists and previous_status != "VALIDO":
             st.warning(
@@ -2046,9 +2288,9 @@ if page == "Dashboard":
             "Compara o valor total do estoque do mês selecionado com o fechamento do mês imediatamente anterior.",
         )
 
-        final_total = dimension_value(summary_map, selected_month, "TOTAL", "TOTAL")
+        final_total = dimension_value(_dashboard_summary_map, selected_month, "TOTAL", "TOTAL")
         initial_total = (
-            dimension_value(summary_map, previous, "TOTAL", "TOTAL")
+            dimension_value(_dashboard_summary_map, previous, "TOTAL", "TOTAL")
             if previous_exists
             else None
         )
@@ -2071,12 +2313,12 @@ if page == "Dashboard":
 
         current_warehouses = {
             str(row.get("armz") or "")
-            for row in dimension_rows(summaries, selected_month, "ARMZ")
+            for row in dimension_rows(_dashboard_summaries, selected_month, "ARMZ")
         }
         previous_warehouses = (
             {
                 str(row.get("armz") or "")
-                for row in dimension_rows(summaries, previous, "ARMZ")
+                for row in dimension_rows(_dashboard_summaries, previous, "ARMZ")
             }
             if previous_exists
             else set()
@@ -2089,7 +2331,7 @@ if page == "Dashboard":
                 for column, armz in zip(columns, warehouses[start : start + 3]):
                     initial_value = (
                         dimension_value(
-                            summary_map,
+                            _dashboard_summary_map,
                             previous,
                             "ARMZ",
                             f"ARMZ:{armz}",
@@ -2098,7 +2340,7 @@ if page == "Dashboard":
                         else None
                     )
                     final_value = dimension_value(
-                        summary_map,
+                        _dashboard_summary_map,
                         selected_month,
                         "ARMZ",
                         f"ARMZ:{armz}",
@@ -2123,12 +2365,12 @@ if page == "Dashboard":
 
         current_types = {
             str(row.get("tp") or "")
-            for row in dimension_rows(summaries, selected_month, "TP")
+            for row in dimension_rows(_dashboard_summaries, selected_month, "TP")
         }
         previous_types = (
             {
                 str(row.get("tp") or "")
-                for row in dimension_rows(summaries, previous, "TP")
+                for row in dimension_rows(_dashboard_summaries, previous, "TP")
             }
             if previous_exists
             else set()
@@ -2142,7 +2384,7 @@ if page == "Dashboard":
                     previous,
                     selected_month,
                     previous_exists,
-                    summary_map,
+                    _dashboard_summary_map,
                 ),
                 unsafe_allow_html=True,
             )
@@ -2152,7 +2394,7 @@ if page == "Dashboard":
                 previous,
                 selected_month,
                 previous_exists,
-                summary_map,
+                _dashboard_summary_map,
                 cfg,
             )
             download_left, download_right = st.columns([3.3, 1])
@@ -2181,8 +2423,8 @@ if page == "Dashboard":
         st.markdown(
             history_table_html(
                 visible_months,
-                summary_map,
-                imports_by_month,
+                _dashboard_summary_map,
+                _dashboard_imports_by_month,
             ),
             unsafe_allow_html=True,
         )
@@ -2195,11 +2437,10 @@ if page == "Dashboard":
         "",
     )
 
-    if (
-        central_context.get("available")
-        and central_parsed.get("rows")
-    ):
-        _has_closing_errors = bool(central_parsed.get("errors"))
+    if _closing_source_available:
+        _has_closing_errors = bool(
+            _closing_source_parsed.get("errors")
+        )
         _is_saved_current = current_competencia.isoformat() in persisted_import_keys
         _save_label = (
             "ATUALIZAR FECHAMENTO DA COMPETÊNCIA"
@@ -2221,14 +2462,11 @@ if page == "Dashboard":
             disabled=_has_closing_errors,
         ):
             try:
-                _source_name = str(
-                    (central_context.get("meta") or {}).get("last_file_name")
-                    or "ANALITICO.xltx"
-                )
+                _source_name = _closing_source_name
                 db.import_inventory_report(
                     current_competencia,
                     _source_name,
-                    central_parsed["rows"],
+                    _closing_source_parsed["rows"],
                 )
                 load_inventory_overview.clear()
                 st.session_state["_import_ok"] = (
@@ -2239,7 +2477,7 @@ if page == "Dashboard":
             except Exception as exc:
                 st.error(f"NÃO FOI POSSÍVEL GRAVAR O FECHAMENTO: {exc}")
     else:
-        st.warning("ANALÍTICO DA CENTRAL INDISPONÍVEL.")
+        st.warning("NENHUMA FONTE DE ESTOQUE DISPONÍVEL PARA O FECHAMENTO.")
 
 
 elif page == "Conferência de chapas e barramentos":
