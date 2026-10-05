@@ -395,8 +395,10 @@ def parse_inventory_balance_report(
     code_col = find_column("CODIGO")
     saldo_col = find_column("SALDO EM ESTOQUE")
     valor_col = find_column("VALOR EM ESTOQUE")
+    tp_col = find_column("TP")
     armz_col = find_column("ARMZ")
     desc_col = find_column("DESCRICAO")
+    desc_armz_col = find_column("DESCRICAO DO ARMAZEM")
 
     missing = []
     if not code_col:
@@ -448,6 +450,10 @@ def parse_inventory_balance_report(
             {
                 "linha": row_number,
                 "codigo": str(code_value).strip(),
+                "tp": str(
+                    row.get(tp_col) if tp_col else ""
+                    or ""
+                ).strip(),
                 "armz": str(
                     row.get(armz_col) if armz_col else ""
                     or ""
@@ -456,6 +462,10 @@ def parse_inventory_balance_report(
                 "valor_estoque": valor_estoque,
                 "descricao": str(
                     row.get(desc_col) if desc_col else ""
+                    or ""
+                ).strip(),
+                "descricao_armazem": str(
+                    row.get(desc_armz_col) if desc_armz_col else ""
                     or ""
                 ).strip(),
             }
