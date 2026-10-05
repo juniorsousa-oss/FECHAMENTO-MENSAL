@@ -845,7 +845,11 @@ def parse_cadastros_frame(frame: pd.DataFrame, file_name: str) -> dict:
                 "referencia": referencia,
                 "grupo": "",
                 "tp": "",
-                "unidade": "KG" if categoria == "CHAPA" else "MT",
+                "unidade": (
+                    "PC"
+                    if codigo in CHAPA_EMAIL_PIECE_CODES
+                    else ("KG" if categoria == "CHAPA" else "MT")
+                ),
                 "ult_preco": ult_preco,
                 "status": status,
                 "origem": file_name,
