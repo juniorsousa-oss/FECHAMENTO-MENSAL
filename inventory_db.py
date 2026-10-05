@@ -630,7 +630,7 @@ def list_cb_system_balances(
             f"{supabase_url()}/rest/v1/fm_cb_saldos_sistema",
             headers=_headers(),
             params={
-                "select": "competencia,codigo,armz,saldo,valor_estoque,descricao,arquivo_nome,importado_em",
+                "select": "competencia,codigo,tp,armz,saldo,valor_estoque,descricao,descricao_armazem,arquivo_nome,importado_em",
                 "competencia": f"eq.{key}",
                 "order": "codigo.asc,armz.asc",
                 "limit": str(page_size),
@@ -659,6 +659,7 @@ def save_cb_system_balances(
         payload.append(
             {
                 "codigo": str(row.get("codigo") or "").strip(),
+                "tp": str(row.get("tp") or "").strip(),
                 "armz": str(row.get("armz") or "").strip(),
                 "saldo": max(
                     float(row.get("saldo") or 0),
@@ -670,6 +671,9 @@ def save_cb_system_balances(
                 ),
                 "descricao": str(
                     row.get("descricao") or ""
+                ).strip(),
+                "descricao_armazem": str(
+                    row.get("descricao_armazem") or ""
                 ).strip(),
             }
         )
