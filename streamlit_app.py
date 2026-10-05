@@ -1520,9 +1520,13 @@ def build_cb_reconciliation(
                 "Código": codigo,
                 "Descrição": descricao,
                 "U.M.": (
-                    "KG"
-                    if item.get("categoria") == "CHAPA"
-                    else "MT"
+                    "PC"
+                    if codigo in {"06000210", "06000211"}
+                    else (
+                        "KG"
+                        if item.get("categoria") == "CHAPA"
+                        else "MT"
+                    )
                 ),
                 "ARMZ": ", ".join(
                     sorted(stock_data.get("armz") or set())
