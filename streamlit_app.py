@@ -527,7 +527,7 @@ def build_manual_closing_context(
                 meta = candidates[0]
         meta = meta or {}
 
-        tp = str(row.get("tp") or meta.get("tp") or "").strip() || "SEM TP"
+        tp = str(row.get("tp") or meta.get("tp") or "").strip() or "SEM TP"
         descricao = str(
             row.get("descricao") or meta.get("descricao") or ""
         ).strip()
