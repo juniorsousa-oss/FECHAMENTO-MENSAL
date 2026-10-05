@@ -121,3 +121,38 @@ jobs:
           assert "Fechamento considerado em:" in app
           print("COMPETENCIA_CHAPAS_OK")
           PY
+
+      - name: SIVACON aluminum count fallback
+        run: |
+          python - <<'PY'
+          from cb_parser import resolve_chapa_rows
+
+          catalog = [
+              {"codigo": "06000210", "categoria": "CHAPA", "ativo": True, "status": "CONFIRMADO"},
+              {"codigo": "06000211", "categoria": "CHAPA", "ativo": True, "status": "CONFIRMADO"},
+          ]
+          rows = [
+              {
+                  "dimensao": "SIVACON",
+                  "dimensao_norm": "SIVACON",
+                  "descricao": "5mm ALUMINIO",
+                  "descricao_norm": "5MM ALUMINIO",
+                  "chapas": 14,
+                  "peso_total": 0,
+              },
+              {
+                  "dimensao": "SIVACON",
+                  "dimensao_norm": "SIVACON",
+                  "descricao": "3mm ALUMINIO",
+                  "descricao_norm": "3MM ALUMINIO",
+                  "chapas": 13,
+                  "peso_total": 0,
+              },
+          ]
+          result = resolve_chapa_rows(rows, [], catalog)
+          by_code = {row["codigo"]: row for row in result["resolved"]}
+          assert by_code["06000210"]["quantidade_fisica"] == 14
+          assert by_code["06000211"]["quantidade_fisica"] == 13
+          assert "CHAPAS · PC" in by_code["06000210"]["observacao"]
+          print("sivacon-aluminum-piece-count-ok")
+          PY
