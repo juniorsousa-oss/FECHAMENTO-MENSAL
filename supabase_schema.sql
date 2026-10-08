@@ -302,7 +302,7 @@ begin
   where trim(coalesce(x.codigo, '')) <> '';
 
   select
-    count(*),
+    count(*) filter (where abs(coalesce(diferenca_qtd, 0)) > 1e-9),
     coalesce(sum(case when categoria = 'CHAPA' and diferenca_qtd > 0 then diferenca_qtd else 0 end), 0),
     coalesce(sum(case when categoria = 'CHAPA' and diferenca_qtd < 0 then abs(diferenca_qtd) else 0 end), 0),
     coalesce(sum(case when categoria = 'CHAPA' and previsao_valor > 0 then previsao_valor else 0 end), 0),
