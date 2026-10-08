@@ -158,12 +158,87 @@ def build_almox_barras_model() -> bytes:
     return output.getvalue()
 
 
+def supplement_cb_historical_counts(
+    saved_items: list[dict],
+    count_rows: list[dict],
+    exclusion_rows: list[dict],
+    catalog: list[dict],
+) -> list[dict]:
+    """Anexa contagens legadas ausentes do histórico sem recalcular o fechamento.
+
+    O histórico antigo guarda apenas ajustes. Os saldos ausentes ficam em branco
+    porque não há fotografia de reconciliação arquivada para esses códigos.
+    """
+    combined = list(saved_items or [])
+    included_codes = {normalize_code(row.get("codigo")) for row in combined}
+    excluded_codes = {
+        normalize_code(row.get("codigo"))
+        for row in exclusion_rows or []
+        if bool(row.get("ativo", True))
+    }
+    by_code: dict[str, list[dict]] = {}
+    for row in count_rows or []:
+        codigo = normalize_code(row.get("codigo"))
+        if not codigo or codigo in included_codes or codigo in excluded_codes:
+            continue
+        by_code.setdefault(codigo, []).append(row)
+
+    catalog_map = {
+        normalize_code(row.get("codigo")): row
+        for row in catalog or []
+        if normalize_code(row.get("codigo"))
+    }
+    for codigo, raw_counts in sorted(by_code.items()):
+        manual = [
+            row for row in raw_counts
+            if str(row.get("fonte") or "") == "INTERNO_MANUAL"
+        ]
+        selected_counts = [
+            row for row in raw_counts
+            if str(row.get("fonte") or "") not in {"INTERNO_MANUAL", "INTERNO_EXCEL"}
+        ]
+        if manual:
+            selected_counts.extend(manual)
+        else:
+            selected_counts.extend(
+                row for row in raw_counts
+                if str(row.get("fonte") or "") == "INTERNO_EXCEL"
+            )
+        physical = sum(float(row.get("quantidade_fisica") or 0) for row in selected_counts)
+        item = catalog_map.get(codigo) or {}
+        categoria = str(item.get("categoria") or "").strip().upper()
+        unidade = "PC" if codigo in {"06000210", "06000211"} else (
+            "KG" if categoria == "CHAPA" else "MT" if categoria == "BARRA DE COBRE" else ""
+        )
+        combined.append({
+            "codigo": codigo,
+            "categoria": categoria,
+            "descricao": str(item.get("descricao") or ""),
+            "um": unidade,
+            "saldo_fechamento": None,
+            "saldo_atual": None,
+            "saldo_base_ajuste": None,
+            "base_origem": "NÃO ARQUIVADA",
+            "fisico": physical,
+            "custo_unitario": None,
+            "contagem_assumida_zero": False,
+            "diferenca_qtd": 0,
+            "previsao_valor": 0,
+            "situacao_contagem": "CONTAGEM HISTÓRICA · SEM AJUSTE ARQUIVADO",
+        })
+    return combined
+
+
 def build_cb_protheus_movement_report(
     items: list[dict],
     competencia: date,
 ) -> bytes:
     """Exporta todas as contagens arquivadas; só divergências geram movimentos."""
     rows = []
+
+    def _numero_ou_vazio(valor):
+        return None if valor is None or pd.isna(valor) else float(valor)
+
     for item in items or []:
         try:
             ajuste = float(item.get("diferenca_qtd") or 0)
@@ -191,19 +266,20 @@ def build_cb_protheus_movement_report(
                 ),
                 "QUANTIDADE PROTHEUS": abs(ajuste),
                 "AJUSTE QTD (SINAL)": ajuste,
-                "SALDO FECHAMENTO": float(item.get("saldo_fechamento") or 0),
-                "SALDO ATUAL": float(item.get("saldo_atual") or 0),
-                "SALDO BASE AJUSTE": float(item.get("saldo_base_ajuste") or 0),
+                "SALDO FECHAMENTO": _numero_ou_vazio(item.get("saldo_fechamento")),
+                "SALDO ATUAL": _numero_ou_vazio(item.get("saldo_atual")),
+                "SALDO BASE AJUSTE": _numero_ou_vazio(item.get("saldo_base_ajuste")),
                 "BASE USADA": str(item.get("base_origem") or ""),
                 "FÍSICO": float(item.get("fisico") or 0),
-                "CUSTO UNITÁRIO (R$)": float(item.get("custo_unitario") or 0),
+                "CUSTO UNITÁRIO (R$)": _numero_ou_vazio(item.get("custo_unitario")),
                 "IMPACTO (R$)": previsao,
                 "VALOR MOVIMENTAÇÃO (R$)": abs(previsao),
                 "CONTAGEM ASSUMIDA ZERO": bool(
                     item.get("contagem_assumida_zero")
                 ),
-                "SITUAÇÃO CONTAGEM": (
-                    "DIVERGÊNCIA" if possui_movimento else "CONFERIDO"
+                "SITUAÇÃO CONTAGEM": str(
+                    item.get("situacao_contagem")
+                    or ("DIVERGÊNCIA" if possui_movimento else "CONFERIDO")
                 ),
             }
         )
@@ -4875,8 +4951,31 @@ elif page == "Conferência de chapas e barramentos":
                     _history_competencia_date = date.fromisoformat(
                         _history_month_selected
                     )
-                    _movement_report = build_cb_protheus_movement_report(
+                    # Históricos anteriores arquivavam somente divergências.
+                    # Completa com registros físicos já existentes, sem tocar
+                    # nas movimentações financeiras finalizadas no banco.
+                    try:
+                        _historical_counts = db.list_cb_counts(
+                            _history_month_selected
+                        )
+                        _historical_exclusions = db.list_cb_exclusions(
+                            _history_month_selected
+                        )
+                    except Exception as exc:
+                        _historical_counts = []
+                        _historical_exclusions = []
+                        st.warning(
+                            "Não foi possível complementar as contagens "
+                            "históricas: " + str(exc)
+                        )
+                    _complete_history_items = supplement_cb_historical_counts(
                         _history_items,
+                        _historical_counts,
+                        _historical_exclusions,
+                        cb_catalog,
+                    )
+                    _movement_report = build_cb_protheus_movement_report(
+                        _complete_history_items,
                         _history_competencia_date,
                     )
                     st.download_button(
@@ -4898,12 +4997,10 @@ elif page == "Conferência de chapas e barramentos":
                         ),
                     )
                     st.caption(
-                        "O relatório apresenta todas as contagens arquivadas na "
-                        "finalização, inclusive as conferidas. AÇÃO PROTHEUS "
-                        "= SEM MOVIMENTAÇÃO e quantidade = 0 não devem gerar "
-                        "lançamento no ERP. Para competências finalizadas antes "
-                        "desta atualização, use ATUALIZAR REGISTRO DOS AJUSTES "
-                        "para arquivar também as contagens conferidas."
+                        "O relatório reúne contagens com e sem divergência. "
+                        "AÇÃO PROTHEUS = SEM MOVIMENTAÇÃO não gera lançamento. "
+                        "Para contagens históricas sem ajuste arquivado, os saldos "
+                        "permanecem em branco: não recalculamos fechamentos antigos."
                     )
 
 elif page == "Conferência de baixas":
