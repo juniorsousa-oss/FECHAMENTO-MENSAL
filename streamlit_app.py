@@ -162,7 +162,7 @@ def build_cb_protheus_movement_report(
     items: list[dict],
     competencia: date,
 ) -> bytes:
-    """Gera o relatório operacional dos ajustes para lançamento no Protheus."""
+    """Exporta todas as contagens arquivadas; só divergências geram movimentos."""
     rows = []
     for item in items or []:
         try:
@@ -170,8 +170,8 @@ def build_cb_protheus_movement_report(
         except Exception:
             ajuste = 0.0
 
-        if abs(ajuste) <= 1e-9:
-            continue
+        # Contagens sem ajuste são essenciais para rastreabilidade do fechamento.
+        possui_movimento = abs(ajuste) > 1e-9
 
         try:
             previsao = float(item.get("previsao_valor") or 0)
@@ -185,7 +185,10 @@ def build_cb_protheus_movement_report(
                 "CÓDIGO": str(item.get("codigo") or ""),
                 "DESCRIÇÃO": str(item.get("descricao") or ""),
                 "U.M.": str(item.get("um") or ""),
-                "AÇÃO PROTHEUS": "INSERIR" if ajuste > 0 else "BAIXAR",
+                "AÇÃO PROTHEUS": (
+                    "SEM MOVIMENTAÇÃO" if not possui_movimento
+                    else "INSERIR" if ajuste > 0 else "BAIXAR"
+                ),
                 "QUANTIDADE PROTHEUS": abs(ajuste),
                 "AJUSTE QTD (SINAL)": ajuste,
                 "SALDO FECHAMENTO": float(item.get("saldo_fechamento") or 0),
@@ -198,6 +201,9 @@ def build_cb_protheus_movement_report(
                 "VALOR MOVIMENTAÇÃO (R$)": abs(previsao),
                 "CONTAGEM ASSUMIDA ZERO": bool(
                     item.get("contagem_assumida_zero")
+                ),
+                "SITUAÇÃO CONTAGEM": (
+                    "DIVERGÊNCIA" if possui_movimento else "CONFERIDO"
                 ),
             }
         )
@@ -3963,6 +3969,7 @@ elif page == "Conferência de chapas e barramentos":
         )
 
         cb_adjustment_snapshot = pd.DataFrame()
+        cb_report_snapshot = pd.DataFrame()
         cb_missing_count = 0
 
         if not cb_closing_stock_items and not cb_counts:
@@ -4095,6 +4102,13 @@ elif page == "Conferência de chapas e barramentos":
             }
 
             reconciliation_all = reconciliation.copy()
+
+            # Arquiva todas as contagens feitas, mesmo sem divergência,
+            # toleradas ou com saldo e físico zero. Respeita remoções manuais.
+            cb_report_snapshot = movement_comparison[
+                movement_comparison["Físico"].notna()
+                & ~movement_comparison["Código"].astype(str).isin(excluded_codes)
+            ].copy()
 
             if excluded_codes and not reconciliation.empty:
                 reconciliation = reconciliation[
@@ -4472,7 +4486,13 @@ elif page == "Conferência de chapas e barramentos":
                 ),
             )
 
-        _finalization_snapshot = cb_adjustment_snapshot.copy()
+        _finalization_snapshot = cb_report_snapshot.copy()
+        if not _finalization_snapshot.empty:
+            # A diferença tolerada é contagem conferida, mas não é ajuste ERP.
+            _conferidos = _finalization_snapshot["Status"].eq("CONFERIDO")
+            _finalization_snapshot.loc[
+                _conferidos, ["Diferença Qtd", "Diferença R$"]
+            ] = 0.0
 
         if (
             _assume_missing_zero
@@ -4878,9 +4898,12 @@ elif page == "Conferência de chapas e barramentos":
                         ),
                     )
                     st.caption(
-                        "No relatório, a quantidade para lançamento é sempre "
-                        "positiva. A coluna AÇÃO PROTHEUS informa se o item deve "
-                        "ser BAIXADO ou INSERIDO."
+                        "O relatório apresenta todas as contagens arquivadas na "
+                        "finalização, inclusive as conferidas. AÇÃO PROTHEUS "
+                        "= SEM MOVIMENTAÇÃO e quantidade = 0 não devem gerar "
+                        "lançamento no ERP. Para competências finalizadas antes "
+                        "desta atualização, use ATUALIZAR REGISTRO DOS AJUSTES "
+                        "para arquivar também as contagens conferidas."
                     )
 
 elif page == "Conferência de baixas":
