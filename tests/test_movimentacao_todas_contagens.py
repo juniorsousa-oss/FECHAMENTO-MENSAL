@@ -64,4 +64,39 @@ assert '"Diferença Qtd", "Diferença R$"' in content
 
 schema = (source.parent / "supabase_schema.sql").read_text(encoding="utf-8")
 assert "count(*) filter (where abs(coalesce(diferenca_qtd, 0)) > 1e-9)" in schema
+# Contagens de competências antigas são recuperadas sem alterar o
+# histórico de ajustes e sem inventar os saldos que não foram arquivados.
+legacy_node = next(
+    node for node in parsed.body
+    if isinstance(node, ast.FunctionDef)
+    and node.name == "supplement_cb_historical_counts"
+)
+scope["normalize_code"] = lambda v: str(v or "").strip()
+exec(compile(ast.Module(body=[legacy_node], type_ignores=[]), str(source), "exec"), scope)
+merge = scope["supplement_cb_historical_counts"]
+previous = [{**base, "codigo": "A", "fisico": 20, "diferenca_qtd": 2}]
+counts = [
+    {"codigo": "A", "fonte": "INTERNO_MANUAL", "quantidade_fisica": 20},
+    {"codigo": "B", "fonte": "INTERNO_EXCEL", "quantidade_fisica": 4},
+    {"codigo": "B", "fonte": "INTERNO_MANUAL", "quantidade_fisica": 5},
+    {"codigo": "C", "fonte": "INTERNO_EXCEL", "quantidade_fisica": 7},
+]
+legacy = merge(
+    previous, counts,
+    [{"codigo": "C", "ativo": True}],
+    [{"codigo": "B", "descricao": "Produto B", "categoria": "BARRA DE COBRE"}],
+)
+assert len(legacy) == 2, legacy
+extra = next(item for item in legacy if item["codigo"] == "B")
+assert extra["fisico"] == 5, extra
+assert extra["saldo_fechamento"] is None
+assert extra["diferenca_qtd"] == 0
+assert "HISTÓRICA" in extra["situacao_contagem"]
+legacy_report = pd.read_excel(io.BytesIO(export(legacy, date(2026, 9, 1))))
+assert len(legacy_report) == 2
+legacy_row = legacy_report.loc[legacy_report["CÓDIGO"] == "B"].iloc[0]
+assert legacy_row["AÇÃO PROTHEUS"] == "SEM MOVIMENTAÇÃO"
+assert pd.isna(legacy_row["SALDO FECHAMENTO"])
+assert legacy_row["FÍSICO"] == 5
+
 print("FECHAMENTO_RELATORIO_TODAS_CONTAGENS_OK")
