@@ -12,6 +12,8 @@ on:
       - 'db.py'
       - 'ui.py'
       - 'supabase_schema.sql'
+      - 'migrations/**'
+      - 'tests/**'
       - 'requirements.txt'
       - '.github/workflows/ci.yml'
   workflow_dispatch:
@@ -29,6 +31,8 @@ jobs:
         run: pip install -r requirements.txt
       - name: Compilar
         run: python -m py_compile streamlit_app.py central_fechamento_data.py inventory_db.py report_parser.py cb_parser.py ui.py
+      - name: Testar relatório completo de contagens
+        run: python tests/test_movimentacao_todas_contagens.py
       - name: Validar estrutura
         run: |
           python - <<'PY'
