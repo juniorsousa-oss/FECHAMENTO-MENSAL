@@ -10,6 +10,28 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
+
+# Tabelas flexíveis SETTA: acompanha a quantidade de linhas filtradas.
+def _setta_table_height(data, requested=None):
+    try:
+        rows = len(data)
+    except (TypeError, ValueError):
+        return requested
+    limit = requested if isinstance(requested, int) and requested > 0 else 600
+    return min(limit, max(84, 42 + 35 * (min(rows, 100) + 1)))
+
+
+def _setta_dataframe(data, *args, **kwargs):
+    kwargs["height"] = _setta_table_height(data, kwargs.get("height"))
+    return st.dataframe(data, *args, **kwargs)
+
+
+def _setta_data_editor(data, *args, **kwargs):
+    if kwargs.get("num_rows") != "dynamic":
+        kwargs["height"] = _setta_table_height(data, kwargs.get("height"))
+    return st.data_editor(data, *args, **kwargs)
+
+
 from PIL import Image, ImageDraw, ImageFont
 
 import inventory_db as db
@@ -880,7 +902,7 @@ def render_manual_contingency(imports_by_month: dict[str, dict]) -> None:
                 "INCONSISTÊNCIAS IDENTIFICADAS. A ANÁLISE PODE CONTINUAR, "
                 "MAS O FECHAMENTO NÃO PODE SER GRAVADO."
             )
-            st.dataframe(
+            _setta_dataframe(
                 pd.DataFrame(parsed["errors"]),
                 use_container_width=True,
                 hide_index=True,
@@ -2341,7 +2363,7 @@ if page == "Dashboard":
             else:
                 historical_errors = db.list_import_errors(selected_month)
             if historical_errors:
-                st.dataframe(
+                _setta_dataframe(
                     pd.DataFrame(historical_errors),
                     use_container_width=True,
                     hide_index=True,
@@ -2791,7 +2813,7 @@ elif page == "Conferência de chapas e barramentos":
                     "Todos os materiais compatíveis já participam da análise atual."
                 )
             else:
-                st.dataframe(
+                _setta_dataframe(
                     standby_view,
                     use_container_width=True,
                     hide_index=True,
@@ -3079,7 +3101,7 @@ elif page == "Conferência de chapas e barramentos":
                                 )
 
                             mapping_df = pd.DataFrame(mapping_rows)
-                            edited_mapping = st.data_editor(
+                            edited_mapping = _setta_data_editor(
                                 mapping_df,
                                 use_container_width=True,
                                 hide_index=True,
@@ -3150,7 +3172,7 @@ elif page == "Conferência de chapas e barramentos":
                                 resolved_email["resolved"]
                             )
                             if not preview_email.empty:
-                                st.dataframe(
+                                _setta_dataframe(
                                     preview_email.rename(
                                         columns={
                                             "codigo": "Código",
@@ -3356,7 +3378,7 @@ elif page == "Conferência de chapas e barramentos":
                                     "observacao": "Detalhe",
                                 }
                             )
-                            st.dataframe(
+                            _setta_dataframe(
                                 preview_bar,
                                 use_container_width=True,
                                 hide_index=True,
@@ -3392,7 +3414,7 @@ elif page == "Conferência de chapas e barramentos":
                                     }
                                 )
 
-                            edited_bar_maps = st.data_editor(
+                            edited_bar_maps = _setta_data_editor(
                                 pd.DataFrame(mapping_rows),
                                 use_container_width=True,
                                 hide_index=True,
@@ -3747,7 +3769,7 @@ elif page == "Conferência de chapas e barramentos":
                                     for row in internal_valid
                                 ]
                             )
-                            st.dataframe(
+                            _setta_dataframe(
                                 preview_internal,
                                 use_container_width=True,
                                 hide_index=True,
@@ -3792,7 +3814,7 @@ elif page == "Conferência de chapas e barramentos":
                                 )
                             ]
 
-                            edited_internal_maps = st.data_editor(
+                            edited_internal_maps = _setta_data_editor(
                                 pd.DataFrame(mapping_rows),
                                 use_container_width=True,
                                 hide_index=True,
@@ -4009,7 +4031,7 @@ elif page == "Conferência de chapas e barramentos":
                             str(value),
                         )
                     )
-                    st.dataframe(
+                    _setta_dataframe(
                         imports_view[
                             [
                                 "fonte",
@@ -4141,7 +4163,7 @@ elif page == "Conferência de chapas e barramentos":
                             "Variação atual x fechamento",
                             ascending=False,
                         )
-                        st.dataframe(
+                        _setta_dataframe(
                             _movement_display,
                             use_container_width=True,
                             hide_index=True,
@@ -4396,7 +4418,7 @@ elif page == "Conferência de chapas e barramentos":
                     "cb_remove_analysis_form",
                     clear_on_submit=False,
                 ):
-                    editable = st.data_editor(
+                    editable = _setta_data_editor(
                         shown_display,
                         use_container_width=True,
                         hide_index=True,
@@ -4835,7 +4857,7 @@ elif page == "Conferência de chapas e barramentos":
                     "Barramentos · ajuste (MT)"
                 ].map(lambda value: number_br(value, 3))
 
-                st.dataframe(
+                _setta_dataframe(
                     _history_df,
                     use_container_width=True,
                     hide_index=True,
@@ -4932,7 +4954,7 @@ elif page == "Conferência de chapas e barramentos":
                         _history_detail_view["Previsão R$"].map(money_br)
                     )
 
-                    st.dataframe(
+                    _setta_dataframe(
                         _history_detail_view,
                         use_container_width=True,
                         hide_index=True,
