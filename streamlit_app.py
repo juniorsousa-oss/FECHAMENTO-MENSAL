@@ -2544,6 +2544,11 @@ if page == "Dashboard":
         "GRAVAR COMPETÊNCIA",
         "",
     )
+    st.caption(
+        f"COMPETÊNCIA A ENCERRAR: {month_label(current_competencia)}. "
+        f"O mês vigente {month_label(live_competencia)} permanece em acompanhamento "
+        "até seu próprio fechamento."
+    )
 
     if _closing_source_available:
         _has_closing_errors = bool(
