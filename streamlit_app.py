@@ -2217,6 +2217,14 @@ if page == "Dashboard":
         _selected_month_query = selected_month.strftime("%Y-%m")
         if str(st.query_params.get("mes", "") or "") != _selected_month_query:
             st.query_params["mes"] = _selected_month_query
+        if (selected_month == live_competencia
+                and selected_month.isoformat() not in persisted_import_keys):
+            st.caption(
+                "MÊS VIGENTE · "
+                + month_start(selected_month).strftime("%d/%m/%Y")
+                + " A " + closing_date(selected_month).strftime("%d/%m/%Y")
+                + " · POSIÇÃO CORRENTE DO ANALÍTICO; AINDA NÃO É FECHAMENTO."
+            )
 
         _dashboard_summaries = list(summaries)
         _dashboard_imports_by_month = dict(imports_by_month)
@@ -2226,7 +2234,8 @@ if page == "Dashboard":
 
         _manual_snapshot_rows = []
         _manual_snapshot_error = ""
-        if selected_month == current_competencia:
+        if (selected_month == current_competencia
+                and current_competencia.isoformat() not in persisted_import_keys):
             try:
                 _manual_snapshot_rows = db.list_cb_system_balances(
                     selected_month
@@ -2542,10 +2551,15 @@ if page == "Dashboard":
         )
         _is_saved_current = current_competencia.isoformat() in persisted_import_keys
         _save_label = (
-            "ATUALIZAR FECHAMENTO DA COMPETÊNCIA"
+            "COMPETÊNCIA JÁ GRAVADA · PRESERVADA NO HISTÓRICO"
             if _is_saved_current
             else "GRAVAR FECHAMENTO DA COMPETÊNCIA"
         )
+        if _is_saved_current:
+            st.success(
+                f"Fechamento de {month_label(current_competencia)} preservado no banco. "
+                "O Analítico atual acompanha o mês vigente, sem substituir esta fotografia."
+            )
 
         if _has_closing_errors:
             st.warning(
@@ -2558,7 +2572,7 @@ if page == "Dashboard":
             type="primary",
             use_container_width=True,
             key="fm_save_current_central",
-            disabled=_has_closing_errors,
+            disabled=_has_closing_errors or _is_saved_current,
         ):
             try:
                 _source_name = _closing_source_name
