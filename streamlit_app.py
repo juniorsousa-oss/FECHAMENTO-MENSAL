@@ -2039,6 +2039,8 @@ central_context = {"available": False, "meta": {}}
 current_competencia = previous_month(
     month_start(datetime.now(TZ).date())
 )
+# Posição corrente acompanha o calendário; fechamento usa a competência anterior.
+live_competencia = month_start(datetime.now(TZ).date())
 central_balance_preview = []
 imports = []
 summaries = []
@@ -2082,21 +2084,14 @@ if _needs_inventory_core:
         central_context.get("available")
         and central_parsed.get("rows")
     ):
-        current_key = current_competencia.isoformat()
+        current_key = live_competencia.isoformat()
         preview_errors = list(
             central_parsed.get("errors") or []
         )
-        imports = [
-            row for row in imports
-            if str(row.get("competencia") or "")[:10]
-            != current_key
-        ]
-        summaries = [
-            row for row in summaries
-            if str(row.get("competencia") or "")[:10]
-            != current_key
-        ]
-        imports.append(
+        # Fechamentos gravados no banco são imutáveis para a VISUALIZAÇÃO.
+        # Nunca substituir competência encerrada com a prévia do Analítico.
+        if current_key not in persisted_import_keys:
+            imports.append(
             {
                 "competencia": current_key,
                 "arquivo_nome": str(
@@ -2129,12 +2124,12 @@ if _needs_inventory_core:
                 "preview": True,
             }
         )
-        summaries.extend(
-            build_preview_summaries(
-                current_competencia,
-                central_parsed["rows"],
+            summaries.extend(
+                build_preview_summaries(
+                    live_competencia,
+                    central_parsed["rows"],
+                )
             )
-        )
 
     imports_by_month = {
         str(row.get("competencia") or "")[:10]: row
@@ -2554,7 +2549,7 @@ if page == "Dashboard":
                 st.session_state["_import_ok"] = (
                     f"{month_label(current_competencia)} gravado com sucesso."
                 )
-                st.query_params["mes"] = current_competencia.strftime("%Y-%m")
+                st.query_params["mes"] = live_competencia.strftime("%Y-%m")
                 st.rerun()
             except Exception as exc:
                 st.error(f"NÃO FOI POSSÍVEL GRAVAR O FECHAMENTO: {exc}")
