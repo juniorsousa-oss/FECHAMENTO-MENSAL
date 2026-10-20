@@ -45,11 +45,23 @@ class MovementAnalysisTests(unittest.TestCase):
                 record(tipo="PI", documento="PI"), record(documento="MP")]
         frame = mv.build_model([imported(rows)])["frame"]
         expected = ["520_OP_MANUAL", "520_CC_GERENCIAL", "520_CC_CONSUMO", "520_CC_CONSUMO",
-                    "520_CC_CONSUMO", "AJUSTE_PA_PI_PRODUCAO_INTERNA", "520_BASE_A_VALIDAR"]
+                    "520_CC_CONSUMO", "520_BASE_A_VALIDAR", "520_BASE_A_VALIDAR"]
         self.assertEqual(frame.regra_classificacao.tolist(), expected)
         self.assertEqual(frame.iloc[0].grupo_analise, mv.FLOW)
-        self.assertEqual(frame.iloc[-2].grupo_analise, mv.PRODUCTION)
+        self.assertEqual(frame.iloc[-2].grupo_analise, mv.ADJUSTMENT)
         self.assertEqual(frame.iloc[-1].grupo_analise, mv.ADJUSTMENT)
+
+    def test_production_requires_tes_020_for_pa_and_pi(self):
+        rows = [record(tes=tes, tipo=category, documento=tes + category)
+                for tes in ("020", "520") for category in ("PA", "PI")]
+        frame = mv.build_model([imported(rows)])["frame"]
+        self.assertEqual(frame.grupo_analise.tolist(),
+                         [mv.PRODUCTION, mv.PRODUCTION, mv.ADJUSTMENT, mv.ADJUSTMENT])
+        self.assertEqual(frame.regra_classificacao.tolist(),
+                         ["AJUSTE_PA_PI_PRODUCAO_INTERNA", "AJUSTE_PA_PI_PRODUCAO_INTERNA",
+                          "520_BASE_A_VALIDAR", "520_BASE_A_VALIDAR"])
+        self.assertEqual(frame.valor_saida.tolist(), [10, 10, 10, 10])
+        self.assertEqual(frame.ae_original.tolist(), ["CC600307"] * 4)
 
     def test_finished_component_is_not_raw_copper_or_sheet(self):
         frame = mv.build_model([imported([record(descricao="PORCA PARA CHAPA DE COBRE")])])["frame"]

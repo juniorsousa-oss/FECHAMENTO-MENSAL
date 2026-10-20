@@ -294,9 +294,9 @@ def classify(row: dict, config: dict) -> dict:
     elif base == ADJUSTMENT:
         subgroup, rule = "AJUSTE DE ESTOQUE A VALIDAR", f"{code}_BASE_A_VALIDAR"
         reason = f"TES {code} no grupo de ajuste; aguarda refinamento das condições."
-    if group == ADJUSTMENT and row["tipo"] in ("PA", "PI"):
+    if code == "020" and group == ADJUSTMENT and row["tipo"] in ("PA", "PI"):
         group, subgroup, rule = PRODUCTION, PRODUCTION, "AJUSTE_PA_PI_PRODUCAO_INTERNA"
-        reason = f"Movimento que permanecia em Ajuste, com categoria {row['tipo']}: produção interna."
+        reason = f"TES 020 que permanecia em Ajuste, com categoria {row['tipo']}: produção interna."
     if provisional:
         reason = f"TES {code} sem grupo confirmado: a descrição da TES é usada como grupo provisório."
     result.update({"descricao_tes": description, "grupo_analise": group, "subgrupo_analise": subgroup,

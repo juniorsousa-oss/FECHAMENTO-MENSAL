@@ -389,7 +389,7 @@ def _classification(frame, model):
         ("520_OP_MANUAL", "520 · AE com OP", mv.FLOW, "BAIXA DE OP MANUAL"),
         ("520_CC_GERENCIAL", "520 · CC diferente de 600307", mv.FLOW, "ACERTO GERENCIAL"),
         ("520_CC_CONSUMO", "520 · CC 600307 e II, MC ou código da lista H0001", mv.FLOW, "MATERIAIS DE CONSUMO"),
-        ("AJUSTE_PA_PI_PRODUCAO_INTERNA", "PA / PI que permanecia em Ajuste", mv.PRODUCTION, mv.PRODUCTION),
+        ("AJUSTE_PA_PI_PRODUCAO_INTERNA", "020 · PA / PI que permanecia em Ajuste", mv.PRODUCTION, mv.PRODUCTION),
     ]
     active = mv.effective(frame)
     rows = [{"Ordem": i, "Condição": condition, "Grupo": group, "Subgrupo": sub,

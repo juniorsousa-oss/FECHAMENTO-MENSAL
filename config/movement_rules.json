@@ -1,5 +1,5 @@
 {
-  "versao": "2026-10-20.1",
+  "versao": "2026-10-20.2",
   "atualizado_em": "2026-10-20",
   "tes": {
     "004": {
@@ -1700,8 +1700,12 @@
     },
     {
       "id": "AJUSTE_PA_PI_PRODUCAO_INTERNA",
+      "tes": "020",
       "etapa": "APOS_CLASSIFICACAO_TES",
       "condicoes": {
+        "tes_em": [
+          "020"
+        ],
         "grupo_atual": "AJUSTE DE ESTOQUE",
         "categoria_em": [
           "PA",
@@ -1710,7 +1714,7 @@
       },
       "grupo_analise": "PRODUÇÃO INTERNA",
       "subgrupo_analise": "PRODUÇÃO INTERNA",
-      "descricao": "Movimentos que permanecem em Ajuste de Estoque, com categoria PA ou PI, passam para Produção Interna.",
+      "descricao": "Somente movimentos da TES 020 que permanecem em Ajuste de Estoque, com categoria PA ou PI, passam para Produção Interna.",
       "fonte": "Orientação do usuário em 20/10/2026",
       "preservacao": "Aplicar somente após as regras de fluxo já confirmadas; preservar dados, valores, sinais, TES e AE."
     }
