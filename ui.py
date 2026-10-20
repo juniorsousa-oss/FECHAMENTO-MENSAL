@@ -312,7 +312,16 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 [data-testid="stAppViewContainer"] .main .block-container,
 [data-testid="stMain"] .block-container,
 .stMain .block-container{width:100%!important;max-width:100%!important;margin-left:0!important;margin-right:0!important}
-section[data-testid="stSidebar"][aria-expanded="false"]{width:0!important;min-width:0!important;max-width:0!important;flex-basis:0!important}
+/* O Streamlit atual sinaliza o recolhimento com data-collapsed no contêiner.
+   Manter aria-expanded também preserva a compatibilidade com versões anteriores. */
+section[data-testid="stSidebar"][data-collapsed="true"],
+section[data-testid="stSidebar"][aria-expanded="false"]{
+  width:0!important;
+  min-width:0!important;
+  max-width:0!important;
+  flex-basis:0!important;
+  border-right-width:0!important;
+}
 .setta-logo-card{width:100%!important;min-height:128px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:#fff!important;border:1px solid #e5e8ee!important;border-radius:16px!important;box-shadow:0 4px 14px rgba(24,39,75,.08)!important;box-sizing:border-box!important;margin:0 0 2.55rem 0!important;padding:1.1rem 2rem!important}
 .setta-logo-card img{display:block!important;width:auto!important;height:auto!important;max-width:205px!important;max-height:86px!important;object-fit:contain!important}
 .app-title{margin:0!important;padding:0!important;font-size:2.55rem!important;line-height:1.08!important;font-weight:800!important;letter-spacing:-.04em!important;color:#050505!important}
