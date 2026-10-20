@@ -1,0 +1,520 @@
+"""KARDEX: original records, repeat-aware imports and confirmed classifications."""
+from __future__ import annotations
+
+import base64
+import gzip
+import hashlib
+import io
+import json
+import re
+import unicodedata
+import xml.etree.ElementTree as ET
+from collections import Counter, defaultdict, deque
+from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from zipfile import ZipFile, ZIP_DEFLATED
+
+import pandas as pd
+
+RULES_FILE = Path(__file__).parent / "config" / "movement_rules.json"
+FORMAT = "SETTA_KARDEX_IMPORT_V1"
+HISTORY_FORMAT = "SETTA_KARDEX_HISTORY_V1"
+ADJUSTMENT = "AJUSTE DE ESTOQUE"
+FLOW = "FLUXO DE ESTOQUE"
+PRODUCTION = "PRODUÇÃO INTERNA"
+CLOSING = "AJUSTE DE FECHAMENTO DE CHAPAS E BARRAS"
+CLOSING_RULE = "020_520_FECHAMENTO_CHAPAS_BARRAS"
+NUMERIC = {
+    "custo_medio_inicio_arquivo", "saldo_inicio_arquivo", "valor_saldo_inicio_arquivo",
+    "qtd_entrada", "valor_entrada", "custo_medio_movimento", "qtd_saida", "valor_saida",
+    "saldo_pos_lancamento", "valor_saldo_pos_lancamento",
+}
+COLUMNS = {
+    "A": "codigo", "B": "descricao", "C": "um", "D": "tipo", "E": "grupo",
+    "F": "custo_medio_inicio_arquivo", "G": "saldo_inicio_arquivo", "H": "valor_saldo_inicio_arquivo",
+    "I": "posicao_ipi", "J": "endereco_relatorio", "L": "armazem", "M": "tes", "N": "cf",
+    "O": "documento", "Q": "qtd_entrada", "S": "valor_entrada", "U": "custo_medio_movimento",
+    "W": "qtd_saida", "Y": "valor_saida", "AA": "saldo_pos_lancamento", "AC": "valor_saldo_pos_lancamento",
+    "AE": "ae_original",
+}
+RAW_KEYS = set(COLUMNS.values()) | {
+    "data", "arquivo_origem", "linha_origem", "arquivo_sha256",
+    "periodo_arquivo_inicio", "periodo_arquivo_fim",
+}
+IDENTITY_KEYS = ("data", "codigo", "armazem", "um", "tes", "cf", "documento", "qtd_entrada",
+                 "valor_entrada", "qtd_saida", "valor_saida", "saldo_pos_lancamento",
+                 "valor_saldo_pos_lancamento", "ae_original")
+NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+
+
+def rules() -> dict:
+    return json.loads(RULES_FILE.read_text(encoding="utf-8"))
+
+
+def normalized(value) -> str:
+    text = unicodedata.normalize("NFKD", str(value or "").upper())
+    return " ".join("".join(c for c in text if not unicodedata.combining(c)).split())
+
+
+def decimal(value) -> Decimal:
+    if value in (None, ""):
+        return Decimal(0)
+    text = str(value).strip().replace("R$", "").replace(" ", "")
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
+    try:
+        result = Decimal(text)
+    except InvalidOperation as exc:
+        raise ValueError(f"Número inválido: {value!r}") from exc
+    if not result.is_finite():
+        raise ValueError("Número não finito no relatório.")
+    return result
+
+
+def identifier(value, width=0) -> str:
+    text = "" if value is None else str(value).strip()
+    if re.fullmatch(r"\d+\.0+", text):
+        text = text.split(".")[0]
+    return text.zfill(width) if text.isdigit() else text
+
+
+def _date(value, date1904=False) -> str:
+    if value in (None, ""):
+        raise ValueError("Data da movimentação não informada.")
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()[:10]
+    text = str(value or "").strip()
+    if re.match(r"^\d{4}-\d{2}-\d{2}", text):
+        return date.fromisoformat(text[:10]).isoformat()
+    for fmt in ("%d/%m/%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(text, fmt).date().isoformat()
+        except ValueError:
+            pass
+    try:
+        origin = datetime(1904, 1, 1) if date1904 else datetime(1899, 12, 30)
+        return (origin + timedelta(days=float(decimal(value)))).date().isoformat()
+    except Exception as exc:
+        raise ValueError(f"Data da movimentação inválida: {value!r}") from exc
+
+
+def clean_record(source: dict) -> dict:
+    row = {key: source.get(key) for key in RAW_KEYS}
+    if row.get("ae_original") is None:
+        row["ae_original"] = source.get("vinculo", "")
+    row["ae_original"] = str(row["ae_original"] or "")  # original spacing is meaningful evidence
+    row["codigo"] = identifier(row["codigo"], 8)
+    row["tes"] = identifier(row["tes"], 3)
+    row["armazem"] = identifier(row["armazem"])
+    row["data"] = _date(row["data"])
+    row["linha_origem"] = int(row.get("linha_origem") or 0)
+    for key in NUMERIC:
+        row[key] = None if row.get(key) in (None, "") else str(decimal(row[key]))
+    for key in ("descricao", "um", "tipo", "grupo", "cf", "documento", "endereco_relatorio"):
+        row[key] = str(row.get(key) or "")
+    if not row["codigo"] or not row["tes"] or not row["armazem"]:
+        raise ValueError("Movimentação sem produto, TES ou armazém.")
+    return row
+
+
+def fingerprint(row: dict) -> str:
+    parts = [str(decimal(row.get(key)).normalize()) if key in NUMERIC else str(row.get(key) or "")
+             for key in IDENTITY_KEYS]
+    return hashlib.sha256(json.dumps(parts, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+
+
+def _xml_rows(raw: bytes):
+    import posixpath
+    with ZipFile(io.BytesIO(raw)) as archive:
+        if sum(i.file_size for i in archive.infolist()) > 700_000_000:
+            raise ValueError("Arquivo descompactado muito grande. Divida o relatório por período.")
+        workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+        rels = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+        links = {r.get("Id"): r.get("Target") for r in rels}
+        props = workbook.find("s:workbookPr", NS)
+        epoch1904 = props is not None and props.get("date1904") in ("1", "true")
+        strings = []
+        if "xl/sharedStrings.xml" in archive.namelist():
+            shared = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+            strings = ["".join(t.text or "" for t in si.findall(".//s:t", NS)) for si in shared]
+        for sheet in workbook.find("s:sheets", NS):
+            rid = sheet.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+            target = links.get(rid)
+            if not target:
+                continue
+            target = target.lstrip("/") if target.startswith("/") else posixpath.normpath("xl/" + target)
+            with archive.open(target) as stream:
+                for _, node in ET.iterparse(stream, events=("end",)):
+                    if node.tag.rsplit("}", 1)[-1] != "row":
+                        continue
+                    cells = {}
+                    for c in node:
+                        address = c.get("r", "")
+                        column = re.sub(r"\d", "", address)
+                        kind = c.get("t")
+                        value = c.findtext("s:v", namespaces=NS)
+                        if kind == "inlineStr":
+                            value = "".join(t.text or "" for t in c.findall(".//s:t", NS))
+                        elif kind == "s" and value is not None:
+                            value = strings[int(value)]
+                        if value not in (None, ""):
+                            cells[column] = value
+                    if cells:
+                        yield sheet.get("name", ""), int(node.get("r", "0")), cells, epoch1904
+                    node.clear()
+
+
+def parse_report(raw: bytes, file_name: str) -> dict:
+    """Reads the ERP's physical AE column; opening-only rows are not movements."""
+    digest = hashlib.sha256(raw).hexdigest()
+    if file_name.lower().endswith(".zip"):
+        with ZipFile(io.BytesIO(raw)) as archive:
+            if sum(i.file_size for i in archive.infolist()) > 700_000_000:
+                raise ValueError("Base histórica muito grande para esta importação.")
+            manifest = json.loads(archive.read("manifesto.json"))
+            if manifest.get("formato") != HISTORY_FORMAT:
+                raise ValueError("O ZIP não corresponde a uma base histórica KARDEX.")
+            rows = [clean_record(json.loads(line)) for line in archive.read("movimentacoes.jsonl").splitlines() if line.strip()]
+        if not rows:
+            raise ValueError("Base histórica sem movimentações.")
+        meta = {"arquivo_nome": file_name, "sha256": digest, "lancamentos": len(rows),
+                "periodo_inicio": manifest.get("periodo_inicio") or min(r["data"] for r in rows),
+                "periodo_fim": manifest.get("periodo_fim") or max(r["data"] for r in rows),
+                "linhas_sem_movimentacao": 0}
+        return {"meta": meta, "rows": rows}
+    rows, errors, skipped = [], [], 0
+    sheets_with_header = set()
+    for sheet, line, cells, epoch1904 in _xml_rows(raw):
+        if normalized(cells.get("A")) in ("CODIGO", "COD. PRODUTO") and normalized(cells.get("M")) == "TES":
+            if "OP" not in normalized(cells.get("AE")) or "DATA" not in normalized(cells.get("K")):
+                raise ValueError("Layout KARDEX diferente: confira Data em K, TES em M e vínculo original em AE.")
+            sheets_with_header.add(sheet)
+            continue
+        if sheet not in sheets_with_header:
+            continue
+        if not cells.get("K") and not cells.get("M"):
+            skipped += 1
+            continue
+        try:
+            row = {name: cells.get(col) for col, name in COLUMNS.items()}
+            row.update({"data": _date(cells.get("K"), epoch1904), "arquivo_origem": file_name,
+                        "arquivo_sha256": digest, "linha_origem": line})
+            rows.append(clean_record(row))
+        except (ValueError, TypeError) as exc:
+            errors.append(f"{sheet}, linha {line}: {exc}")
+    if not sheets_with_header:
+        raise ValueError("Cabeçalho KARDEX não encontrado. Importe o relatório original de movimentação dos produtos.")
+    if errors:
+        raise ValueError(f"{len(errors)} linhas incompletas. O arquivo não foi importado. " + "; ".join(errors[:5]))
+    if not rows:
+        raise ValueError("O relatório não possui movimentações válidas.")
+    start, end = min(r["data"] for r in rows), max(r["data"] for r in rows)
+    # The ERP title has no period; a valid period in its export filename can include non-working days.
+    dates = re.findall(r"(\d{2})[./](\d{2})(?:[./](\d{4}))?", file_name)
+    if len(dates) == 2:
+        try:
+            first = date(int(dates[0][2] or start[:4]), int(dates[0][1]), int(dates[0][0])).isoformat()
+            last = date(int(dates[1][2] or end[:4]), int(dates[1][1]), int(dates[1][0])).isoformat()
+            if first <= start <= end <= last:
+                start, end = first, last
+        except ValueError:
+            pass
+    for row in rows:
+        row["periodo_arquivo_inicio"], row["periodo_arquivo_fim"] = start, end
+    return {"meta": {"arquivo_nome": file_name, "sha256": digest, "lancamentos": len(rows),
+                     "periodo_inicio": start, "periodo_fim": end, "linhas_sem_movimentacao": skipped}, "rows": rows}
+
+
+def pack_import(parsed: dict) -> dict:
+    rows = [clean_record(row) for row in parsed["rows"]]
+    encoded = json.dumps(rows, ensure_ascii=False, separators=(",", ":")).encode()
+    return {"format": FORMAT, "meta": dict(parsed["meta"]), "encoding": "gzip+base64",
+            "payload": base64.b64encode(gzip.compress(encoded, compresslevel=6, mtime=0)).decode("ascii")}
+
+
+def unpack_import(pack: dict) -> dict:
+    if pack.get("format") != FORMAT or pack.get("encoding") != "gzip+base64":
+        raise ValueError("Formato da importação histórica inválido.")
+    raw = gzip.decompress(base64.b64decode(pack["payload"], validate=True))
+    rows = [clean_record(row) for row in json.loads(raw)]
+    if len(rows) != int(pack["meta"]["lancamentos"]):
+        raise ValueError("Contagem de registros diferente da importação salva.")
+    return {"meta": pack["meta"], "rows": rows}
+
+
+def merge_imports(imports: list[dict]) -> tuple[list[dict], int]:
+    """Keep max multiplicity across reports, never collapse repeated rows inside one report."""
+    merged, seen, duplicates = [], set(), 0
+    for imported in imports:
+        occurrences = Counter()
+        for raw in imported["rows"]:
+            row = clean_record(raw)
+            signature = fingerprint(row)
+            occurrences[signature] += 1
+            identity = f"{signature}:{occurrences[signature]}"
+            if identity in seen:
+                duplicates += 1
+                continue
+            seen.add(identity)
+            row["id_registro"] = hashlib.sha256(identity.encode()).hexdigest()[:24]
+            merged.append(row)
+    return merged, duplicates
+
+
+def classify(row: dict, config: dict) -> dict:
+    result = dict(row)
+    code, ae = row["tes"], row["ae_original"].strip()
+    entry = config["tes"].get(code, {})
+    description = entry.get("descricao") or f"TES {code} sem descrição cadastrada"
+    base = entry.get("grupo") or description
+    group, subgroup, rule = base, base, "CADASTRO_TES"
+    op = re.fullmatch(r"OP\s*(\d+)", ae, re.I)
+    cc = re.fullmatch(r"CC\s*(\d+)", ae, re.I)
+    cc_number = cc.group(1) if cc else ""
+    material = row["codigo"] in config["_closing_codes"] or normalized(row["descricao"]).startswith(("BARRA DE COBRE ", "CHAPA "))
+    reason = f"TES {code} vinculada a {base} no cadastro confirmado."
+    provisional = bool(entry.get("provisorio", not bool(entry.get("grupo"))))
+    if code in ("020", "520") and material:
+        group, subgroup, rule = FLOW, CLOSING, CLOSING_RULE
+        reason = f"TES {code} com chapa ou barra de cobre: ajuste de fechamento de chapas e barras."
+    elif code == "520":
+        if op:
+            group, subgroup, rule = FLOW, "BAIXA DE OP MANUAL", "520_OP_MANUAL"
+            reason = "TES 520 com OP identificada na AE original: baixa manual de OP."
+        elif cc_number and cc_number != "600307":
+            group, subgroup, rule = FLOW, "ACERTO GERENCIAL", "520_CC_GERENCIAL"
+            reason = f"TES 520 com CC {cc_number}, diferente de 600307: acerto gerencial."
+        elif cc_number == "600307" and (row["tipo"] in ("II", "MC") or row["codigo"] in config["_h001_codes"]):
+            group, subgroup, rule = FLOW, "MATERIAIS DE CONSUMO", "520_CC_CONSUMO"
+            reason = "TES 520 no CC 600307 com categoria II/MC ou material da lista H0001 de TC/TP."
+        else:
+            group, subgroup, rule = ADJUSTMENT, "AJUSTE DE ESTOQUE A VALIDAR", "520_BASE_A_VALIDAR"
+            reason = "TES 520 sem enquadramento nas condições de fluxo já confirmadas."
+    elif base == ADJUSTMENT:
+        subgroup, rule = "AJUSTE DE ESTOQUE A VALIDAR", f"{code}_BASE_A_VALIDAR"
+        reason = f"TES {code} no grupo de ajuste; aguarda refinamento das condições."
+    if group == ADJUSTMENT and row["tipo"] in ("PA", "PI"):
+        group, subgroup, rule = PRODUCTION, PRODUCTION, "AJUSTE_PA_PI_PRODUCAO_INTERNA"
+        reason = f"Movimento que permanecia em Ajuste, com categoria {row['tipo']}: produção interna."
+    if provisional:
+        reason = f"TES {code} sem grupo confirmado: a descrição da TES é usada como grupo provisório."
+    result.update({"descricao_tes": description, "grupo_analise": group, "subgrupo_analise": subgroup,
+                   "grupo_provisorio": provisional, "regra_classificacao": rule, "motivo_classificacao": reason,
+                   "op_identificada": "OP" + op.group(1) if op else "", "cc_identificado": cc_number,
+                   "tipo_vinculo_ae": "OP" if op else "CC" if ae.upper().startswith("CC") else "OUTRO",
+                   "material_h001": row["codigo"] in config["_h001_codes"],
+                   "enderecamento_compensado": False, "par_enderecamento": "", "enderecamento_candidato": False,
+                   "versao_regra": config["versao"]})
+    return result
+
+
+def _direction(row):
+    incoming = decimal(row.get("qtd_entrada")) != 0 or decimal(row.get("valor_entrada")) != 0
+    outgoing = decimal(row.get("qtd_saida")) != 0 or decimal(row.get("valor_saida")) != 0
+    return "entrada" if incoming and not outgoing else "saida" if outgoing and not incoming else ""
+
+
+def match_addresses(records: list[dict]) -> list[dict]:
+    waiting = defaultdict(deque)
+    candidates, pairs = defaultdict(lambda: {"entrada": [], "saida": []}), []
+    for row in records:
+        if row["tes"] not in ("499", "999"):
+            continue
+        direction = _direction(row)
+        if not direction:
+            continue
+        common = tuple(row[k] for k in ("codigo", "armazem", "um", "documento", "data"))
+        qty = decimal(row.get("qtd_" + direction)); amount = decimal(row.get("valor_" + direction))
+        opposite = "saida" if direction == "entrada" else "entrada"
+        other_tes = "999" if row["tes"] == "499" else "499"
+        other_key = common + (qty, amount, other_tes, opposite)
+        if waiting[other_key]:
+            other = waiting[other_key].popleft()
+            pid = "END-" + hashlib.sha256((row["id_registro"] + other["id_registro"]).encode()).hexdigest()[:12]
+            for r in (row, other):
+                r["enderecamento_compensado"] = True; r["par_enderecamento"] = pid
+                r["motivo_enderecamento"] = "Par 499/999 com produto, armazém, documento, data, quantidade e valor coincidentes; OP não integra a chave."
+        else:
+            waiting[common + (qty, amount, row["tes"], direction)].append(row)
+    for queue in waiting.values():
+        for row in queue:
+            if row["enderecamento_compensado"]:
+                continue
+            direction = _direction(row)
+            key = tuple(row[k] for k in ("codigo", "armazem", "um", "documento", "data")) + (decimal(row.get("valor_" + direction)),)
+            candidates[key][direction].append(row)
+    for sides in candidates.values():
+        if len(sides["entrada"]) != 1 or len(sides["saida"]) != 1:
+            continue
+        a, b = sides["entrada"][0], sides["saida"][0]
+        if a["tes"] == b["tes"]:
+            continue
+        a["enderecamento_candidato"] = b["enderecamento_candidato"] = True
+        pairs.append({"codigo": a["codigo"], "data": a["data"], "documento": a["documento"], "armazem": a["armazem"],
+                      "um": a["um"], "quantidade_entrada": str(decimal(a["qtd_entrada"])),
+                      "quantidade_saida": str(decimal(b["qtd_saida"])),
+                      "diferenca": str(decimal(a["qtd_entrada"]) - decimal(b["qtd_saida"])),
+                      "entrada_id": a["id_registro"], "saida_id": b["id_registro"]})
+    return pairs
+
+
+def build_model(imports: list[dict], config: dict | None = None) -> dict:
+    cfg = dict(config or rules())
+    cfg["_closing_codes"] = {r["codigo"] for r in cfg["materiais_fechamento"]}
+    cfg["_h001_codes"] = set(cfg["materiais_h001"])
+    originals, duplicates = merge_imports(imports)
+    records = [classify(r, cfg) for r in originals]
+    address_pairs = match_addresses(records)
+    frame = pd.DataFrame(records)
+    if not frame.empty:
+        frame["competencia"] = frame["data"].str[:7]
+        for key in NUMERIC:
+            frame[key] = frame[key].map(lambda v: float(decimal(v)))
+        frame["liquido_valor"] = frame["valor_entrada"] - frame["valor_saida"]
+        frame["_search"] = (frame["codigo"] + " " + frame["descricao"] + " " + frame["documento"] + " " + frame["ae_original"]).map(normalized)
+    token = hashlib.sha256((cfg["versao"] + "|" + "|".join(i["meta"]["sha256"] for i in imports)).encode()).hexdigest()
+    return {"frame": frame, "rows": records, "raw_rows": originals, "duplicates": duplicates,
+            "pares_enderecamento": address_pairs, "imports": [i["meta"] for i in imports], "versao": cfg["versao"], "token": token}
+
+
+def effective(frame: pd.DataFrame) -> pd.DataFrame:
+    return frame.loc[~frame["enderecamento_compensado"]] if not frame.empty else frame
+
+
+def summarize(frame: pd.DataFrame, by: list[str]) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame(columns=by + ["lancamentos", "produtos", "tes_distintas", "valor_entrada", "valor_saida", "liquido_valor"])
+    grouped = frame.groupby(by, dropna=False, sort=False).agg(
+        lancamentos=("id_registro", "size"), produtos=("codigo", "nunique"), tes_distintas=("tes", "nunique"),
+        valor_entrada=("valor_entrada", "sum"), valor_saida=("valor_saida", "sum"), liquido_valor=("liquido_valor", "sum"),
+    ).reset_index()
+    return grouped
+
+
+def summarize_ops(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame()
+    linked = frame.loc[frame["op_identificada"] != ""].copy()
+    if linked.empty:
+        return pd.DataFrame()
+    linked["entrada_efetiva"] = linked["valor_entrada"].where(~linked["enderecamento_compensado"], 0)
+    linked["saida_efetiva"] = linked["valor_saida"].where(~linked["enderecamento_compensado"], 0)
+    return linked.groupby("op_identificada").agg(
+        lancamentos=("id_registro", "size"), produtos=("codigo", "nunique"), documentos=("documento", "nunique"),
+        primeira_data=("data", "min"), ultima_data=("data", "max"), enderecamentos=("enderecamento_compensado", "sum"),
+        valor_entrada=("entrada_efetiva", "sum"), valor_saida=("saida_efetiva", "sum"),
+    ).reset_index().sort_values("valor_saida", ascending=False, kind="stable").reset_index(drop=True)
+
+
+EXPORT_HEADERS = ["Código", "Produto", "UM", "Grupo", "TES", "CF original", "Armazém", "Data", "Documento",
+                  "Quantidade entrada", "Valor entrada", "Quantidade saída", "Valor saída", "Tipo vínculo AE", "Arquivo origem",
+                  "Linha origem", "Endereço", "Subgrupo", "Motivo da classificação", "Categoria", "CC", "Material H0001",
+                  "", "", "", "", "", "", "", "", "AE original"]
+
+
+def ledger_export(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame(columns=EXPORT_HEADERS)
+    data = {
+        "Código": frame["codigo"], "Produto": frame["descricao"], "UM": frame["um"], "Grupo": frame["grupo_analise"],
+        "TES": frame["tes"], "CF original": frame["cf"], "Armazém": frame["armazem"], "Data": pd.to_datetime(frame["data"]).dt.date,
+        "Documento": frame["documento"], "Quantidade entrada": frame["qtd_entrada"], "Valor entrada": frame["valor_entrada"],
+        "Quantidade saída": frame["qtd_saida"], "Valor saída": frame["valor_saida"], "Tipo vínculo AE": frame["tipo_vinculo_ae"],
+        "Arquivo origem": frame["arquivo_origem"], "Linha origem": frame["linha_origem"], "Endereço": frame["endereco_relatorio"],
+        "Subgrupo": frame["subgrupo_analise"], "Motivo da classificação": frame["motivo_classificacao"], "Categoria": frame["tipo"],
+        "CC": frame["cc_identificado"], "Material H0001": frame["material_h001"].map({True: "SIM", False: "NÃO"}),
+    }
+    result = pd.DataFrame(data)
+    for i in range(8):
+        result[f"_reserva_{i}"] = ""
+    result["AE original"] = frame["ae_original"]
+    result.columns = EXPORT_HEADERS
+    return result.reset_index(drop=True)
+
+
+def export_excel(frame: pd.DataFrame) -> bytes:
+    """Application export: native numeric dates and text identifiers, including physical AE."""
+    from openpyxl import Workbook
+    from openpyxl.cell import WriteOnlyCell
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    wb = Workbook(write_only=True)
+    active = effective(frame)
+    op_summary = summarize_ops(frame)
+    for key in ("primeira_data", "ultima_data"):
+        if key in op_summary.columns:
+            op_summary[key] = pd.to_datetime(op_summary[key]).dt.date
+    detail = summarize(active, ["tes", "descricao_tes", "grupo_analise", "subgrupo_analise"])
+    detail = detail.drop(columns="tes_distintas")
+    names = {"grupo_analise": "Grupo", "tes": "TES", "descricao_tes": "Descrição principal", "subgrupo_analise": "Subgrupo / condição",
+             "lancamentos": "Movimentos", "produtos": "Produtos", "tes_distintas": "TES distintas", "competencia": "Competência",
+             "valor_entrada": "Entrada (R$)", "valor_saida": "Saída (R$)", "liquido_valor": "Variação (R$)",
+             "op_identificada": "OP", "documentos": "Documentos", "primeira_data": "Primeiro movimento", "ultima_data": "Último movimento",
+             "enderecamentos": "Movimentos de endereço", "regra_classificacao": "Regra"}
+    classification = summarize(active, ["grupo_analise", "subgrupo_analise", "motivo_classificacao"])
+    classification = classification.drop(columns="tes_distintas").rename(columns={"motivo_classificacao": "Motivo da classificação"})
+    sections = [
+        ("Por grupo", summarize(active, ["grupo_analise"])),
+        ("Por TES", detail),
+        ("Mensal", summarize(active, ["competencia"])),
+        ("Por OP", op_summary),
+        ("Movimentações", ledger_export(frame)),
+        ("Classificação", classification),
+    ]
+    for name, data in sections:
+        if name != "Movimentações":
+            data = data.rename(columns=names)
+        sheet = wb.create_sheet(name)
+        sheet.freeze_panes = "B2"
+        for i, col in enumerate(data.columns, 1):
+            sheet.column_dimensions[get_column_letter(i)].width = 18 if i > 1 else 24
+        if name == "Movimentações":
+            sheet.column_dimensions["B"].width = 65
+            sheet.column_dimensions["D"].width = 30
+            sheet.column_dimensions["R"].width = 48
+            sheet.column_dimensions["S"].width = 40
+            sheet.column_dimensions["AE"].width = 24
+            for i in range(23, 31):
+                sheet.column_dimensions[get_column_letter(i)].hidden = True
+        header = []
+        for col in data.columns:
+            cell = WriteOnlyCell(sheet, str(col)); cell.data_type = "s"
+            cell.fill = PatternFill("solid", fgColor="111827"); cell.font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+            cell.alignment = Alignment(wrap_text=True, vertical="center")
+            header.append(cell)
+        sheet.append(header); sheet.row_dimensions[1].height = 32
+        for row in data.itertuples(index=False, name=None):
+            cells = []
+            for column_index, item in enumerate(row, 1):
+                if pd.isna(item):
+                    item = None
+                cell = WriteOnlyCell(sheet, item)
+                if isinstance(item, str):
+                    cell.data_type = "s"  # OP/SKU/AE and user text are never interpreted as formulas
+                elif isinstance(item, (date, datetime)):
+                    cell.number_format = "dd/mm/yyyy"
+                elif isinstance(item, float):
+                    cell.number_format = ('#,##0.000###;[Red](#,##0.000###)' if name == "Movimentações" and column_index in (10, 12)
+                                          else '#,##0.00;[Red](#,##0.00)')
+                if name == "Movimentações" and column_index in (2, 4, 18, 19):
+                    cell.alignment = Alignment(wrap_text=True, vertical="top")
+                cells.append(cell)
+            sheet.append(cells)
+        if len(data.columns):
+            sheet.auto_filter.ref = f"A1:{get_column_letter(len(data.columns))}{len(data)+1}"
+    buffer = io.BytesIO(); wb.save(buffer)
+    return buffer.getvalue()
+
+
+def export_history(model: dict) -> bytes:
+    rows = model["raw_rows"]
+    manifest = {"formato": HISTORY_FORMAT, "versao_regras": model["versao"], "lancamentos": len(rows),
+                "periodo_inicio": min(r["data"] for r in rows), "periodo_fim": max(r["data"] for r in rows),
+                "fontes": model["imports"]}
+    output = io.BytesIO()
+    with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("manifesto.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+        archive.writestr("movimentacoes.jsonl", "".join(json.dumps(r, ensure_ascii=False, separators=(",", ":"))+"\n" for r in rows))
+        archive.writestr("regras_classificacao.json", RULES_FILE.read_bytes())
+    return output.getvalue()

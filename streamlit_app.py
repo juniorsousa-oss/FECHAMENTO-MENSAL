@@ -5069,19 +5069,9 @@ elif page == "Conferência de baixas":
 
 
 elif page == "Análise de movimentações":
-    st.markdown(
-        '<div class="section-title">Análise de movimentações</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        """
-        <div class="module-hero">
-            <strong>As movimentações ainda não foram definidas.</strong>
-            <span>Por enquanto, este módulo permanece sem cálculos para não assumir regras antes da validação do processo.</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    from movement_analysis_ui import render_movement_analysis
+
+    render_movement_analysis()
 
 
 else:

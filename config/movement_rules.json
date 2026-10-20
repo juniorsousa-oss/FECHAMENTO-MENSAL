@@ -1,0 +1,1718 @@
+{
+  "versao": "2026-10-20.1",
+  "atualizado_em": "2026-10-20",
+  "tes": {
+    "004": {
+      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO - NAO CONT",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "005": {
+      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO - NAO CONT",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "010": {
+      "descricao": "MOV PRODUCAO MES PA",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "020": {
+      "descricao": "DEVOLUCAO TOTVS",
+      "grupo": "AJUSTE DE ESTOQUE",
+      "detalhe": "AJUSTE DE ESTOQUE (ERROS DE SALDO)",
+      "provisorio": false
+    },
+    "030": {
+      "descricao": "ENTR CUSTO E QTD ZER",
+      "grupo": "FLUXO DE ESTOQUE",
+      "detalhe": "FLUXO DE ESTOQUE (RP, TCTP, CHAPAS, BARRAS, ACERTOS GR, MELHORIAS, CUSTO, CONSUMO DE OP E II)",
+      "provisorio": false
+    },
+    "040": {
+      "descricao": "DEVOLUCAO MES",
+      "grupo": "FLUXO DE ESTOQUE",
+      "detalhe": "FLUXO DE ESTOQUE (RP, TCTP, CHAPAS, BARRAS, ACERTOS GR, MELHORIAS, CUSTO, CONSUMO DE OP E II)",
+      "provisorio": false
+    },
+    "078": {
+      "descricao": "AQUISICAO SERVICO DE TRANSPORTE IND",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "112": {
+      "descricao": "COMPRA ORIGINADA DE ENC. P/ RECEB. FUTUR",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "119": {
+      "descricao": "COMPRA P/ USO CONSUMO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "120": {
+      "descricao": "COMPRA P/ USO CONSUMO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "121": {
+      "descricao": "COMPRA P/ USO CONSUMO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "122": {
+      "descricao": "COMPRA P/ USO CONSUMO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "123": {
+      "descricao": "COMPRA P/ USO CONSUMO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "124": {
+      "descricao": "COMPRA P/ USO CONSUMO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "125": {
+      "descricao": "COMPRA P/ USO CONSUMO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "126": {
+      "descricao": "COMPRA P/ USO CONSUMO C/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "127": {
+      "descricao": "COMPRA COMBUSTIVEL",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "128": {
+      "descricao": "COMPRA P/ CONSUMO S/ST COM ICMS COM IPI NA BASE ICMS",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "129": {
+      "descricao": "COMPRA P/ USO CONSUMO C/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "133": {
+      "descricao": "COMPRA C/ ENTREGA FUTURA",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "134": {
+      "descricao": "COMPRA P/ USO CONSUMO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "135": {
+      "descricao": "COMPRA ORIGINADA DE ENC. P/ RECEB. FUTUR",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "136": {
+      "descricao": "COMPRA ORIGINADA DE ENC. P/ RECEB. FUTUR",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "137": {
+      "descricao": "COMPRA P/ USO CONSUMO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "145": {
+      "descricao": "COMPRA P/ USO CONSUMO ICMS RETIDO",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "146": {
+      "descricao": "COMPRA P/ USO CONSUMO ICMS RETIDO IPI NA BC",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "149": {
+      "descricao": "RETORNO DE MERCADORIA REMETIDO P/ CONSERTO",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "150": {
+      "descricao": "ENTRADA DE MERCADORIA PARA CONSERTO (INATIVA)",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "151": {
+      "descricao": "RETORNO DE MERCADORIA REMETIDO P/ CONSERTO",
+      "grupo": "RETORNO DE MERCADORIA REMETIDO P/ CONSERTO",
+      "detalhe": "RETORNO DE MERCADORIA REMETIDO P/ CONSERTO",
+      "provisorio": true
+    },
+    "152": {
+      "descricao": "ENTRADA DE MERCADORIA PARA CONSERTO S/MOV EST",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "162": {
+      "descricao": "DEVOLUCAO DE COMPRA",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "163": {
+      "descricao": "ENTRADA PRODUTO INDUSTRIALIZADO POR TERCEIROS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "164": {
+      "descricao": "ESTORNO DE DEVOLUCAO",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "165": {
+      "descricao": "ESTORNO DE DEVOLUCAO",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "166": {
+      "descricao": "OUTRAS ENTRADAS NAO ESPECIFICADAS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "168": {
+      "descricao": "ENTRADA PRODUTO INDUSTRIALIZADO POR TERCEIROS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "169": {
+      "descricao": "ENTRADA PARA INDUSTRIALIZACAO POR CONTA E ORDEM DO ADQUIRENT",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "170": {
+      "descricao": "RETORNO DE MERC REMETIDA P/ IND POR ENC NAO UTILIZADA PROCES",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "171": {
+      "descricao": "RETORNO DE MERCADORIA REMETIDA P/ INDUSTRIALIZACAO POR ENCOM",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "173": {
+      "descricao": "ENTRADA DE INSUMOS REMETIDOS SOB ENCOMENDA PARA INDUSTRIALIZ",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "174": {
+      "descricao": "OUTRAS ENTRADAS NAO ESPECIFICADAS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "175": {
+      "descricao": "OUTRAS ENTRADAS NAO ESPECIFICADAS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "177": {
+      "descricao": "ENTRADA DE INSUMOS REMETIDOS SOB ENCOMENDA PARA INDUSTRIALIZ",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "179": {
+      "descricao": "OUTRAS ENTRADAS NAO ESPECIFICADAS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "180": {
+      "descricao": "ENTRADA DE DOCUMENTO FORA DO SISTEMA 1407",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "181": {
+      "descricao": "OUTRAS ENTRADAS NAO ESPECIFICADAS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "182": {
+      "descricao": "OUTRAS ENTRADAS NAO ESPECIFICADAS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "183": {
+      "descricao": "RETORNO DE MERCADORIA OU BEM REMETIDO PARA DEMONSTRACAO",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "184": {
+      "descricao": "ENTRADA PRODUTO INDUSTRIALIZADO POR TERCEIROS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "185": {
+      "descricao": "OUTRAS ENTRADAS NAO ESPECIFICADAS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "186": {
+      "descricao": "OUTRAS ENTRADAS NAO ESPECIFICADAS",
+      "grupo": "OUTRAS ENTRADAS NAO ESPECIFICADAS",
+      "detalhe": "OUTRAS ENTRADAS NAO ESPECIFICADAS",
+      "provisorio": true
+    },
+    "187": {
+      "descricao": "ENTRADA DE MERCADORIA P/ DEMONSTRACAO",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "188": {
+      "descricao": "ENTRADA PRODUTO INDUSTRIALIZADO POR TERCEIROS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "189": {
+      "descricao": "REMESSA DE MERCADORIA INDUSTRIALIZADA",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "190": {
+      "descricao": "ENTRADA PRODUTO INDUSTRIALIZADO POR TERCEIROS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "192": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "193": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "194": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "197": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "200": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "201": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO C/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "202": {
+      "descricao": "COMPRA C/ ST P/ REVENDA",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "204": {
+      "descricao": "COMPRA C/ ST P/ REVENDA",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "205": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "206": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO C/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "207": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "208": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "209": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST IMPORTACAO",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "210": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "211": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "212": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "213": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "214": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "215": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO C/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "216": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "217": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "218": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "219": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST COM ICMS E COM IPI",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "220": {
+      "descricao": "COMPRA DE BEM PARA O ATIVO IMOBILIZADO",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "221": {
+      "descricao": "ENTRADA BONIFICACAO, DOACAO OU BRINDES",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "222": {
+      "descricao": "OUTRAS ENTRADAS NAO ESPECIFICADAS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "223": {
+      "descricao": "ENTRADA BONIFICACAO, DOACAO OU BRINDES",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "224": {
+      "descricao": "ENTRADA BONIFICACAO, DOACAO OU BRINDES",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "225": {
+      "descricao": "ENTRADA BONIFICACAO/DOACAO E BRINDE",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "226": {
+      "descricao": "ENTRADA DE AMOSTRA GRATIS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "227": {
+      "descricao": "ENTRADA DE AMOSTRA GRATIS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "228": {
+      "descricao": "ENTRADA DE AMOSTRA GRATIS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "229": {
+      "descricao": "RETORNO DE MERCADORIA OU BEM REMETIDO P/ EXPOSICAO OU FEIRA",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "230": {
+      "descricao": "ENTRADA DE AMOSTRA GRATIS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "231": {
+      "descricao": "ENTRADA DE AMOSTRA GRATIS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "232": {
+      "descricao": "ENTRADA DE AMOSTRA GRATIS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "233": {
+      "descricao": "ENTRADA DE REMESSA EM COMODATO",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "234": {
+      "descricao": "ENTRADA A TITULO DE FATURAMENTO P/ ENTREGA FUTURA",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "235": {
+      "descricao": "RETORNO MERC. REMETIDA IND. CONTA ORDEM QUANDO NAO TRANSITAR",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "236": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "237": {
+      "descricao": "ENTRADA DE AMOSTRA GRATIS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "238": {
+      "descricao": "ENTRADA BONIFICACAO, DOACAO OU BRINDES",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "239": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "300": {
+      "descricao": "AQUISICAO SERVICO DE TRANSPORTE COMERCIAL",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "301": {
+      "descricao": "COMPRA EPI S/ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "302": {
+      "descricao": "COMPRA EPI C/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "303": {
+      "descricao": "COMPRA EPI S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "304": {
+      "descricao": "COMPRA EPI S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "308": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "309": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO C/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "310": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "311": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "312": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO C/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "313": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "314": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "315": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "316": {
+      "descricao": "AQUISICAO SERVICO DE TRANSPORTE IND",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "317": {
+      "descricao": "AQUISICAO SERVICO DE TRANSPORTE IND",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "318": {
+      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "319": {
+      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "320": {
+      "descricao": "COMPRA ENERGIA ELETRICA IND",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "321": {
+      "descricao": "ENTRADA NOTA FISCAL DE SERVICO",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "322": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO C/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "323": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO C/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "324": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "325": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "326": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "327": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "328": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "329": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO C/ ST E IPI",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "330": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "333": {
+      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "334": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "335": {
+      "descricao": "ESTORNO DE VENDA ENTREGA FUTURA",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "336": {
+      "descricao": "ESTORNO DE VENDA ENTREGA FUTURA",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "337": {
+      "descricao": "COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "426": {
+      "descricao": "COMPLEMENTO DE IPI",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "427": {
+      "descricao": "COMPLEMENTO DE ICMS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "481": {
+      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO - CONTRIBU",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "482": {
+      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO - CONTRIBU",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "484": {
+      "descricao": "OUTRAS ENTRADAS",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "486": {
+      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO - CONTRIBU",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "487": {
+      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO - CONTRIBU",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "488": {
+      "descricao": "ENTRADA DE BEM DO ATIVO IMOBILIZADO DE TERCEIRO PARA LOCACAO",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "490": {
+      "descricao": "ENTRADA NOTA FISCAL DE SERVICO",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "491": {
+      "descricao": "ENTRADA NOTA FISCAL DE SERVICO",
+      "grupo": "ENTRADA NOTA FISCAL DE SERVICO",
+      "detalhe": "ENTRADA NOTA FISCAL DE SERVICO",
+      "provisorio": true
+    },
+    "492": {
+      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO - CONTRIBU",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "493": {
+      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO - CONTRIBU",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "494": {
+      "descricao": "DEVOLUCAO DE VENDA DE MERCADORIAS ADQ TERCEIROS C/ST",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "495": {
+      "descricao": "ENTRADA ATRAVES RECIBO GERA FINANCEIRO",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "496": {
+      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO - CONTRIBU",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "497": {
+      "descricao": "DEVOLUCAO DE VENDA DE MERCADORIAS ADQ TERCEIROS S/ST",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "499": {
+      "descricao": "ENDEREÇAMENTO",
+      "grupo": "ENDEREÇAMENTO",
+      "detalhe": "ENDEREÇAMENTO",
+      "provisorio": true
+    },
+    "502": {
+      "descricao": "VENDA PRODUCAO DO ESTABELECIMENTO EM OPERACAO C/ ST",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "504": {
+      "descricao": "VENDA MERC ADQ TERCEIROS C/ST (ASTEC)",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "506": {
+      "descricao": "VENDA MERC ADQ TERCEIROS C/ST",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "507": {
+      "descricao": "FATURAMENTO DE IND. EFETUADA P/ OUTRA EMPRESA",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "508": {
+      "descricao": "VENDA PRODUCAO DO ESTABELECIMENTO P/ NAO CONTRIBUINTE",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "509": {
+      "descricao": "VENDA PRODUCAO DO ESTABELECIMENTO P/ NAO CONTRIBUINTE",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "510": {
+      "descricao": "VENDA PRODUCAO POR CONTA E ORDEM DO ADQUIR. EM VENDA A ORDEM",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "511": {
+      "descricao": "FATURAMENTO DE IND. EFETUADA P/ OUTRA EMPRESA NAO TRANSITAR",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "512": {
+      "descricao": "VENDA MERC ADQ TERCEIROS S/ST P/ CONS. FINAL DENTRO ESTADO",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "513": {
+      "descricao": "VENDA PRODUCAO DO ESTABELECIMENTO",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "514": {
+      "descricao": "VENDA PRODUCAO DO ESTABELECIMENTO",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "515": {
+      "descricao": "VENDA PRODUCAO DO ESTABELECIMENTO",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "516": {
+      "descricao": "VENDA PRODUCAO DO ESTABELECIMENTO",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "517": {
+      "descricao": "VENDA PRODUCAO POR CONTA E ORDEM DO ADQUIR. EM VENDA A ORDEM",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "518": {
+      "descricao": "VENDA PRODUCAO POR CONTA E ORDEM DO ADQUIR. EM VENDA A ORDEM",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "519": {
+      "descricao": "TES - ESPELHO DA NOTA",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "520": {
+      "descricao": "BAIXA SA TOTVS",
+      "grupo": "AJUSTE DE ESTOQUE",
+      "detalhe": "AJUSTE DE ESTOQUE (ERROS DE SALDO)",
+      "provisorio": false
+    },
+    "526": {
+      "descricao": "DEVOLUCAO DE COMPRA P/ INDUSTRIALIZACAO C/ ST",
+      "grupo": "DEVOLUCAO DE COMPRA P/ INDUSTRIALIZACAO C/ ST",
+      "detalhe": "DEVOLUCAO DE COMPRA P/ INDUSTRIALIZACAO C/ ST",
+      "provisorio": true
+    },
+    "540": {
+      "descricao": "BAIX CUSTO E QTD ZER",
+      "grupo": "FLUXO DE ESTOQUE",
+      "detalhe": "FLUXO DE ESTOQUE (RP, TCTP, CHAPAS, BARRAS, ACERTOS GR, MELHORIAS, CUSTO, CONSUMO DE OP E II)",
+      "provisorio": false
+    },
+    "547": {
+      "descricao": "TRANSFERÊNCIA ASTEC",
+      "grupo": "TRANSFERÊNCIA DE ARMAZÉM",
+      "detalhe": "TRANSFERÊNCIA DE ARMAZÉN (ASTEC, ENGENHARIA, SERVICE)",
+      "provisorio": false
+    },
+    "550": {
+      "descricao": "BAIXA PRODUCAO MES",
+      "grupo": "FLUXO DE ESTOQUE",
+      "detalhe": "FLUXO DE ESTOQUE (RP, TCTP, CHAPAS, BARRAS, ACERTOS GR, MELHORIAS, CUSTO, CONSUMO DE OP E II)",
+      "provisorio": false
+    },
+    "612": {
+      "descricao": "TRANSFERÊNCIA ARMAZÉM",
+      "grupo": "TRANSFERÊNCIA ARMAZÉM",
+      "detalhe": "TRANSFERÊNCIA ARMAZÉM",
+      "provisorio": true
+    },
+    "699": {
+      "descricao": "VENDA DE MP",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "709": {
+      "descricao": "OUTRAS SAIDAS",
+      "grupo": "OUTRAS SAIDAS",
+      "detalhe": "OUTRAS SAIDAS",
+      "provisorio": true
+    },
+    "711": {
+      "descricao": "DEVOLUCAO DE COMPRA",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "712": {
+      "descricao": "DEVOLUCAO DE COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "713": {
+      "descricao": "DEVOLUCAO DE COMPRA P/ INDUSTRIALIZACAO C/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "714": {
+      "descricao": "DEVOLUCAO DE COMPRA",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "715": {
+      "descricao": "DEVOLUCAO DE COMPRA P/ INDUSTRIALIZACAO S/ ST",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
+      "provisorio": false
+    },
+    "810": {
+      "descricao": "VENDA PRODUCAO DO ESTABELECIMENTO - CONTRIBUINTE",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "811": {
+      "descricao": "VENDA PRODUCAO DO ESTABELECIMENTO REVENDA",
+      "grupo": "VENDA PRODUCAO DO ESTABELECIMENTO REVENDA",
+      "detalhe": "VENDA PRODUCAO DO ESTABELECIMENTO REVENDA",
+      "provisorio": true
+    },
+    "999": {
+      "descricao": "ENDEREÇAMENTO",
+      "grupo": "FLUXO DE ESTOQUE",
+      "detalhe": "FLUXO DE ESTOQUE (RP, TCTP, CHAPAS, BARRAS, ACERTOS GR, MELHORIAS, CUSTO, CONSUMO DE OP E II)",
+      "provisorio": false
+    }
+  },
+  "ordem_grupos": [
+    "COMPRAS",
+    "VENDAS",
+    "AJUSTE DE ESTOQUE",
+    "FLUXO DE ESTOQUE",
+    "PRODUÇÃO INTERNA",
+    "TRANSFERÊNCIA DE ARMAZÉM",
+    "RETORNO DE MERCADORIA REMETIDO P/ CONSERTO",
+    "OUTRAS ENTRADAS NAO ESPECIFICADAS",
+    "ENTRADA NOTA FISCAL DE SERVICO",
+    "ENDEREÇAMENTO",
+    "DEVOLUCAO DE COMPRA P/ INDUSTRIALIZACAO C/ ST",
+    "TRANSFERÊNCIA ARMAZÉM",
+    "OUTRAS SAIDAS",
+    "VENDA PRODUCAO DO ESTABELECIMENTO REVENDA"
+  ],
+  "grupos_confirmados": [
+    "COMPRAS",
+    "VENDAS",
+    "AJUSTE DE ESTOQUE",
+    "FLUXO DE ESTOQUE",
+    "PRODUÇÃO INTERNA",
+    "TRANSFERÊNCIA DE ARMAZÉM"
+  ],
+  "materiais_h001": [
+    "00000395",
+    "00000396",
+    "00000397",
+    "00000398",
+    "00000399",
+    "00000400",
+    "00000401",
+    "00000402",
+    "00000403",
+    "00000404",
+    "00000405",
+    "00000406",
+    "00000409",
+    "00000410",
+    "00000412",
+    "00000414",
+    "00000419",
+    "00000421",
+    "00000422",
+    "00010326",
+    "00010327",
+    "00010328",
+    "00010329",
+    "00010330",
+    "00020302",
+    "00020303",
+    "00020305",
+    "00020307",
+    "00020372",
+    "00051274",
+    "00051278",
+    "00051279",
+    "00051283",
+    "00051305",
+    "00051306",
+    "00051307",
+    "00051316",
+    "00051318",
+    "00051331",
+    "00051333",
+    "00051335",
+    "00060741",
+    "00100047",
+    "00100769",
+    "00100770",
+    "00100772",
+    "00100774",
+    "00100777",
+    "00100782",
+    "00100787",
+    "00100788",
+    "00100789",
+    "00100790",
+    "00100791",
+    "00100799",
+    "00100800",
+    "00100801",
+    "00100802",
+    "00100803",
+    "00100804",
+    "00100805",
+    "00100806",
+    "00100808",
+    "00100827",
+    "00100828",
+    "00100858",
+    "00100859",
+    "00100868",
+    "00100892",
+    "00140003",
+    "00140011",
+    "00140013",
+    "00140014",
+    "00140016",
+    "00140017",
+    "00140018",
+    "00140019",
+    "00140020",
+    "00140021",
+    "00140022",
+    "00140023",
+    "00140025",
+    "00140026",
+    "00140027",
+    "00140028",
+    "00140029",
+    "00140030",
+    "00140035",
+    "00140036",
+    "00140037",
+    "00140038",
+    "00140039",
+    "00140040",
+    "00140041",
+    "00140043",
+    "00140044",
+    "00140045",
+    "00140046",
+    "00140048",
+    "00140049",
+    "00140050",
+    "00140051",
+    "00140052",
+    "01000086",
+    "01050095",
+    "03010004",
+    "03010148",
+    "03010149",
+    "04000137",
+    "04010007",
+    "04010727",
+    "04010753",
+    "04010754",
+    "04010755",
+    "04010756",
+    "04010757",
+    "04010758",
+    "04010761",
+    "04010762",
+    "04010763",
+    "04010764",
+    "04010823",
+    "04020158",
+    "05020003",
+    "06000175",
+    "06080197",
+    "70010025",
+    "70010026",
+    "70010027",
+    "70010028",
+    "70010029",
+    "70010031",
+    "70010032",
+    "70010033",
+    "70010034",
+    "70010035",
+    "70010036",
+    "70010037",
+    "70010038",
+    "70010039"
+  ],
+  "materiais_fechamento": [
+    {
+      "codigo": "00100001",
+      "descricao": "CHAPA POLICARBONATO COMPACTO CRISTAL 3X1000X2050 MM",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "00110001",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 1/4 POL ESPESSURA 1/8 POL 48A CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110003",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 1/2 POL ESPESSURA 1/8 POL 97A CANTO REDONDO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110004",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 1/2 POL ESPESSURA1/4 POL 179A CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110005",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 3/4 POL ESPESSURA 3/16 POL 211A CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110006",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 1 POL ESPESSURA 1/4 POL 359A CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110007",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 1 POL ESPESSURA 1/8 POL 195A CANTO REDONDO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110010",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 1. 1/2 POL ESPESSURA 1/4 POL 539A CANTO REDONDO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110036",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 1/2 POL ESPESSURA 3/16 POL 140A CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110037",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 3/8 POL ESPESSURA 1/8 POL 73A CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110043",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 38,1 MM ESPESSURA 9,52 MM CANTO REDONDO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110049",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 7/8 POL ESPESSURA 3/8 POL 451A CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110050",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 1.1/4 POL ESPESSURA 1/2 POL 645A CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110061",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 50 MM ESPESSURA 10 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110064",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 60 MM ESPESSURA 10 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110065",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 80 MM ESPESSURA 10 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110066",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 100 MM ESPESSURA 10 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110067",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 30 MM ESPESSURA 5 MM",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110071",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 1.3/4 POL ESPESSURA 1/2 POL 1149A CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110073",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU REDONDA 3/8 POL",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110108",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 160 MM ESPESSURA 10 MM CANTO REDONDO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110109",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 120 MM ESPESSURA 10MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110114",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 30 MM ESPESSURA 10MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110127",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 50 MM ESPESSURA 10 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110154",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 40 MM ESPESSURA 10 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110155",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 6,35 MM ESPESSURA 3,17 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110156",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 10 MM ESPESSURA 3 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110157",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 15 MM ESPESSURA 3 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110158",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 20 MM ESPESSURA 5 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110159",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 25 MM ESPESSURA 3 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110160",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 25 MM ESPESSURA 10 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110161",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 25 MM ESPESSURA 5 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110162",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 40 MM ESPESSURA 5 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110164",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 120 MM ESPESSURA 10 MM CANTO REDONDO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110170",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 50 MM ESPESSURA 5 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110171",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 40 MM ESPESSURA 5 MM CANTO REDONDO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110172",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 40 MM ESPESSURA 10 MM CANTO REDONDO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110176",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 125 MM ESPESSURA 5 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110178",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 20 MM ESPESSURA 10 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110201",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 38,10 MM ESPESSURA 19,05 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110202",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 101,3 MM ESPESSURA 19,05 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110340",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 10 MM ESPESSURA 5 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110341",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 15 MM ESPESSURA 5 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110342",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 20 MM ESPESSURA 10 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110343",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 20 MM ESPESSURA 3 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "00110344",
+      "descricao": "BARRA DE COBRE ELETROLITICO NU LARGURA 30 MM ESPESSURA 5 MM CANTO VIVO",
+      "classe_fechamento": "BARRA DE COBRE"
+    },
+    {
+      "codigo": "06000005",
+      "descricao": "CHAPA METALICA ACO CARBONO FF LISA 2,65MM 1200X3000 MM",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000011",
+      "descricao": "CHAPA METALICA ACO CARBONO FQ LISA 3,17MM 1200X3000 MM",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000014",
+      "descricao": "CHAPA METALICA ACO CARBONO FF LISA 1,20MM 1200X3000 MM",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000018",
+      "descricao": "CHAPA FQ 3/16\"X1200MM",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000031",
+      "descricao": "CHAPA METALICA ACO CARBONO FF LISA 1,50MM 1200X3000 MM",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000055",
+      "descricao": "CHAPA XADREZ 3000 MM X 1200 MM X 3,175 MM",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000132",
+      "descricao": "CHAPA ALUMINIO 685X325X1,50MM CHAPA 16",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000167",
+      "descricao": "CHAPA METALICA GALVANIZADA LISA 2,70MM 1200X3000 MM NBR 7008 Z275",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000168",
+      "descricao": "CHAPA METALICA GALVANIZADA LISA 1,95MM 1200X3000 MM NBR 7008 Z275",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000169",
+      "descricao": "CHAPA METALICA GALVANIZADA LISA 1,55MM 1200X3000 MM NBR 7008 Z275",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000170",
+      "descricao": "CHAPA METALICA ACO CARBONO FQ LISA 4,75MM (3/16) 1200X3000 MM",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000178",
+      "descricao": "CHAPA METALICA GALVANIZADA LISA 1,55MM 1200X2500 MM ZMR345",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000179",
+      "descricao": "CHAPA METALICA GALVANIZADA LISA 1,95MM 1200X2500 MM ZMR345",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000180",
+      "descricao": "CHAPA METALICA GALVANIZADA LISA 2,50MM 1200X2500 MM ZMR345",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000186",
+      "descricao": "CHAPA 1,5MM ZN - STAHL (STEEL) EN 10346-DX51D+Z140-N-A-C",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000187",
+      "descricao": "CHAPA METALICA GALVANIZADA LISA 1,00MM 1200X3000 MM EN 10346 Z140",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000188",
+      "descricao": "CHAPA 2MM ZN - STAHL (STEEL) EN 10346-DX51D+Z140-N-A-C",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000189",
+      "descricao": "CHAPA 2,5MM ZN - STAHL (STEEL) EN 10346-DX51D+Z140-N-A-C",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000191",
+      "descricao": "CHAPA METALICA GALVANIZADA LISA 1,25MM X 1200MM NBR 7008 CHAPA 18 Z275",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000193",
+      "descricao": "CHAPA METALICA GALVANIZADA LISA 1,25MM 1200X3000 MM Z100",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000210",
+      "descricao": "CHAPA DE ALUMINIO LAMINADO A FRIO 3000X1250X5 MM",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000211",
+      "descricao": "CHAPA DE ALUMINIO LAMINADO A FRIO 3000X1250X3MM",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000216",
+      "descricao": "CHAPA METALICA CHAPA 1MM ZN STAHL (STEEL) EN 10346-DX51D+Z275_N_A_C - EN10143_1,0S",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000217",
+      "descricao": "CHAPA METALICA CHAPA 1,5MM ZN- STAHL (STEEL) EN 10346-DX51D+Z275_N_A_C - EN10143_1,5S",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000218",
+      "descricao": "CHAPA METALICA CHAPA 2MM ZN STAHL (STEEL) EN 10346-DX51D+Z275_N_A_C - EN10143_2,0S",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000219",
+      "descricao": "CHAPA METALICA CHAPA 2,5MM ZN- STAHL (STEEL) EN 10346-DX51D+Z275_N_A_C - EN10143_2,5S",
+      "classe_fechamento": "CHAPA"
+    },
+    {
+      "codigo": "06000227",
+      "descricao": "CHAPA INOX 316 1,5MM 3000X1200 MM FOSCO CHAPA 16",
+      "classe_fechamento": "CHAPA"
+    }
+  ],
+  "regras_confirmadas": [
+    {
+      "id": "020_520_FECHAMENTO_CHAPAS_BARRAS",
+      "prioridade": 1,
+      "tes_em": [
+        "020",
+        "520"
+      ],
+      "condicoes": {
+        "tes_em": [
+          "020",
+          "520"
+        ],
+        "codigo_material_em": "cadastro_materiais_fechamento_chapas_barras.json",
+        "classe_fechamento_em": [
+          "BARRA DE COBRE",
+          "CHAPA"
+        ]
+      },
+      "condicao_descricao": "Chapa ou barra de cobre identificada por código do produto",
+      "grupo_analise": "FLUXO DE ESTOQUE",
+      "subgrupo_analise": "AJUSTE DE FECHAMENTO DE CHAPAS E BARRAS",
+      "fonte": "Orientação do usuário em 20/10/2026",
+      "preservacao": "CF não participa; valores, quantidades, TES, AE, datas e vínculos de OP permanecem originais.",
+      "prioridade_descricao": "Condição específica de material aplicada antes das condições genéricas da TES 520."
+    },
+    {
+      "id": "520_OP_MANUAL",
+      "prioridade": 2,
+      "tes": "520",
+      "condicoes": {
+        "tem_op": true
+      },
+      "condicao_descricao": "AE com OP",
+      "grupo_analise": "FLUXO DE ESTOQUE",
+      "subgrupo_analise": "BAIXA DE OP MANUAL"
+    },
+    {
+      "id": "520_CC_GERENCIAL",
+      "prioridade": 3,
+      "tes": "520",
+      "condicoes": {
+        "tipo_vinculo_ae": "CC",
+        "cc_diferente_de": "600307"
+      },
+      "condicao_descricao": "AE com CC identificado diferente de 600307",
+      "grupo_analise": "FLUXO DE ESTOQUE",
+      "subgrupo_analise": "ACERTO GERENCIAL"
+    },
+    {
+      "id": "520_CC_CONSUMO",
+      "prioridade": 4,
+      "tes": "520",
+      "condicoes": {
+        "cc_igual_a": "600307",
+        "qualquer_um": [
+          {
+            "tipo_material_em": [
+              "II",
+              "MC"
+            ]
+          },
+          {
+            "codigo_material_em": "cadastro_materiais_tc_tp_h001.json"
+          }
+        ]
+      },
+      "condicao_descricao": "CC 600307 e tipo II/MC ou material da estrutura H0001",
+      "grupo_analise": "FLUXO DE ESTOQUE",
+      "subgrupo_analise": "MATERIAIS DE CONSUMO"
+    },
+    {
+      "id": "520_BASE_A_VALIDAR",
+      "prioridade": 5,
+      "tes": "520",
+      "condicoes": {
+        "nenhuma_regra_anterior": true
+      },
+      "condicao_descricao": "Demais situações da TES 520 — ajuste ainda em validação",
+      "grupo_analise": "AJUSTE DE ESTOQUE",
+      "subgrupo_analise": "AJUSTE DE ESTOQUE A VALIDAR"
+    },
+    {
+      "id": "AJUSTE_PA_PI_PRODUCAO_INTERNA",
+      "etapa": "APOS_CLASSIFICACAO_TES",
+      "condicoes": {
+        "grupo_atual": "AJUSTE DE ESTOQUE",
+        "categoria_em": [
+          "PA",
+          "PI"
+        ]
+      },
+      "grupo_analise": "PRODUÇÃO INTERNA",
+      "subgrupo_analise": "PRODUÇÃO INTERNA",
+      "descricao": "Movimentos que permanecem em Ajuste de Estoque, com categoria PA ou PI, passam para Produção Interna.",
+      "fonte": "Orientação do usuário em 20/10/2026",
+      "preservacao": "Aplicar somente após as regras de fluxo já confirmadas; preservar dados, valores, sinais, TES e AE."
+    }
+  ]
+}
