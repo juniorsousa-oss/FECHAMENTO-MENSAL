@@ -5,7 +5,7 @@ import html
 import io
 import sys
 from time import perf_counter
-from functools import lru_cache
+
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -126,8 +126,9 @@ CB_SOURCE_LABELS = {
 }
 
 
-@lru_cache(maxsize=1)
+@st.cache_data(show_spinner=False, ttl=600, max_entries=1)
 def load_global_visual_config() -> dict:
+    """Cache Streamlit persiste entre reruns; lru_cache era recriado por execução."""
     try:
         return central_data.load_visual_config() or {}
     except Exception:
@@ -137,6 +138,7 @@ def load_global_visual_config() -> dict:
 GLOBAL_VISUAL_CONFIG = load_global_visual_config()
 
 
+@st.cache_resource(show_spinner=False, max_entries=1)
 def browser_icon():
     try:
         raw = central_data.favicon_bytes(GLOBAL_VISUAL_CONFIG)
