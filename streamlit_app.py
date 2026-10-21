@@ -530,6 +530,19 @@ def section_band(kicker: str, title: str, note: str) -> None:
     )
 
 
+def cb_stage_header(number: str, title: str, description: str) -> None:
+    """Divisor de etapa exclusivo da conferência de chapas e barramentos."""
+    st.markdown(
+        '<div class="cb-stage-header">'
+        f'<span class="cb-stage-number">{html.escape(number)}</span>'
+        '<div class="cb-stage-copy">'
+        f'<div class="cb-stage-name">{html.escape(title)}</div>'
+        f'<div class="cb-stage-description">{html.escape(description)}</div>'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
 
 @st.cache_resource(show_spinner=False, ttl=300, max_entries=4)
 def load_central_analitico(version_token: str) -> tuple[dict, dict, dict]:
@@ -2659,9 +2672,9 @@ if page == "Dashboard":
 
 elif page == "Conferência de chapas e barramentos":
     section_band(
-        "02 · CONFERÊNCIA",
+        "CONFERÊNCIA OPERACIONAL",
         "CHAPAS E BARRAMENTOS",
-        "Conciliação dos saldos sistêmicos e físicos, divergências e tratativas por competência.",
+        "Acompanhamento por competência, contagem física e conciliação dos saldos.",
     )
     with st.expander("COMO FUNCIONA A CONFERÊNCIA", expanded=False):
         st.caption(
@@ -2694,6 +2707,10 @@ elif page == "Conferência de chapas e barramentos":
             else visible_months[-1]
         )
 
+        st.markdown(
+            '<div class="cb-period-label">COMPETÊNCIA EM ANÁLISE</div>',
+            unsafe_allow_html=True,
+        )
         cb_month = st.selectbox(
             "Competência da conferência",
             visible_months,
@@ -2823,22 +2840,23 @@ elif page == "Conferência de chapas e barramentos":
 
         st.markdown(
             f"""
-            <div class="cb-compact-stats">
-                <div class="cb-compact-stat">
-                    <span>CADASTROS</span>
-                    <strong>{len(standby_catalog)}</strong>
+            <div class="cb-overview-grid">
+                <div class="cb-overview-card">
+                    <span>CADASTROS</span><strong>{len(standby_catalog)}</strong>
+                    <small>Materiais no cadastro</small>
                 </div>
-                <div class="cb-compact-stat">
-                    <span>COM SALDO · TRATATIVA</span>
+                <div class="cb-overview-card">
+                    <span>COM SALDO</span>
                     <strong>{len((stock_positive_codes | current_positive_codes) - excluded_codes_current)}</strong>
+                    <small>Materiais em tratativa</small>
                 </div>
-                <div class="cb-compact-stat">
-                    <span>EM CONTAGEM</span>
-                    <strong>{len(counted_codes)}</strong>
+                <div class="cb-overview-card">
+                    <span>CONTADOS</span><strong>{len(counted_codes)}</strong>
+                    <small>Com informação física</small>
                 </div>
-                <div class="cb-compact-stat cb-compact-stat-final">
-                    <span>BASE FINAL</span>
-                    <strong>{len(final_analysis_codes)}</strong>
+                <div class="cb-overview-card cb-overview-card-final">
+                    <span>BASE DE ANÁLISE</span><strong>{len(final_analysis_codes)}</strong>
+                    <small>Itens considerados na conferência</small>
                 </div>
             </div>
             """,
@@ -2893,9 +2911,10 @@ elif page == "Conferência de chapas e barramentos":
             (central_context.get("meta") or {}).get("last_update_at")
         )
 
-        st.markdown(
-            '<div class="cb-compact-section-title">00 · SALDOS DO SISTEMA</div>',
-            unsafe_allow_html=True,
+        cb_stage_header(
+            "01",
+            "POSIÇÃO DO ESTOQUE",
+            "Compare os saldos de fechamento e a posição atual antes de analisar as contagens.",
         )
 
         def _saldo_categoria(rows, categoria, eligible_codes):
@@ -2932,34 +2951,42 @@ elif page == "Conferência de chapas e barramentos":
             _saldo_codes,
         )
 
-        _s1, _s2, _s3, _s4 = st.columns(4)
-        _s1.metric(
-            "CHAPAS · ATUAL",
-            f"{_chapa_atual:,.3f} KG".replace(",", "X").replace(".", ",").replace("X", "."),
-            help="Somente chapas confirmadas e ainda em tratativa, não removidas da análise.",
+        _chapa_fechamento_text = (
+            f"{number_br(_chapa_fechamento)} KG"
+            if cb_closing_stock_items else "NÃO INFORMADO"
         )
-        _s2.metric(
-            f"CHAPAS · FECHAMENTO {_closing_label}",
-            (
-                f"{_chapa_fechamento:,.3f} KG".replace(",", "X").replace(".", ",").replace("X", ".")
-                if cb_closing_stock_items
-                else "NÃO INFORMADO"
-            ),
-            help="Somente chapas confirmadas e ainda em tratativa, não removidas da análise.",
+        _barra_fechamento_text = (
+            f"{number_br(_barra_fechamento)} MT"
+            if cb_closing_stock_items else "NÃO INFORMADO"
         )
-        _s3.metric(
-            "BARRAMENTOS · ATUAL",
-            f"{_barra_atual:,.3f} MT".replace(",", "X").replace(".", ",").replace("X", "."),
-            help="Somente barramentos confirmados e ainda em tratativa, não removidos da análise.",
-        )
-        _s4.metric(
-            f"BARRAMENTOS · FECHAMENTO {_closing_label}",
-            (
-                f"{_barra_fechamento:,.3f} MT".replace(",", "X").replace(".", ",").replace("X", ".")
-                if cb_closing_stock_items
-                else "NÃO INFORMADO"
-            ),
-            help="Somente barramentos confirmados e ainda em tratativa, não removidos da análise.",
+        st.markdown(
+            f"""
+            <div class="cb-balance-grid">
+                <div class="cb-balance-card">
+                    <div class="cb-balance-top">
+                        <strong>CHAPAS</strong><span>QUANTIDADE · KG</span>
+                    </div>
+                    <div class="cb-balance-pair">
+                        <div><span>SALDO ATUAL</span>
+                            <strong>{number_br(_chapa_atual)} KG</strong></div>
+                        <div><span>FECHAMENTO · {_closing_label}</span>
+                            <strong>{_chapa_fechamento_text}</strong></div>
+                    </div>
+                </div>
+                <div class="cb-balance-card">
+                    <div class="cb-balance-top">
+                        <strong>BARRAMENTOS</strong><span>QUANTIDADE · MT</span>
+                    </div>
+                    <div class="cb-balance-pair">
+                        <div><span>SALDO ATUAL</span>
+                            <strong>{number_br(_barra_atual)} MT</strong></div>
+                        <div><span>FECHAMENTO · {_closing_label}</span>
+                            <strong>{_barra_fechamento_text}</strong></div>
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
         _chapa_variacao_total = _chapa_atual - _chapa_fechamento
         _barra_variacao_total = _barra_atual - _barra_fechamento
@@ -3035,12 +3062,13 @@ elif page == "Conferência de chapas e barramentos":
                         f"Não foi possível ler o Relatório Analítico do fechamento: {exc}"
                     )
 
-        st.markdown(
-            '<div class="topic-divider cb-tight-divider"></div>',
-            unsafe_allow_html=True,
+        cb_stage_header(
+            "02",
+            "ALIMENTAÇÃO FÍSICA",
+            "Importe as fontes de chapas, barramentos e almoxarifado e confira suas correspondências.",
         )
         with st.expander(
-            "01 · ALIMENTAÇÃO FÍSICA",
+            "GERENCIAR FONTES E CONTAGENS",
             expanded=False,
         ):
             tab_email, tab_bar, tab_internal = st.tabs(
@@ -4127,15 +4155,17 @@ elif page == "Conferência de chapas e barramentos":
                         hide_index=True,
                     )
 
-        st.markdown(
-            '<div class="topic-divider"></div>',
-            unsafe_allow_html=True,
+        cb_stage_header(
+            "03",
+            "CONFERÊNCIA E DIVERGÊNCIAS",
+            "Analise quantidades, diferenças e materiais pendentes antes de concluir o período.",
         )
-        section_band(
-            "02 · CONFERÊNCIA",
-            "FECHAMENTO × CONTAGEM FÍSICA",
-            "Diferença = Contagem física − menor saldo entre Fechamento e Atual. Isso evita repetir baixas já refletidas no saldo atual. Barras com |diferença| < 3 m são aceitas automaticamente.",
-        )
+        with st.expander("CRITÉRIOS DE CÁLCULO E TOLERÂNCIA", expanded=False):
+            st.caption(
+                "Diferença = contagem física − menor saldo entre Fechamento e Atual. "
+                "Esse critério evita repetir baixas já refletidas no saldo atual. "
+                "Barramentos com diferença absoluta inferior a 3 m são aceitos automaticamente."
+            )
 
         cb_adjustment_snapshot = pd.DataFrame()
         cb_report_snapshot = pd.DataFrame()
@@ -4307,6 +4337,10 @@ elif page == "Conferência de chapas e barramentos":
                 if "cb_filter_applied_search" not in st.session_state:
                     st.session_state["cb_filter_applied_search"] = ""
 
+                st.markdown(
+                    '<div class="cb-subsection-label">01 · FILTRAR E LOCALIZAR MATERIAIS</div>',
+                    unsafe_allow_html=True,
+                )
                 with st.form(
                     "cb_filters_form",
                     clear_on_submit=False,
@@ -4449,6 +4483,10 @@ elif page == "Conferência de chapas e barramentos":
                     unsafe_allow_html=True,
                 )
 
+                st.markdown(
+                    '<div class="cb-subsection-label">02 · CONFERÊNCIA DOS REGISTROS</div>',
+                    unsafe_allow_html=True,
+                )
                 shown_display = shown.copy()
 
                 # Mantém os dados auxiliares no cálculo, mas não ocupa a
@@ -4631,14 +4669,10 @@ elif page == "Conferência de chapas e barramentos":
                             load_cb_page_snapshot.clear()
                             st.rerun()
 
-        st.markdown(
-            '<div class="topic-divider"></div>',
-            unsafe_allow_html=True,
-        )
-        section_band(
-            "03 · FINALIZAÇÃO",
-            "REGISTRO MENSAL DOS AJUSTES",
-            "Ao finalizar, o sistema grava uma fotografia dos ajustes de Chapas em KG e Barramentos em MT, incluindo a previsão financeira. O histórico permanece separado por competência.",
+        cb_stage_header(
+            "04",
+            "FINALIZAÇÃO E HISTÓRICO",
+            "Revise os ajustes propostos e registre a fotografia mensal com rastreabilidade.",
         )
 
         _assume_missing_zero = False
