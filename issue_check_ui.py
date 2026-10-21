@@ -16,6 +16,7 @@ import issue_check as check
 import movement_store
 import movements as mv
 import master_plan
+import operational_status as op_rules
 
 SOURCE_KEYS = ("relatorio_geral", "endereco")
 MASTER_SOURCE_KEY = "for001"
@@ -24,9 +25,11 @@ FILTERS = {
     "Todos": None,
     "Com alertas": "divergente",
     "Sem alertas": "sem_alertas",
-    "G9-PROD pendente de baixa": check.PROD_PENDING,
-    "Conferido sem saldo suficiente": check.MISSING,
-    "Saldo compartilhado insuficiente": check.SHARED,
+    "Não consumido · produção": op_rules.NAO_CONSUMIDO_G9,
+    "Não consumido · outros endereços": op_rules.NAO_CONSUMIDO_OUTRO,
+    "Não consumido · sem saldo": op_rules.NAO_CONSUMIDO_SEM,
+    "Separado aguardando conferência": op_rules.SEPARADO_SEM_CONFERENCIA,
+    "Aguardando separação": op_rules.AGUARDANDO_SEPARACAO,
 }
 
 LABELS = {"op": "OP", "codigo": "Produto", "descricao": "Descrição", "lotes": "Lotes",
@@ -314,7 +317,7 @@ def _details(model, item):
         movements = pd.DataFrame([r for r in model["movements"] if r["op"] == item["op"] and r["codigo"] == item["codigo"]])
         if not movements.empty:
             movements = movements.sort_values(["data", "documento"], kind="stable")
-        st.caption("Consumo = saídas − devoluções vinculadas à OP e ao produto. TES 999 sem compensação 499/999 conta como consumo; pares compensados e TES 499 isolada não contam.")
+        st.caption("Consumo líquido = saídas − devoluções vinculadas à OP e ao produto; TES 999 sem compensação 499/999 conta como consumo. A nova classificação do produto depende do estágio da OP.")
         _table(movements, ["data", "armazem", "tes", "documento", "qtd_entrada", "qtd_saida", "ae_original", "natureza", "arquivo_origem", "linha_origem"])
 
 
@@ -358,6 +361,7 @@ def _ops(model, view, token):
                 f"{confirmed} CONFERIDOS | {discharged} BAIXADOS | "
                 f"{issues} COM ALERTA — {summary} | "
                 + master_plan.label_fields(context)
+                + f" | STATUS: {context['status_op']}"
             )
             css_key = "fm_issue_op_alert_" if issues else "fm_issue_op_ok_"
             is_open = st.session_state.get("fm_issue_open_op") == number
@@ -426,9 +430,10 @@ def _sources(model):
     st.write("• Conferência identificada pela data de conferência do MES; a quantidade comparada é a atendida nessas linhas. Conferências parciais mantêm a necessária e a pendência visíveis.")
     st.write("• Estoque consultado por produto e lote nos armazéns selecionados. O saldo é a coluna Quantidade; o empenho aparece separado nas evidências.")
     st.write("• KARDEX vinculado por OP completa da AE e código do produto, sem filtro de CF. Consumo inclui TES 999 não compensada. Transferências pareadas 499/999 e a TES 499 isolada não comprovam consumo.")
-    st.write("• O alerta de G9-PROD destaca quantidade conferida ainda pendente quando a OP já possui baixa líquida de algum material. OPs sem nenhuma baixa no histórico ficam identificadas à parte.")
-    st.write("• A baixa é comparada com o total conferido do produto na OP. O lote é usado para consultar o saldo por endereço; sobra de outro lote não cobre automaticamente uma falta.")
-    st.write("• O mesmo saldo não é reservado para várias OPs. Demandas compartilhadas e insuficiência conjunta são identificadas separadamente.")
+    st.write("• Prioridade da OP: dias de pátio numéricos → FINALIZADO EM PÁTIO; texto FINALIZADO E ENTREGUE → mesmo status; NF ou faturamento → NF EMITIDA; condição FINALIZADO → FINALIZADO; consumo líquido no KARDEX → REPORTADO; conferência → EM CONFERÊNCIA; separação → EM SEPARAÇÃO; caso contrário → AGUARDANDO INÍCIO.")
+    st.write("• OP finalizada/faturada/reportada OU com algum consumo: exige baixa integral da quantidade separada e conferida. Se existir pendência de consumo, primeiro verifica saldo G9-PROD dos lotes conferidos; depois endereço alternativo que sozinho cubra a falta; senão classifica SEM SALDO. Todos os produtos não concluídos nessas OPs geram alerta.")
+    st.write("• OP em andamento SEM nenhuma baixa: acompanha somente etapa do produto (conferido aguardando reporte, separado aguardando conferência ou aguardando separação), sem gerar alertas.")
+    st.write("• A conferência de baixas é por OP e código do produto. Saldos por endereço consideram somente lotes efetivamente conferidos; nenhum saldo é reservado automaticamente para outras OPs.")
     st.write("• Registros repetidos no MES são mantidos e somados. Sobreposição entre arquivos KARDEX é reconhecida sem duplicar movimentos.")
     st.write("• Diferenças de até 0,000001 são tratadas como precisão numérica. Os valores originais permanecem nas evidências.")
     st.caption(f"Referência da conferência: {day(model['as_of'])}. Movimentos posteriores à data da base são desconsiderados ({count(model['movimentos_apos_base'])}).")
@@ -446,6 +451,10 @@ def _sources(model):
 
 
 def render_results(model):
+    if model.get("status_version") != op_rules.VERSION:
+        # Compatibilidade de chamadas diretas e modelos anteriores: nunca
+        # apresentar alertas legados na interface operacional.
+        model = op_rules.apply(model)
     frame = model["items"]
     period = model["coverage"]
     if not model["history_available"]:
@@ -491,7 +500,7 @@ def render_results(model):
         f"Referência {day(model['as_of'])}."
     )
     token = hashlib.sha256(
-        (check.VERSION + query + choice + str(model["warehouses"])
+        (op_rules.VERSION + query + choice + str(model["warehouses"])
          + str(model["source_meta"]) + str(period)).encode()
     ).hexdigest()[:14]
     if view.empty:
@@ -503,7 +512,7 @@ def render_results(model):
     report_key = hashlib.sha256((
         str(model.get("as_of")) + str(model.get("warehouses"))
         + str(model.get("history_meta")) + str(model.get("source_meta"))
-        + check.VERSION
+        + op_rules.VERSION + str(model.get("master_plan_meta"))
     ).encode()).hexdigest()
     left, right = st.columns([1, 2])
     with left:
@@ -562,10 +571,10 @@ def render_issue_check():
         history_tokens = tuple((i["chave"], str(i.get("atualizado_em") or ""), i.get("meta") or {}) for i in imports)
         with st.spinner("Conferindo as OPs, os saldos por lote e as baixas registradas..."):
             model = _audit(tokens, history_tokens, tuple(sorted(chosen)), check.VERSION)
-        # Cópia superficial: não modifica o objeto de reconciliação cacheado.
-        model = dict(model)
+        # A regra operacional usa a fonte FOR001, mas nunca modifica a
+        # reconciliação MES/KARDEX cacheada e nunca bloqueia sem a FOR001.
         master_records, master_meta = _optional_master_plan()
-        model["ops"] = master_plan.enrich_ops(model["ops"], master_records)
+        model = op_rules.apply(model, master_records)
         model["master_plan_meta"] = master_meta
         render_results(model)
     except Exception as exc:
