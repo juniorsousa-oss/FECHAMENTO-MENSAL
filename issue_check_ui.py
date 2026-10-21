@@ -79,13 +79,28 @@ def _band():
     .st-key-fm_issue_filters {background:#fff;border:1px solid #e5e8ee;
       border-radius:14px;padding:1.05rem 1.15rem .75rem;margin:.8rem 0 1.2rem;
       box-shadow:0 3px 12px rgba(15,23,42,.04)}
-    [class*="st-key-fm_issue_op_alert_"] [data-testid="stExpander"] details {
-      background:#fff7f7!important;border:1px solid #fecaca!important;
-      border-left:5px solid #d43f49!important;border-radius:11px!important;
+    [class*="st-key-fm_issue_op_alert_"] [data-testid="stButton"] button {
+      background:#fff3f3!important;border:1px solid #f6c7ca!important;
+      border-left:5px solid #ce3c48!important;color:#8b1d2c!important;
     }
-    [class*="st-key-fm_issue_op_ok_"] [data-testid="stExpander"] details {
+    [class*="st-key-fm_issue_op_ok_"] [data-testid="stButton"] button {
       background:#fff!important;border:1px solid #dfe5ec!important;
-      border-left:4px solid #111827!important;border-radius:11px!important;
+      border-left:4px solid #111827!important;color:#18202f!important;
+    }
+    [class*="st-key-fm_issue_op_alert_"] [data-testid="stButton"] button,
+    [class*="st-key-fm_issue_op_ok_"] [data-testid="stButton"] button {
+      width:100%!important;min-height:47px!important;justify-content:flex-start!important;
+      text-align:left!important;white-space:normal!important;border-radius:10px!important;
+      padding:.72rem .95rem!important;box-shadow:0 2px 8px rgba(15,23,42,.025)!important;
+    }
+    [class*="st-key-fm_issue_op_alert_"] [data-testid="stButton"] button p,
+    [class*="st-key-fm_issue_op_ok_"] [data-testid="stButton"] button p {
+      width:100%!important;text-align:left!important;white-space:normal!important;
+      font-size:.77rem!important;font-weight:750!important;
+    }
+    [class*="st-key-fm_issue_op_detail_"] {
+      background:#fff;border:1px solid #dfe5ec;border-radius:12px;
+      padding:1rem 1.05rem;margin:0 0 .65rem;
     }
     .st-key-fm_issue_ops{margin-top:1.15rem}
     </style>""", unsafe_allow_html=True)
@@ -267,6 +282,12 @@ def _move_issue_page(delta: int, pages: int):
     st.session_state.fm_issue_page = min(max(current + delta, 1), pages)
 
 
+def _toggle_issue_op(number: str):
+    """Carrega os registros apenas da OP aberta, sem montar 10 tabelas invisíveis."""
+    current = st.session_state.get("fm_issue_open_op")
+    st.session_state.fm_issue_open_op = None if current == number else number
+
+
 def _ops(model, view, token):
     rank = view.groupby("op")["divergente"].sum().sort_values(ascending=False, kind="stable")
     numbers = rank.index.tolist()
@@ -295,8 +316,15 @@ def _ops(model, view, token):
                 f"{issues} COM ALERTA — {summary}"
             )
             css_key = "fm_issue_op_alert_" if issues else "fm_issue_op_ok_"
+            is_open = st.session_state.get("fm_issue_open_op") == number
             with st.container(key=css_key + number):
-                with st.expander(title, expanded=False):
+                st.button(
+                    ("▼ " if is_open else "▶ ") + title,
+                    key="fm_issue_select_" + number, use_container_width=True,
+                    on_click=_toggle_issue_op, args=(number,),
+                )
+            if is_open:
+                with st.container(key="fm_issue_op_detail_" + number):
                     st.caption(f"P.A.: {context['pa'] or '—'} · {context['descricao_pa'] or 'Descrição não informada'}")
                     if not bool(group.iloc[0]["op_possui_baixa"]):
                         st.caption("Não há consumo líquido identificado no histórico desta OP até a data de referência.")
