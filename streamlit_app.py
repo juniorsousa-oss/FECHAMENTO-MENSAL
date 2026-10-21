@@ -4,6 +4,7 @@ import base64
 import html
 import io
 import sys
+from time import perf_counter
 from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
@@ -12,6 +13,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
+
+_FM_RUN_STARTED = perf_counter()
 
 # Tabelas flexíveis SETTA: acompanha a quantidade de linhas filtradas.
 def _setta_table_height(data, requested=None):
@@ -2329,6 +2332,8 @@ if _needs_inventory_core:
         if competencia >= date(2026, 1, 1)
     ]
 
+
+_FM_CORE_READY = perf_counter()
 
 if page == "Dashboard":
     _closing_source_parsed = central_parsed
@@ -5237,8 +5242,8 @@ else:
         unsafe_allow_html=True,
     )
 
-    tab_api, tab_menu, tab_rules = st.tabs(
-        ["STATUS API", "MENU", "REGRAS"]
+    tab_api, tab_menu, tab_rules, tab_perf = st.tabs(
+        ["STATUS API", "MENU", "REGRAS", "DESEMPENHO"]
     )
 
     with tab_api:
@@ -5488,7 +5493,42 @@ else:
         )
 
 
+    with tab_perf:
+        section_band(
+            "04 · DIAGNÓSTICO",
+            "TEMPO DE RESPOSTA DO APLICATIVO",
+            "Mede o processamento no servidor Streamlit. Não inclui atraso da rede ou renderização do navegador.",
+        )
+        previous = st.session_state.get("_fm_perf_last")
+        if previous:
+            st.caption(
+                f"ÚLTIMA ABA CONCLUÍDA: {previous['pagina']} · "
+                f"{previous['timestamp']}"
+            )
+            p1, p2, p3 = st.columns(3)
+            p1.metric("CARREGAMENTO / FONTES", f"{previous['core_s']:.2f} s")
+            p2.metric("PROCESSAMENTO DA TELA", f"{previous['render_s']:.2f} s")
+            p3.metric("TOTAL NO SERVIDOR", f"{previous['total_s']:.2f} s")
+            st.caption(
+                "Na próxima abertura de uma aba, o tempo correspondente ficará "
+                "registrado aqui. A medição indica onde concentrar a próxima "
+                "otimização; não equivale ao tempo total sentido no navegador."
+            )
+        else:
+            st.info("Abra uma aba do aplicativo e retorne aqui para consultar a medição.")
+
+
 st.markdown(
     '<div class="footer">SETTA | Fechamento Mensal de Inventário</div>',
     unsafe_allow_html=True,
 )
+
+_FM_RUN_FINISHED = perf_counter()
+st.session_state["_fm_perf_last"] = {
+    "pagina": page,
+    "core_s": round(_FM_CORE_READY - _FM_RUN_STARTED, 3),
+    "render_s": round(_FM_RUN_FINISHED - _FM_CORE_READY, 3),
+    "total_s": round(_FM_RUN_FINISHED - _FM_RUN_STARTED, 3),
+    "timestamp": datetime.now(TZ).strftime("%d/%m/%Y %H:%M:%S"),
+}
+
