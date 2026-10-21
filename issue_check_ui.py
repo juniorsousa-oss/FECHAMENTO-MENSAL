@@ -92,7 +92,7 @@ def _states():
     return {row["source_key"]: row for row in sources if row.get("source_key") in SOURCE_KEYS}
 
 
-@st.cache_data(ttl=120, max_entries=6, show_spinner=False)
+@st.cache_data(ttl=600, max_entries=6, show_spinner=False)
 def _source(key: str, version: int, updated_at: str):
     del updated_at
     payload, meta = central.download_preferred_source(key)
@@ -132,7 +132,7 @@ def _source_day(meta: dict) -> str:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(TZ).date().isoformat()
 
 
-@st.cache_resource(ttl=120, max_entries=1, show_spinner=False)
+@st.cache_resource(ttl=600, max_entries=1, show_spinner=False)
 def _audit(source_tokens: tuple, history_tokens: tuple, warehouses: tuple, version: str):
     del version
     sources, metas = {}, {}
