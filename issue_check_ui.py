@@ -17,6 +17,7 @@ import movement_store
 import movements as mv
 import master_plan
 import operational_status as op_rules
+import catalog_types
 
 SOURCE_KEYS = ("relatorio_geral", "endereco")
 MASTER_SOURCE_KEY = "for001"
@@ -30,6 +31,7 @@ FILTERS = {
     "Não consumido · sem saldo": op_rules.NAO_CONSUMIDO_SEM,
     "Separado aguardando conferência": op_rules.SEPARADO_SEM_CONFERENCIA,
     "Aguardando separação": op_rules.AGUARDANDO_SEPARACAO,
+    "Baixa maior que a necessidade": op_rules.BAIXA_ACIMA_NECESSIDADE,
 }
 
 LABELS = {"op": "OP", "codigo": "Produto", "descricao": "Descrição", "lotes": "Lotes",
@@ -42,6 +44,7 @@ LABELS = {"op": "OP", "codigo": "Produto", "descricao": "Descrição", "lotes": 
           "conflito_saldo": "Demanda compartilhada maior que saldo", "itens": "Registros",
           "itens_separados": "Separados", "itens_conferidos": "Conferidos",
           "lote": "Lote", "armazem": "Armazém", "endereco": "Endereço", "empenho": "Empenho",
+          "tipo_material": "Tipo material",
           "pendente_minima": "Pendente mínima no lote", "pendente_maxima": "Pendente máxima no lote",
           "ops_com_demanda": "OPs com demanda no lote", "demanda_compartilhada_minima": "Demanda mínima de todas as OPs",
           "demanda_compartilhada_maxima": "Demanda máxima de todas as OPs", "linha_origem": "Linha de origem",
@@ -169,6 +172,33 @@ def _master_plan_records(version: int, updated_at: str):
     return records, {key: value for key, value in meta.items() if key not in ("signed_url", "url")}
 
 
+@st.cache_data(ttl=600, max_entries=3, show_spinner=False)
+def _catalog_type_records(version: int, updated: str) -> tuple[dict[str, str], dict]:
+    del updated
+    payload, meta = central.download_preferred_source("cadastros")
+    if payload["normalized"]:
+        frame = central.normalized_frame(payload["pack"])
+        types = catalog_types.parse_frame(frame)
+    else:
+        types = catalog_types.parse_raw(payload["raw"])
+    actual_version = meta.get("source_version", meta.get("version"))
+    if actual_version is not None and int(actual_version) != version:
+        raise RuntimeError("CADASTROS alterado durante o carregamento.")
+    return types, {key: value for key, value in meta.items() if key not in ("signed_url", "url")}
+
+
+def _optional_catalog_types() -> tuple[dict[str, str], dict]:
+    try:
+        state = central.source_state_for("cadastros")
+        if not state or str(state.get("status") or "").upper() != "ATUALIZADO":
+            return {}, {"erro": "CADASTROS indisponível no Monitor de APIs"}
+        return _catalog_type_records(
+            int(state["version"]), str(state.get("last_update_at") or "")
+        )
+    except Exception as exc:
+        return {}, {"erro": str(exc)}
+
+
 def _optional_master_plan():
     """Falhas da fonte complementar não impedem a conferência de baixas."""
     try:
@@ -223,13 +253,16 @@ def _audit(source_tokens: tuple, history_tokens: tuple, warehouses: tuple, versi
 
 
 @st.cache_resource(ttl=600, max_entries=2, show_spinner=False)
-def _operational_snapshot(source_tokens, history_tokens, warehouses, master_version, rules_version, _model, _records):
-    return op_rules.apply(_model, _records)
+def _operational_snapshot(source_tokens, history_tokens, warehouses,
+                          master_version, catalog_version, rules_version,
+                          _model, _records, _types):
+    return op_rules.apply(_model, _records, _types)
 
 
 def _reload():
     _states.clear(); _source.clear(); _imports.clear(); _history.clear(); _audit.clear()
     _master_plan_records.clear()
+    _catalog_type_records.clear()
     _operational_snapshot.clear()
     central.source_state_for.clear()
 
@@ -580,12 +613,15 @@ def render_issue_check():
         # A regra operacional usa a fonte FOR001, mas nunca modifica a
         # reconciliação MES/KARDEX cacheada e nunca bloqueia sem a FOR001.
         master_records, master_meta = _optional_master_plan()
+        types, catalog_meta = _optional_catalog_types()
         master_version = str(master_meta.get("source_version", master_meta.get("version", ""))) + str(master_meta.get("content_sha256") or master_meta.get("erro") or "")
+        catalog_version = str(catalog_meta.get("source_version", catalog_meta.get("version", ""))) + str(catalog_meta.get("content_sha256") or catalog_meta.get("erro") or "")
         model = _operational_snapshot(
-            tokens, history_tokens, tuple(sorted(chosen)), master_version,
-            op_rules.VERSION, model, master_records,
+            tokens, history_tokens, tuple(sorted(chosen)),
+            master_version, catalog_version, op_rules.VERSION,
+            model, master_records, types,
         )
-        render_results({**model, "master_plan_meta": master_meta})
+        render_results({**model, "master_plan_meta": master_meta, "catalog_meta": catalog_meta})
     except Exception as exc:
         st.error(f"Não foi possível concluir a conferência: {exc}")
         st.info("A ausência de uma fonte não é tratada como saldo zero ou ausência de baixa. Use Atualizar conferência após regularizar a base.")
