@@ -141,6 +141,17 @@ def apply(model: dict, master_records: dict[str, dict] | None = None) -> dict:
 
     amounts = _stock_by_lot(model)
     lots = _item_lots(model)
+    # Índice de endereços por produto/lote: evita procurar os mesmos 10 mil
+    # endereços para cada um dos ~27 mil registros do Relatório Geral.
+    addresses_by_lot = defaultdict(list)
+    g9_by_lot = defaultdict(lambda: ZERO)
+    for (code, lot, wh, addr), qty in amounts.items():
+        if addr == "G9-PROD":
+            g9_by_lot[(code, lot)] += qty
+        elif qty > EPS:
+            addresses_by_lot[(code, lot)].append(
+                {"armazem": wh, "endereco": addr, "lote": lot, "saldo": qty}
+            )
     by_op = products.groupby("op", sort=False)
     # O KARDEX pode trazer consumo da OP em materiais que não constam na
     # fotografia atual do MES. Esse consumo também avança a OP para REPORTADO.
@@ -177,17 +188,16 @@ def apply(model: dict, master_records: dict[str, dict] | None = None) -> dict:
         net = max(decimal(item.get("baixada")), ZERO)
         expected = max(separated, confirmed)
         outstanding = max(expected - net, ZERO)
+        item_lots = lots.get(item["item_id"], set())
         alternatives = []
-        for (code, lot, wh, addr), qty in amounts.items():
-            if (code == item.get("codigo") and lot in lots.get(item["item_id"], set())
-                    and addr != "G9-PROD" and qty > EPS):
-                alternatives.append({"armazem": wh, "endereco": addr,
-                                     "lote": lot, "saldo": qty})
-        alternatives.sort(key=lambda r: (
-            r["saldo"] + EPS < outstanding,
-            abs(r["saldo"] - outstanding),
-            -r["saldo"], r["armazem"], r["endereco"], r["lote"],
-        ))
+        if confirmed > EPS and outstanding > EPS and group["exige_baixa"]:
+            for lot in item_lots:
+                alternatives.extend(addresses_by_lot.get((item.get("codigo"), lot), ()))
+            alternatives.sort(key=lambda r: (
+                r["saldo"] + EPS < outstanding,
+                abs(r["saldo"] - outstanding),
+                -r["saldo"], r["armazem"], r["endereco"], r["lote"],
+            ))
         products.at[idx, "enderecos_alternativos"] = alternatives
         products.at[idx, "outros_enderecos"] = " | ".join(
             f"{entry['armazem']}/{entry['endereco']} · lote {entry['lote']}: {entry['saldo']}"
@@ -218,9 +228,7 @@ def apply(model: dict, master_records: dict[str, dict] | None = None) -> dict:
             # Positivo no G9-PROD identifica material em produção mesmo quando
             # o saldo não cobre toda a quantidade faltante.
             lot_prod = sum(
-                (qty for (code, lot, _, addr), qty in amounts.items()
-                 if code == item.get("codigo") and lot in lots.get(item["item_id"], set())
-                 and addr == "G9-PROD"), ZERO
+                (g9_by_lot[(item.get("codigo"), lot)] for lot in item_lots), ZERO
             )
             if lot_prod > EPS:
                 status = NAO_CONSUMIDO_G9
