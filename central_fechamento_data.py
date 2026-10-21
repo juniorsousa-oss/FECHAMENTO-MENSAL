@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
+import streamlit as st
 
 import inventory_db as db
 
@@ -44,16 +45,7 @@ def api_call(action: str, payload: dict | None = None, timeout: int = 45) -> dic
 
 
 def source_state() -> dict:
-    payload = api_call(
-        "bundle_state",
-        {"source_keys": ["analitico"], "derived_keys": []},
-        timeout=30,
-    ).get("data") or {}
-    rows = payload.get("sources") or []
-    for row in rows:
-        if isinstance(row, dict) and str(row.get("source_key")) == "analitico":
-            return row
-    return {}
+    return source_state_for("analitico")
 
 
 def source_token(meta: dict) -> str:
@@ -99,16 +91,18 @@ def favicon_bytes(config: dict | None = None) -> bytes:
         return b""
 
 
-def sync_state() -> dict:
-    rows = api_call(
+@st.cache_data(ttl=45, max_entries=2, show_spinner=False)
+def _consumer_status_rows() -> list[dict]:
+    """Estado pequeno, comum ao Analítico e CADASTROS; consulta uma vez por janela."""
+    return api_call(
         "consumer_sync_status",
         {"consumer_key": CONSUMER_KEY},
-        timeout=30,
+        timeout=15,
     ).get("data") or []
-    for row in rows:
-        if isinstance(row, dict) and str(row.get("source_key")) == "analitico":
-            return row
-    return {}
+
+
+def sync_state() -> dict:
+    return sync_state_for("analitico")
 
 
 def commit_sync(
@@ -119,7 +113,7 @@ def commit_sync(
     status: str = "ATUALIZADO",
     error_message: str | None = None,
 ) -> dict:
-    return api_call(
+    response = api_call(
         "consumer_sync_commit",
         {
             "consumer_key": CONSUMER_KEY,
@@ -132,6 +126,8 @@ def commit_sync(
         },
         timeout=30,
     ).get("data") or {}
+    _consumer_status_rows.clear()
+    return response
 
 
 def format_dt(value: Any) -> str:
@@ -147,6 +143,7 @@ def format_dt(value: Any) -> str:
 
 
 
+@st.cache_data(ttl=35, max_entries=6, show_spinner=False)
 def source_state_for(source_key: str) -> dict:
     key = str(source_key or "").strip()
     if not key:
@@ -256,13 +253,7 @@ def download_preferred_source(source_key: str) -> tuple[dict, dict]:
 
 def sync_state_for(source_key: str) -> dict:
     key = str(source_key or "").strip()
-    rows = api_call(
-        "consumer_sync_status",
-        {"consumer_key": CONSUMER_KEY},
-        timeout=30,
-    ).get("data") or []
-
-    for row in rows:
+    for row in _consumer_status_rows():
         if (
             isinstance(row, dict)
             and str(row.get("source_key") or "") == key
@@ -282,7 +273,7 @@ def commit_source_sync(
 ) -> dict:
     key = str(source_key or "").strip()
 
-    return api_call(
+    response = api_call(
         "consumer_sync_commit",
         {
             "consumer_key": CONSUMER_KEY,
@@ -295,3 +286,5 @@ def commit_source_sync(
         },
         timeout=30,
     ).get("data") or {}
+    _consumer_status_rows.clear()
+    return response
