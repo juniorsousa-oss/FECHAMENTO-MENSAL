@@ -29,29 +29,33 @@ ui.render_results(model)
 
 
 class IssueCheckUITests(unittest.TestCase):
-    def test_op_filters_material_evidence_and_all_areas(self):
+    def test_op_filters_material_evidence_and_export(self):
         app = AppTest.from_string(PROGRAM, default_timeout=20).run()
         self.assertFalse(app.exception)
-        self.assertEqual(len(app.expander), 2)
+        self.assertEqual(len(app.expander), 3)  # duas OPs e critérios técnicos
+        self.assertTrue(any("ORDEM COM ALERTA" in exp.label for exp in app.expander))
+        self.assertTrue(any("ORDEM OK" in exp.label for exp in app.expander))
+        self.assertFalse(any(r.label == "Consulta" for r in app.radio))
+        self.assertFalse(any(t.label == "Histórico incompleto" for t in app.dataframe))
 
-        detail = next(x for x in app.selectbox if x.label == "Detalhar material e evidências")
+        detail = next(x for x in app.selectbox if x.label == "DETALHAR MATERIAL E EVIDÊNCIAS")
         detail.set_value("26000101001:00001000").run()
         self.assertFalse(app.exception)
         self.assertTrue(any(t.label == "MOVIMENTOS KARDEX" for t in app.tabs))
         self.assertTrue(any("SALDO EM G9-PROD" in x.value for x in app.error))
-        app.radio[0].set_value("Divergências").run()
+
+        next(x for x in app.selectbox if x.label == "ALERTAS").set_value("Com alertas").run()
         self.assertFalse(app.exception)
-        self.assertEqual(len(app.dataframe[0].value), 1)
-        app.radio[0].set_value("Fontes e critérios").run()
+        self.assertEqual(len([exp for exp in app.expander if exp.label.startswith("OP ")]), 1)
+
+        next(x for x in app.selectbox if x.label == "ALERTAS").set_value("Todos").run()
+        next(x for x in app.text_input if x.label == "LOCALIZAR OP").set_value("26000201001").run()
         self.assertFalse(app.exception)
-        self.assertEqual(len(app.dataframe[0].value), 2)
-        app.radio[0].set_value("Por OP").run()
-        app.text_input[0].set_value("26000201001").run()
-        self.assertFalse(app.exception)
-        self.assertEqual(len(app.expander), 1)
-        next(x for x in app.button if x.label == "LIMPAR FILTROS").click().run()
-        self.assertFalse(app.exception)
-        self.assertEqual(len(app.expander), 2)
+        self.assertEqual(len([exp for exp in app.expander if exp.label.startswith("OP ")]), 1)
+        self.assertTrue(any("ORDEM OK" in exp.label for exp in app.expander))
+        self.assertEqual(len(app.dataframe), 1)
+        self.assertTrue(any("PREPARAR RELATÓRIO COMPLETO" in b.label for b in app.button))
+
 
     def test_an_unavailable_source_is_not_presented_as_zero_stock_or_issues(self):
         program = '''
