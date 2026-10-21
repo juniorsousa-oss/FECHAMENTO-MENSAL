@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import html
 import io
+import sys
 from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
@@ -2000,9 +2001,14 @@ def cb_kpi_html(
     """
 
 
+@st.cache_data(show_spinner=False, ttl=300, max_entries=2)
+def load_app_config() -> dict:
+    return db.load_config()
+
+
 if "app_cfg" not in st.session_state:
     try:
-        remote_cfg = db.load_config()
+        remote_cfg = load_app_config()
     except Exception:
         remote_cfg = {}
 
@@ -2075,6 +2081,30 @@ def _set_fm_page(target: str) -> None:
 
 def _open_fm_menu() -> None:
     st.session_state["_fm_nav_collapsed"] = False
+
+
+def _refresh_fm_data() -> None:
+    """Atualiza imediatamente dados cacheados, sob comando do operador."""
+    load_api_sources.clear()
+    load_inventory_overview.clear()
+    load_cb_page_snapshot.clear()
+    load_cb_adjustment_history.clear()
+    load_central_analitico.clear()
+    load_central_cadastros.clear()
+    _cached_preview_summaries.clear()
+    central_data.source_state_for.clear()
+    central_data._consumer_status_rows.clear()
+    st.session_state.pop("_fm_analitico_synced", None)
+    st.session_state.pop("_fm_cadastros_synced", None)
+    # Recarrega o KARDEX apenas quando solicitado, evitando invalidar modelos
+    # de grandes históricos durante a navegação normal.
+    for name, callback in (
+        ("movement_analysis_ui", "_reload"),
+        ("issue_check_ui", "_reload"),
+    ):
+        module = sys.modules.get(name)
+        if module is not None:
+            getattr(module, callback)()
 
 
 menu_labels = cfg.get("menu_labels") or {}
@@ -2153,6 +2183,13 @@ with st.sidebar:
             '</div>'
         ),
         unsafe_allow_html=True,
+    )
+    st.button(
+        "ATUALIZAR DADOS",
+        key="fm_sidebar_refresh_data",
+        on_click=_refresh_fm_data,
+        use_container_width=True,
+        help="Força a atualização das fontes, do resumo e dos relatórios sem reiniciar a sessão.",
     )
 
 st.markdown(
@@ -3701,9 +3738,8 @@ elif page == "Conferência de chapas e barramentos":
 
                 if internal_file is not None:
                     try:
-                        parsed_internal = parse_interno_excel(
-                            internal_file.getvalue(),
-                            internal_file.name,
+                        parsed_internal = cached_parse_cb_source(
+                            internal_file.getvalue(), internal_file.name, "almoxarifado"
                         )
 
                         internal_catalog_rows = [
@@ -5395,6 +5431,7 @@ else:
 
             try:
                 db.save_config(new_config)
+                load_app_config.clear()
                 st.session_state.app_cfg = new_config
                 st.session_state["_menu_cfg_saved"] = True
                 st.rerun()
@@ -5425,6 +5462,7 @@ else:
             }
             try:
                 db.save_config(restored_config)
+                load_app_config.clear()
                 st.session_state.app_cfg = restored_config
                 st.rerun()
             except Exception as exc:
