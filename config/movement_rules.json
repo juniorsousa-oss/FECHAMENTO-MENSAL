@@ -1,49 +1,7 @@
 {
-  "versao": "2026-10-20.2",
-  "atualizado_em": "2026-10-20",
+  "versao": "2026-10-21.1",
+  "atualizado_em": "2026-10-21",
   "tes": {
-    "004": {
-      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO - NAO CONT",
-      "grupo": "VENDAS",
-      "detalhe": "VENDAS (PA, PI, CABINES)",
-      "provisorio": false
-    },
-    "005": {
-      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO - NAO CONT",
-      "grupo": "VENDAS",
-      "detalhe": "VENDAS (PA, PI, CABINES)",
-      "provisorio": false
-    },
-    "010": {
-      "descricao": "MOV PRODUCAO MES PA",
-      "grupo": null,
-      "detalhe": null,
-      "provisorio": true
-    },
-    "020": {
-      "descricao": "DEVOLUCAO TOTVS",
-      "grupo": "AJUSTE DE ESTOQUE",
-      "detalhe": "AJUSTE DE ESTOQUE (ERROS DE SALDO)",
-      "provisorio": false
-    },
-    "030": {
-      "descricao": "ENTR CUSTO E QTD ZER",
-      "grupo": "FLUXO DE ESTOQUE",
-      "detalhe": "FLUXO DE ESTOQUE (RP, TCTP, CHAPAS, BARRAS, ACERTOS GR, MELHORIAS, CUSTO, CONSUMO DE OP E II)",
-      "provisorio": false
-    },
-    "040": {
-      "descricao": "DEVOLUCAO MES",
-      "grupo": "FLUXO DE ESTOQUE",
-      "detalhe": "FLUXO DE ESTOQUE (RP, TCTP, CHAPAS, BARRAS, ACERTOS GR, MELHORIAS, CUSTO, CONSUMO DE OP E II)",
-      "provisorio": false
-    },
-    "078": {
-      "descricao": "AQUISICAO SERVICO DE TRANSPORTE IND",
-      "grupo": "COMPRAS",
-      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
-      "provisorio": false
-    },
     "112": {
       "descricao": "COMPRA ORIGINADA DE ENC. P/ RECEB. FUTUR",
       "grupo": "COMPRAS",
@@ -1014,7 +972,8 @@
       "descricao": "BAIXA PRODUCAO MES",
       "grupo": "FLUXO DE ESTOQUE",
       "detalhe": "FLUXO DE ESTOQUE (RP, TCTP, CHAPAS, BARRAS, ACERTOS GR, MELHORIAS, CUSTO, CONSUMO DE OP E II)",
-      "provisorio": false
+      "provisorio": false,
+      "subgrupo": "AG, GARANTIA, ADEQUAÇÃO"
     },
     "612": {
       "descricao": "TRANSFERÊNCIA ARMAZÉM",
@@ -1077,9 +1036,53 @@
       "provisorio": true
     },
     "999": {
-      "descricao": "ENDEREÇAMENTO",
+      "descricao": "ORDEM DE PRODUÇÃO",
       "grupo": "FLUXO DE ESTOQUE",
       "detalhe": "FLUXO DE ESTOQUE (RP, TCTP, CHAPAS, BARRAS, ACERTOS GR, MELHORIAS, CUSTO, CONSUMO DE OP E II)",
+      "provisorio": false,
+      "subgrupo": "CONSUMO DE OPS"
+    },
+    "004": {
+      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO - NAO CONT",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "005": {
+      "descricao": "DEVOLUCAO DE VENDA DE PRODUCAO DO ESTABELECIMENTO - NAO CONT",
+      "grupo": "VENDAS",
+      "detalhe": "VENDAS (PA, PI, CABINES)",
+      "provisorio": false
+    },
+    "010": {
+      "descricao": "MOV PRODUCAO MES PA",
+      "grupo": null,
+      "detalhe": null,
+      "provisorio": true
+    },
+    "020": {
+      "descricao": "DEVOLUCAO TOTVS",
+      "grupo": "AJUSTE DE ESTOQUE",
+      "detalhe": "AJUSTE DE ESTOQUE (ERROS DE SALDO)",
+      "provisorio": false
+    },
+    "030": {
+      "descricao": "ENTR CUSTO E QTD ZER",
+      "grupo": "FLUXO DE ESTOQUE",
+      "detalhe": "FLUXO DE ESTOQUE (RP, TCTP, CHAPAS, BARRAS, ACERTOS GR, MELHORIAS, CUSTO, CONSUMO DE OP E II)",
+      "provisorio": false
+    },
+    "040": {
+      "descricao": "DEVOLUCAO MES",
+      "grupo": "FLUXO DE ESTOQUE",
+      "detalhe": "FLUXO DE ESTOQUE (RP, TCTP, CHAPAS, BARRAS, ACERTOS GR, MELHORIAS, CUSTO, CONSUMO DE OP E II)",
+      "provisorio": false,
+      "subgrupo": "RETORNO DE PRODUÇÃO"
+    },
+    "078": {
+      "descricao": "AQUISICAO SERVICO DE TRANSPORTE IND",
+      "grupo": "COMPRAS",
+      "detalhe": "COMPRAS (FRETE, MP, MC, SERVIÇO, DEVOLUÇÃO, EPI, DENTRE OUTROS)",
       "provisorio": false
     }
   },
@@ -1717,6 +1720,33 @@
       "descricao": "Somente movimentos da TES 020 que permanecem em Ajuste de Estoque, com categoria PA ou PI, passam para Produção Interna.",
       "fonte": "Orientação do usuário em 20/10/2026",
       "preservacao": "Aplicar somente após as regras de fluxo já confirmadas; preservar dados, valores, sinais, TES e AE."
+    },
+    {
+      "id": "040_SUBGRUPO_CONFIRMADO",
+      "tes": "040",
+      "condicao_descricao": "TES 040: classificação por TES conforme orientação de 21/10/2026.",
+      "grupo_analise": "FLUXO DE ESTOQUE",
+      "subgrupo_analise": "RETORNO DE PRODUÇÃO",
+      "fonte": "Orientação do usuário em 21/10/2026",
+      "preservacao": "Mantém movimentos, quantidades, valores, AE, OP e vínculo de endereçamento original."
+    },
+    {
+      "id": "550_SUBGRUPO_CONFIRMADO",
+      "tes": "550",
+      "condicao_descricao": "TES 550: classificação por TES conforme orientação de 21/10/2026.",
+      "grupo_analise": "FLUXO DE ESTOQUE",
+      "subgrupo_analise": "AG, GARANTIA, ADEQUAÇÃO",
+      "fonte": "Orientação do usuário em 21/10/2026",
+      "preservacao": "Mantém movimentos, quantidades, valores, AE, OP e vínculo de endereçamento original."
+    },
+    {
+      "id": "999_SUBGRUPO_CONFIRMADO",
+      "tes": "999",
+      "condicao_descricao": "TES 999: classificação por TES conforme orientação de 21/10/2026.",
+      "grupo_analise": "FLUXO DE ESTOQUE",
+      "subgrupo_analise": "CONSUMO DE OPS",
+      "fonte": "Orientação do usuário em 21/10/2026",
+      "preservacao": "Mantém movimentos, quantidades, valores, AE, OP e vínculo de endereçamento original."
     }
   ]
 }
