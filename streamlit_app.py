@@ -2057,37 +2057,33 @@ with st.sidebar:
         ),
         unsafe_allow_html=True,
     )
-    st.markdown(
-        '<div class="sidebar-section-label sidebar-nav-label">NAVEGAÇÃO</div>',
-        unsafe_allow_html=True,
-    )
-
-    for _index, internal_page in enumerate(PAGES):
-        label = str(
-            menu_labels.get(internal_page)
-            or DEFAULT_CONFIG["menu_labels"].get(
-                internal_page,
-                internal_page,
-            )
-        ).strip()
-        st.button(
-            label,
-            key=f"fm_nav_{_index}",
-            type=(
-                "primary"
-                if page == internal_page
-                else "secondary"
-            ),
-            use_container_width=True,
-            on_click=_set_fm_page,
-            args=(internal_page,),
+    # Contêiner próprio garante separação real entre a marca,
+    # o título da seção e cada botão, sem hacks de altura nos wrappers.
+    with st.container(key="fm_sidebar_navigation"):
+        st.markdown(
+            '<div class="sidebar-nav-label">NAVEGAÇÃO</div>',
+            unsafe_allow_html=True,
         )
+        for _index, internal_page in enumerate(PAGES):
+            label = str(
+                menu_labels.get(internal_page)
+                or DEFAULT_CONFIG["menu_labels"].get(
+                    internal_page,
+                    internal_page,
+                )
+            ).strip()
+            st.button(
+                label,
+                key=f"fm_nav_{_index}",
+                type=("primary" if page == internal_page else "secondary"),
+                use_container_width=True,
+                on_click=_set_fm_page,
+                args=(internal_page,),
+            )
 
     st.markdown(
         (
             '<div class="sidebar-status-section">'
-            '<div class="sidebar-status-top-gap" aria-hidden="true"></div>'
-            '<div class="sidebar-divider"></div>'
             '<div class="sidebar-section-label sidebar-status-label">STATUS GERAL</div>'
             '<div class="sidebar-status-card">'
             '<div class="sidebar-status-name">CONEXÕES</div>'
