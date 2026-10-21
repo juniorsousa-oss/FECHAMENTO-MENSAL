@@ -284,12 +284,15 @@ def classify(row: dict, config: dict) -> dict:
     entry = config["tes"].get(code, {})
     description = entry.get("descricao") or f"TES {code} sem descrição cadastrada"
     base = entry.get("grupo") or description
-    group, subgroup, rule = base, base, "CADASTRO_TES"
+    configured_subgroup = entry.get("subgrupo")
+    group, subgroup, rule = (base, configured_subgroup or base,
+                             f"{code}_SUBGRUPO_CONFIRMADO" if configured_subgroup else "CADASTRO_TES")
     op = re.fullmatch(r"OP\s*(\d+)", ae, re.I)
     cc = re.fullmatch(r"CC\s*(\d+)", ae, re.I)
     cc_number = cc.group(1) if cc else ""
     material = row["codigo"] in config["_closing_codes"] or normalized(row["descricao"]).startswith(("BARRA DE COBRE ", "CHAPA "))
-    reason = f"TES {code} vinculada a {base} no cadastro confirmado."
+    reason = (f"TES {code} classificada em {base} / {subgroup}, conforme cadastro confirmado."
+              if configured_subgroup else f"TES {code} vinculada a {base} no cadastro confirmado.")
     provisional = bool(entry.get("provisorio", not bool(entry.get("grupo"))))
     if code in ("020", "520") and material:
         group, subgroup, rule = FLOW, CLOSING, CLOSING_RULE
