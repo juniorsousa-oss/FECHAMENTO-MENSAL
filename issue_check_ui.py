@@ -541,12 +541,15 @@ def _filter_op_status_invoice(view: pd.DataFrame, ops: pd.DataFrame,
             issued = pd.to_datetime(
                 selected["data_faturamento"].replace("NI", pd.NA),
                 format="%d/%m/%Y", errors="coerce",
-            ).dt.date
+            )
+            # NaT em TODAS as OPs mantém datetime64[ns]; comparar com
+            # datetime.date nesse caso gera InvalidComparison no Pandas.
+            # Timestamp evita esse problema sem trocar dia e mês.
             condition = pd.Series(True, index=selected.index)
             if minimum is not None:
-                condition &= issued >= minimum
+                condition &= issued >= pd.Timestamp(minimum)
             if maximum is not None:
-                condition &= issued <= maximum
+                condition &= issued <= pd.Timestamp(maximum)
             selected = selected.loc[condition]
     return view.loc[view["op"].isin(selected["op"])].copy()
 
