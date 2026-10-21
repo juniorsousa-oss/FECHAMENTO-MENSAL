@@ -326,6 +326,23 @@ def _filter(frame: pd.DataFrame, query: str, choice: str) -> pd.DataFrame:
     return view.copy()
 
 
+def _filter_op_status_invoice(view: pd.DataFrame, ops: pd.DataFrame,
+                              status: str, invoice_period) -> pd.DataFrame:
+    """Filtra OP, sem excluir produtos da ordem selecionada."""
+    selected = ops
+    if status != "Todos os status":
+        selected = selected.loc[selected["status_op"] == status]
+    if invoice_period:
+        boundaries = list(invoice_period) if isinstance(invoice_period, (tuple, list)) else [invoice_period]
+        boundaries = [pd.Timestamp(value).date() for value in boundaries if value is not None]
+        if boundaries:
+            issued = pd.to_datetime(selected["data_faturamento"], dayfirst=True, errors="coerce").dt.date
+            minimum = boundaries[0]
+            maximum = boundaries[-1] if len(boundaries) > 1 else boundaries[0]
+            selected = selected.loc[(issued >= minimum) & (issued <= maximum)]
+    return view.loc[view["op"].isin(selected["op"])].copy()
+
+
 def _details(model, item):
     if item["alertas"]:
         message = "\n\n".join(item["alertas"])
@@ -473,6 +490,9 @@ def _sources(model):
     st.write("• OP finalizada/faturada/reportada OU com algum consumo: exige baixa integral da quantidade separada e conferida. Se existir pendência de consumo, primeiro verifica saldo G9-PROD dos lotes conferidos; depois endereço alternativo que sozinho cubra a falta; senão classifica SEM SALDO. Todos os produtos não concluídos nessas OPs geram alerta.")
     st.write("• OP em andamento SEM nenhuma baixa: acompanha somente etapa do produto (conferido aguardando reporte, separado aguardando conferência ou aguardando separação), sem gerar alertas.")
     st.write("• A conferência de baixas é por OP e código do produto. Saldos por endereço consideram somente lotes efetivamente conferidos; nenhum saldo é reservado automaticamente para outras OPs.")
+    st.write("• Baixa líquida acima da quantidade NECESSÁRIA recebe 'PRODUTO COM BAIXA MAIOR QUE A NECESSIDADE' e alerta.")
+    st.write("• Produtos Tipo II do CADASTROS sem separação são 'MATERIAL DE CONSUMO' e não geram alerta por aguardarem separação, exceto se houver baixa maior que a necessidade.")
+    st.write("• Outros endereços só são exibidos se o saldo G9-PROD dos lotes conferidos não cobrir toda a quantidade separada.")
     st.write("• Registros repetidos no MES são mantidos e somados. Sobreposição entre arquivos KARDEX é reconhecida sem duplicar movimentos.")
     st.write("• Diferenças de até 0,000001 são tratadas como precisão numérica. Os valores originais permanecem nas evidências.")
     st.caption(f"Referência da conferência: {day(model['as_of'])}. Movimentos posteriores à data da base são desconsiderados ({count(model['movimentos_apos_base'])}).")
@@ -480,6 +500,8 @@ def _sources(model):
         st.caption(f"Movimentos repetidos entre importações reconhecidos: {count(model['duplicates'])}.")
     if model["negative_stock_rows"]:
         st.warning(f"O relatório contém {count(model['negative_stock_rows'])} registros de saldo negativo nos armazéns selecionados. Eles foram mantidos no cálculo.")
+    catalog_meta = model.get("catalog_meta") or {}
+    st.caption("Fonte Tipo de material: CADASTROS · " + (catalog_meta.get("last_file_name") or catalog_meta.get("erro") or "NI"))
     master_meta = model.get("master_plan_meta") or {}
     st.caption(
         "Plano Mestre FOR001: "
@@ -508,6 +530,8 @@ def render_results(model):
     if len(period["intervalos"]) > 1:
         st.warning("O histórico possui intervalos sem cobertura entre as importações KARDEX.")
     diagnostics = model.get("diagnostico_baixas") or {}
+    if model.get("catalog_meta", {}).get("erro"):
+        st.warning("CADASTROS indisponível: materiais Tipo II sem separação podem continuar em classificação provisória até atualização da fonte.")
     if (model.get("history_available") and diagnostics.get("movimentos_no_periodo", 0)
             and not diagnostics.get("consumos_vinculados", 0)):
         st.warning(
@@ -518,14 +542,32 @@ def render_results(model):
         )
 
     with st.container(key="fm_issue_filters"):
-        fop, falert = st.columns([2, 1])
+        fop, falert, fstatus, finvoice = st.columns([1.65, 1.1, 1.1, 1.4])
         with fop:
             query = st.text_input("LOCALIZAR OP", key="fm_issue_search",
                                   placeholder="Digite o número da OP")
         with falert:
             choice = st.selectbox("ALERTAS", list(FILTERS), key="fm_issue_filter")
+        with fstatus:
+            statuses = ["Todos os status"] + [
+                op_rules.FINALIZADO_PATIO, op_rules.FINALIZADO_ENTREGUE,
+                op_rules.NF_EMITIDA, op_rules.FINALIZADO, op_rules.REPORTADO,
+                op_rules.EM_CONFERENCIA, op_rules.EM_SEPARACAO,
+                op_rules.AGUARDANDO_INICIO,
+            ]
+            selected_status = st.selectbox(
+                "STATUS DA OP", statuses, key="fm_issue_op_status"
+            )
+        with finvoice:
+            invoice_period = st.date_input(
+                "DATA DE FATURAMENTO", value=(), format="DD/MM/YYYY",
+                key="fm_issue_invoice_dates",
+                help="Escolha uma data ou um intervalo. Sem seleção, todas as datas são consideradas.",
+            )
 
-    view = _filter(frame, query, choice)
+    view = _filter_op_status_invoice(
+        _filter(frame, query, choice), model["ops"], selected_status, invoice_period
+    )
     _cards([
         ("OPs encontradas", count(view["op"].nunique()), "Ordens no recorte"),
         ("Itens", count(view["itens"].sum()), "Registros de material MES"),
@@ -539,8 +581,8 @@ def render_results(model):
         f"Referência {day(model['as_of'])}."
     )
     token = hashlib.sha256(
-        (op_rules.VERSION + query + choice + str(model["warehouses"])
-         + str(model["source_meta"]) + str(period)).encode()
+        (op_rules.VERSION + query + choice + selected_status + str(invoice_period)
+         + str(model["warehouses"]) + str(model["source_meta"]) + str(period)).encode()
     ).hexdigest()[:14]
     if view.empty:
         st.info("Nenhuma OP corresponde à pesquisa ou aos alertas selecionados.")
