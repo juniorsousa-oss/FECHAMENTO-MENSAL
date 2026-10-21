@@ -15,8 +15,10 @@ import central_fechamento_data as central
 import issue_check as check
 import movement_store
 import movements as mv
+import master_plan
 
 SOURCE_KEYS = ("relatorio_geral", "endereco")
+MASTER_SOURCE_KEY = "for001"
 TZ = ZoneInfo("America/Sao_Paulo")
 FILTERS = {
     "Todos": None,
@@ -93,10 +95,19 @@ def _band():
       text-align:left!important;white-space:normal!important;border-radius:10px!important;
       padding:.72rem .95rem!important;box-shadow:0 2px 8px rgba(15,23,42,.025)!important;
     }
+    [class*="st-key-fm_issue_op_alert_"] [data-testid="stButton"] button > div,
+    [class*="st-key-fm_issue_op_ok_"] [data-testid="stButton"] button > div,
+    [class*="st-key-fm_issue_op_alert_"] [data-testid="stMarkdownContainer"],
+    [class*="st-key-fm_issue_op_ok_"] [data-testid="stMarkdownContainer"] {
+      display:flex!important;justify-content:flex-start!important;
+      align-items:center!important;width:100%!important;min-width:0!important;
+      text-align:left!important;margin:0!important;padding:0!important;
+    }
     [class*="st-key-fm_issue_op_alert_"] [data-testid="stButton"] button p,
     [class*="st-key-fm_issue_op_ok_"] [data-testid="stButton"] button p {
-      width:100%!important;text-align:left!important;white-space:normal!important;
-      font-size:.77rem!important;font-weight:750!important;
+      width:100%!important;margin:0!important;padding:0!important;
+      text-align:left!important;white-space:normal!important;
+      font-size:.77rem!important;font-weight:750!important;line-height:1.6!important;
     }
     [class*="st-key-fm_issue_op_detail_"] {
       background:#fff;border:1px solid #dfe5ec;border-radius:12px;
@@ -137,6 +148,35 @@ def _source(key: str, version: int, updated_at: str):
     else:
         rows = check.parse_raw(payload["raw"], key)
     return rows, {k: v for k, v in meta.items() if k not in ("signed_url", "url")}
+
+
+@st.cache_data(ttl=600, max_entries=3, show_spinner=False)
+def _master_plan_records(version: int, updated_at: str):
+    """Consulta FOR001 somente quando a versão da fonte é alterada."""
+    del updated_at
+    payload, meta = central.download_preferred_source(MASTER_SOURCE_KEY)
+    remote_version = meta.get("source_version", meta.get("version"))
+    if remote_version is not None and int(remote_version) != version:
+        raise RuntimeError("O Plano Mestre mudou durante a leitura. Atualize a conferência.")
+    if payload["normalized"]:
+        frame = central.normalized_frame(payload["pack"], sheet_name="PAINEL")
+        records = master_plan.parse_frame(frame)
+    else:
+        records = master_plan.parse_raw(payload["raw"])
+    return records, {key: value for key, value in meta.items() if key not in ("signed_url", "url")}
+
+
+def _optional_master_plan():
+    """Falhas da fonte complementar não impedem a conferência de baixas."""
+    try:
+        state = central.source_state_for(MASTER_SOURCE_KEY)
+        if not state or str(state.get("status") or "") != "ATUALIZADO":
+            return {}, {"erro": "FOR001 não disponível no Monitor de APIs."}
+        return _master_plan_records(
+            int(state["version"]), str(state.get("last_update_at") or "")
+        )
+    except Exception as exc:
+        return {}, {"erro": str(exc)}
 
 
 @st.cache_data(ttl=45, show_spinner=False)
@@ -181,6 +221,8 @@ def _audit(source_tokens: tuple, history_tokens: tuple, warehouses: tuple, versi
 
 def _reload():
     _states.clear(); _source.clear(); _imports.clear(); _history.clear(); _audit.clear()
+    _master_plan_records.clear()
+    central.source_state_for.clear()
 
 
 def _clear_filters():
@@ -312,9 +354,10 @@ def _ops(model, view, token):
             issues = int(context["divergencias"])
             summary = "ORDEM COM ALERTA" if issues else "ORDEM OK"
             title = (
-                f"OP {number} / {total} ITENS / {separated} SEPARADOS / "
-                f"{confirmed} CONFERIDOS / {discharged} BAIXADOS / "
-                f"{issues} COM ALERTA — {summary}"
+                f"OP {number} | {total} ITENS | {separated} SEPARADOS | "
+                f"{confirmed} CONFERIDOS | {discharged} BAIXADOS | "
+                f"{issues} COM ALERTA — {summary} | "
+                + master_plan.label_fields(context)
             )
             css_key = "fm_issue_op_alert_" if issues else "fm_issue_op_ok_"
             is_open = st.session_state.get("fm_issue_open_op") == number
@@ -393,6 +436,12 @@ def _sources(model):
         st.caption(f"Movimentos repetidos entre importações reconhecidos: {count(model['duplicates'])}.")
     if model["negative_stock_rows"]:
         st.warning(f"O relatório contém {count(model['negative_stock_rows'])} registros de saldo negativo nos armazéns selecionados. Eles foram mantidos no cálculo.")
+    master_meta = model.get("master_plan_meta") or {}
+    st.caption(
+        "Plano Mestre FOR001: "
+        + (master_meta.get("last_file_name") or master_meta.get("erro") or "NI")
+        + " · Dados complementares sem correspondência são exibidos como NI."
+    )
 
 
 
@@ -513,6 +562,11 @@ def render_issue_check():
         history_tokens = tuple((i["chave"], str(i.get("atualizado_em") or ""), i.get("meta") or {}) for i in imports)
         with st.spinner("Conferindo as OPs, os saldos por lote e as baixas registradas..."):
             model = _audit(tokens, history_tokens, tuple(sorted(chosen)), check.VERSION)
+        # Cópia superficial: não modifica o objeto de reconciliação cacheado.
+        model = dict(model)
+        master_records, master_meta = _optional_master_plan()
+        model["ops"] = master_plan.enrich_ops(model["ops"], master_records)
+        model["master_plan_meta"] = master_meta
         render_results(model)
     except Exception as exc:
         st.error(f"Não foi possível concluir a conferência: {exc}")
