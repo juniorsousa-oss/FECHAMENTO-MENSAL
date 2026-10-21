@@ -148,6 +148,136 @@ def _band():
       padding:1rem 1.05rem;margin:0 0 .65rem;
     }
     .st-key-fm_issue_ops{margin-top:1.15rem}
+    /* SETTA | conferência: componentes de consulta visivelmente interativos */
+    .st-key-fm_issue_filters {
+      border:1px solid #d8dfe8!important;
+      border-top:4px solid #141d2c!important;
+      border-radius:18px!important;
+      background:linear-gradient(180deg,#fff 0%,#fcfdff 100%)!important;
+      padding:1.25rem 1.35rem 1.25rem!important;
+      box-shadow:0 9px 26px rgba(15,23,42,.06)!important;
+    }
+    .st-key-fm_issue_filters [data-testid="stTextInput"] [data-baseweb="input"],
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+      background:#f8fafc!important;
+      border:1.5px solid #c4cfdd!important;
+      border-radius:11px!important;
+      box-shadow:0 1px 3px rgba(15,23,42,.05)!important;
+      min-height:46px!important;transition:border-color .14s,box-shadow .14s!important;
+    }
+    .st-key-fm_issue_filters [data-testid="stTextInput"] [data-baseweb="input"]:focus-within,
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div:focus-within {
+      background:#fff!important;border-color:#273955!important;
+      box-shadow:0 0 0 3px rgba(39,57,85,.12)!important;
+    }
+    .st-key-fm_issue_filters [data-testid="stTextInput"] input {
+      color:#101827!important;min-height:42px!important;padding:0 .9rem!important;
+      background:transparent!important;font-size:.87rem!important;
+      font-weight:550!important;caret-color:#111827!important;
+    }
+    .st-key-fm_issue_filters [data-testid="stTextInput"] input::placeholder {
+      color:#8793a3!important;opacity:1!important;font-weight:450!important;
+    }
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+      color:#172133!important;font-size:.87rem!important;
+    }
+    .st-key-fm_issue_filters label {font-size:.73rem!important;letter-spacing:.03em!important}
+    .st-key-fm_issue_filters .fm-issue-filter-subtitle{margin-bottom:1.15rem!important}
+    .st-key-fm_issue_date_filters {
+      border-top:1px solid #e8edf3!important;margin-top:.65rem!important;
+      padding-top:1rem!important;
+    }
+    .st-key-fm_issue_clear_filters button {
+      min-height:45px!important;background:#fff!important;color:#26364d!important;
+      border:1.5px solid #b8c4d3!important;border-radius:11px!important;
+      font-size:.77rem!important;font-weight:800!important;
+    }
+    .st-key-fm_issue_clear_filters button:hover {
+      border-color:#162238!important;background:#f5f7fb!important;
+    }
+    /* Painel de indicadores: compacto no celular, com 2 colunas em vez de 4 cartões gigantes */
+    .st-key-fm_issue_summary .cb-kpi-grid{margin:.85rem 0 1.05rem!important;gap:.7rem!important}
+    .st-key-fm_issue_summary .cb-kpi {
+      min-height:94px!important;padding:14px 16px!important;
+      border:1px solid #e0e6ee!important;border-radius:13px!important;
+      box-shadow:0 3px 12px rgba(15,23,42,.035)!important;
+    }
+    .fm-issue-results-heading{
+      margin:1.3rem 0 .75rem;display:flex;gap:12px;
+      flex-wrap:wrap;align-items:baseline;justify-content:space-between;
+      border-bottom:1px solid #dde4ed;padding-bottom:.65rem;
+    }
+    .fm-issue-results-heading strong{
+      font-size:.96rem;font-weight:850;color:#142035;letter-spacing:.012em;
+    }
+    .fm-issue-results-heading span{font-size:.73rem;color:#68778b}
+    .fm-issue-meta{
+      display:grid;grid-template-columns:minmax(210px,2.1fr) repeat(4,minmax(80px,1fr)) minmax(160px,1.3fr);
+      gap:.5rem 1.2rem;padding:.65rem .85rem .9rem;
+      background:transparent;color:#475569;align-items:start;
+    }
+    .fm-issue-meta-item{min-width:0;overflow-wrap:anywhere}
+    .fm-issue-meta-item b{
+      display:block;font-size:.60rem;font-weight:850;color:#66788f;
+      letter-spacing:.06em;text-transform:uppercase;margin-bottom:.15rem;
+    }
+    .fm-issue-meta-item span{display:block;font-size:.74rem;font-weight:650;color:#2c3a4e;line-height:1.4}
+    .fm-issue-meta-item .fm-issue-status{
+      color:#182638;font-weight:850;
+    }
+    [class*="st-key-fm_issue_op_alert_"],
+    [class*="st-key-fm_issue_op_ok_"] {
+      margin:.3rem 0 .65rem!important;border:1px solid #e1e6ed!important;
+      border-radius:14px!important;background:#fff!important;
+      box-shadow:0 4px 14px rgba(15,23,42,.035)!important;overflow:hidden;
+    }
+    [class*="st-key-fm_issue_op_alert_"]{border-color:#f2c8cc!important;background:#fffafb!important}
+    [class*="st-key-fm_issue_op_alert_"] [data-testid="stButton"] button,
+    [class*="st-key-fm_issue_op_ok_"] [data-testid="stButton"] button{
+      border-radius:0!important;border-width:0 0 1px 5px!important;
+      box-shadow:none!important;padding:.9rem 1rem!important;
+      background:transparent!important;min-height:54px!important;
+      color:#192538!important;
+    }
+    [class*="st-key-fm_issue_op_alert_"] [data-testid="stButton"] button {
+      border-left-color:#c53a43!important;border-bottom-color:#f5dadd!important;
+      color:#8f2932!important;
+    }
+    [class*="st-key-fm_issue_op_ok_"] [data-testid="stButton"] button {
+      border-left-color:#1d2b40!important;border-bottom-color:#ecf0f5!important;
+    }
+    [class*="st-key-fm_issue_op_alert_"] [data-testid="stButton"] button p,
+    [class*="st-key-fm_issue_op_ok_"] [data-testid="stButton"] button p {
+      font-size:.78rem!important;font-weight:800!important;line-height:1.45!important;
+    }
+    .fm-issue-mobile-hint{display:none}
+    @media(max-width:900px){
+      /* Cabeçalho institucional mais enxuto apenas nesta tela */
+      .setta-logo-card{min-height:77px!important;padding:.65rem 1rem!important;margin-bottom:1rem!important}
+      .setta-logo-card img{max-height:56px!important;max-width:148px!important}
+      .app-title{font-size:1.55rem!important;line-height:1.13!important;letter-spacing:-.035em!important}
+      .app-sub{font-size:.72rem!important;line-height:1.35!important;margin-bottom:1.1rem!important}
+      .st-key-fm_issue_filters{padding:1rem!important;border-radius:15px!important}
+      .st-key-fm_issue_filters [data-testid="stHorizontalBlock"]{gap:.35rem!important}
+      .st-key-fm_issue_date_filters [data-testid="stHorizontalBlock"]{display:flex!important;flex-wrap:wrap!important;gap:.65rem!important}
+      .st-key-fm_issue_date_filters [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]{
+        min-width:calc(50% - .4rem)!important;width:calc(50% - .4rem)!important;
+        flex:1 1 calc(50% - .4rem)!important;
+      }
+      .st-key-fm_issue_date_filters .st-key-fm_issue_clear_filters{width:100%!important}
+      .st-key-fm_issue_summary .cb-kpi-grid{
+        grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:.6rem!important
+      }
+      .st-key-fm_issue_summary .cb-kpi{min-height:84px!important;padding:12px!important}
+      .st-key-fm_issue_summary .cb-kpi-value{font-size:1.38rem!important}
+      .fm-issue-meta{grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;padding:.75rem!important}
+      .fm-issue-meta-item:first-child{grid-column:1/-1}
+      [class*="st-key-fm_issue_op_alert_"] [data-testid="stButton"] button,
+      [class*="st-key-fm_issue_op_ok_"] [data-testid="stButton"] button{
+        padding:.82rem .75rem!important;min-height:56px!important
+      }
+      .fm-issue-mobile-hint{display:block;color:#6b7889;font-size:.72rem;margin:.5rem 0}
+    }
     </style>""", unsafe_allow_html=True)
 
 
