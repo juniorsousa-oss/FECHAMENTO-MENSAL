@@ -127,7 +127,11 @@ class MasterPlanTests(unittest.TestCase):
         css = Path(__file__).resolve().parents[1].joinpath("issue_check_ui.py").read_text("utf-8")
         self.assertIn('button > div,', css)
         self.assertIn('justify-content:flex-start!important', css)
-        self.assertIn('master_plan.label_fields(context)', css)
+        # A atualização visual separa os indicadores no botão e mantém
+        # os mesmos campos do FOR001 em uma grade de metadados.
+        self.assertIn('st.markdown(_op_metadata(context)', css)
+        self.assertIn('("Cliente", context.get("cliente")', css)
+        self.assertIn('("Faturamento", context.get("data_faturamento")', css)
 
 
 if __name__ == "__main__":
