@@ -493,7 +493,7 @@ def _sources(model):
     st.write("• OP em andamento SEM nenhuma baixa: acompanha somente etapa do produto (conferido aguardando reporte, separado aguardando conferência ou aguardando separação), sem gerar alertas.")
     st.write("• A conferência de baixas é por OP e código do produto. Saldos por endereço consideram somente lotes efetivamente conferidos; nenhum saldo é reservado automaticamente para outras OPs.")
     st.write("• Baixa líquida acima da quantidade NECESSÁRIA recebe 'PRODUTO COM BAIXA MAIOR QUE A NECESSIDADE' e alerta.")
-    st.write("• Produtos Tipo II do CADASTROS sem separação são 'MATERIAL DE CONSUMO' e não geram alerta por aguardarem separação, exceto se houver baixa maior que a necessidade.")
+    st.write("• Produtos Tipo II do CADASTROS sem separação são 'MATERIAL DE CONSUMO' e não geram alerta por aguardarem separação, mesmo quando existe consumo sem separação. Quando há separação, aplicam-se as regras normais de baixa e excesso.")
     st.write("• Outros endereços só são exibidos se o saldo G9-PROD dos lotes conferidos não cobrir toda a quantidade separada.")
     st.write("• Registros repetidos no MES são mantidos e somados. Sobreposição entre arquivos KARDEX é reconhecida sem duplicar movimentos.")
     st.write("• Diferenças de até 0,000001 são tratadas como precisão numérica. Os valores originais permanecem nas evidências.")
