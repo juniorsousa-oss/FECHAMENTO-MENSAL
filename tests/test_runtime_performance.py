@@ -81,11 +81,11 @@ class KardexParallelTests(unittest.TestCase):
 class LazyRenderingTests(unittest.TestCase):
     def test_expensive_physical_imports_and_history_require_user_action(self):
         source = (Path(__file__).resolve().parents[1] / "streamlit_app.py").read_text("utf-8")
-        self.assertIn('if st.toggle(\n            "GERENCIAR FONTES E CONTAGENS"', source)
+        self.assertRegex(source, r'if\s+st\.toggle\(\s*"GERENCIAR FONTES E CONTAGENS"')
         self.assertIn('if cb_source_active == "CHAPAS · E-MAIL":', source)
         self.assertIn('if cb_source_active == "BARRAMENTOS · EXCEL":', source)
         self.assertIn('if cb_source_active == "ALMOXARIFADO · BARRAS":', source)
-        self.assertIn('if st.toggle(\n                "HISTÓRICO DE AJUSTES · MÊS A MÊS"', source)
+        self.assertRegex(source, r'if\s+st\.toggle\(\s*"HISTÓRICO DE AJUSTES · MÊS A MÊS"')
         self.assertIn("def _refresh_fm_data()", source)
         self.assertIn("def load_cb_adjustment_history()", source)
 
