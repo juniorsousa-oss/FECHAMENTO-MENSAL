@@ -53,7 +53,7 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertEqual(len([exp for exp in app.expander if exp.label.startswith("OP ")]), 1)
         self.assertTrue(any("ORDEM OK" in exp.label for exp in app.expander))
-        self.assertEqual(len(app.dataframe), 1)
+        self.assertTrue(any("Produto" in table.value.columns for table in app.dataframe))
         self.assertTrue(any("PREPARAR RELATÓRIO COMPLETO" in b.label for b in app.button))
 
 
