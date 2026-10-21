@@ -287,6 +287,112 @@ section[data-testid="stSidebar"][aria-expanded="false"]{
 .cb-compact-stat span{font-size:.67rem;font-weight:800;letter-spacing:.035em;color:#64748b}
 .cb-compact-stat strong{font-size:1.32rem;line-height:1;color:#111827}
 .cb-compact-stat-final{border-left:4px solid #111827}
+/* Conferência de chapas e barramentos — hierarquia visual SETTA */
+.cb-period-label{
+  font-size:.71rem;font-weight:800;letter-spacing:.075em;
+  color:#475569;text-transform:uppercase;margin:.8rem 0 .35rem;
+}
+.cb-overview-grid{
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:14px;margin:1.15rem 0 1.15rem;
+}
+.cb-overview-card{
+  min-width:0;display:flex;flex-direction:column;align-items:flex-start;
+  min-height:114px;padding:16px 18px 14px;
+  background:#fff;border:1px solid #dfe4ea;border-radius:14px;
+  box-shadow:0 5px 18px rgba(15,23,42,.045);
+}
+.cb-overview-card span{
+  font-size:.65rem;letter-spacing:.075em;font-weight:850;
+  text-transform:uppercase;color:#64748b;line-height:1.35;
+}
+.cb-overview-card strong{
+  display:block;font-size:1.85rem;line-height:1.15;
+  letter-spacing:-.035em;color:#101827;font-weight:850;margin:7px 0 5px;
+}
+.cb-overview-card small{font-size:.72rem;color:#7b8796;line-height:1.4}
+.cb-overview-card-final{border-top:3px solid #111827;padding-top:14px}
+.cb-stage-header{
+  display:flex;align-items:center;gap:14px;min-height:80px;
+  margin:2rem 0 1rem;padding:16px 20px;background:#fff;
+  border:1px solid #dfe4ec;border-radius:14px;
+  box-shadow:0 4px 16px rgba(15,23,42,.04);
+}
+.cb-stage-number{
+  display:flex;align-items:center;justify-content:center;flex:none;
+  width:40px;height:40px;background:#111827;color:#fff;
+  border-radius:11px;font-size:.78rem;font-weight:800;
+  letter-spacing:.04em;
+}
+.cb-stage-copy{min-width:0}
+.cb-stage-name{
+  color:#111827;font-size:.98rem;font-weight:850;
+  text-transform:uppercase;letter-spacing:.012em;line-height:1.4;
+}
+.cb-stage-description{color:#718096;font-size:.76rem;line-height:1.5;margin-top:3px}
+.cb-balance-grid{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:16px;margin:0 0 1.1rem;
+}
+.cb-balance-card{
+  min-width:0;padding:20px 22px 22px;background:#fff;
+  border:1px solid #dfe4ea;border-radius:14px;
+  box-shadow:0 4px 16px rgba(15,23,42,.04);
+}
+.cb-balance-top{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:10px;padding-bottom:15px;border-bottom:1px solid #edf0f4;
+}
+.cb-balance-top strong{
+  color:#1e293b;font-size:.82rem;letter-spacing:.055em;font-weight:850;
+}
+.cb-balance-top span{
+  color:#94a3b8;font-size:.65rem;letter-spacing:.045em;font-weight:750;
+}
+.cb-balance-pair{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:18px;padding-top:18px;
+}
+.cb-balance-pair>div{min-width:0}
+.cb-balance-pair>div+div{border-left:1px solid #edf0f4;padding-left:18px}
+.cb-balance-pair span{
+  display:block;font-size:.66rem;color:#64748b;
+  letter-spacing:.045em;text-transform:uppercase;font-weight:750;
+  line-height:1.4;margin-bottom:8px;
+}
+.cb-balance-pair strong{
+  display:block;overflow-wrap:anywhere;font-size:clamp(1rem,1.3vw,1.4rem);
+  font-weight:800;letter-spacing:-.025em;line-height:1.25;color:#111827;
+}
+.cb-subsection-label{
+  color:#475569;font-size:.73rem;letter-spacing:.07em;
+  font-weight:850;text-transform:uppercase;
+  margin:1.3rem 0 .8rem;
+  padding:0 0 .55rem;border-bottom:1px solid #dce3eb;
+}
+.cb-kpi-grid{gap:14px!important;margin:1.2rem 0 1.6rem!important}
+.cb-kpi{min-height:122px!important;padding:17px 19px!important;border-radius:14px!important}
+.cb-kpi-label{font-size:.69rem!important}
+.cb-kpi-value{font-size:1.48rem!important;margin-top:.3rem}
+.cb-kpi-note{font-size:.73rem!important;line-height:1.5;margin-top:.48rem!important}
+@media(max-width:1050px){
+  .cb-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cb-balance-grid{grid-template-columns:1fr}
+}
+@media(max-width:560px){
+  .cb-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .cb-overview-card{padding:13px 12px;min-height:100px}
+  .cb-overview-card strong{font-size:1.45rem}
+  .cb-overview-card small{font-size:.66rem}
+  .cb-stage-header{gap:10px;padding:12px;margin:1.45rem 0 .85rem}
+  .cb-stage-number{width:34px;height:34px}
+  .cb-stage-name{font-size:.85rem}
+  .cb-stage-description{font-size:.7rem}
+  .cb-balance-card{padding:15px 14px}
+  .cb-balance-pair{gap:9px}
+  .cb-balance-pair>div+div{padding-left:9px}
+  .cb-balance-pair strong{font-size:.93rem}
+}
 .cb-tight-divider{margin:.85rem 0 .7rem!important}
 .cb-compact-section-title{font-size:.82rem;font-weight:900;letter-spacing:.035em;color:#111827;margin:0 0 .45rem;text-transform:uppercase}
 .cb-kpi{position:relative;background:#fff;border:1px solid #dfe3e8;border-radius:12px;box-shadow:0 3px 12px rgba(15,23,42,.04);padding:.85rem 1rem;overflow:hidden}
