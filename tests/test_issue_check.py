@@ -45,6 +45,53 @@ def audit(g=None, s=None, m=None, **changes):
 
 
 class IssueCheckTests(unittest.TestCase):
+    def test_cumulative_history_sums_same_op_product_across_months_without_common_warehouse_period(self):
+        metas = [
+            {"arquivo_nome": "JAN_S2.xlsx", "armazem": "S2",
+             "periodo_inicio": "2026-01-01", "periodo_fim": "2026-01-31"},
+            {"arquivo_nome": "SET_S2.xlsx", "armazem": "S2",
+             "periodo_inicio": "2026-09-01", "periodo_fim": "2026-09-30"},
+            {"arquivo_nome": "OUT_S1.xlsx", "armazem": "S1",
+             "periodo_inicio": "2026-10-01", "periodo_fim": "2026-10-21"},
+        ]
+        movements = [
+            movement(data="2026-01-12", qtd_saida="2", documento="JAN"),
+            movement(data="2026-09-18", qtd_saida="3", documento="SET"),
+            movement(data="2026-10-08", armazem="S1", qtd_saida="4", documento="OUT"),
+            movement(data="2026-10-09", armazem="S1", qtd_saida=None,
+                     qtd_entrada="1", documento="DEV", tes="020"),
+            # Movimentos futuros não entram no saldo acumulado de referência.
+            movement(data="2026-10-22", qtd_saida="99", documento="FUT"),
+            # Outros produtos/OPs não podem contaminar esta soma.
+            movement(data="2026-09-18", codigo="00009999", qtd_saida="20"),
+            movement(data="2026-09-18", ae_original="OP99999999", qtd_saida="30"),
+        ]
+        result = audit(
+            m=movements, history_metas=metas, warehouses=("S1", "S2"),
+            accumulated_history=True,
+        )
+        product = result["items"].iloc[0]
+        self.assertEqual(product.saida_bruta, D(9))
+        self.assertEqual(product.devolvida, D(1))
+        self.assertEqual(product.baixada, D(8))
+        self.assertEqual(product.pendente, D(2))
+        self.assertEqual(result["movimentos_apos_base"], 1)
+        self.assertEqual(result["coverage"]["modo"], "ACUMULADO")
+        self.assertEqual(result["coverage"]["inicio"], "2026-01-01")
+        self.assertEqual(result["coverage"]["fim"], "2026-10-21")
+        self.assertEqual(result["coverage"]["por_armazem"]["S1"]["inicio"], "2026-10-01")
+        self.assertEqual(result["coverage"]["por_armazem"]["S2"]["fim"], "2026-09-30")
+        self.assertFalse(product.historico_incompleto)
+
+    def test_previous_coverage_mode_still_reports_warehouse_intersection(self):
+        metas = [
+            {"armazem": "S2", "periodo_inicio": "2026-01-01",
+             "periodo_fim": "2026-01-31"},
+            {"armazem": "S1", "periodo_inicio": "2026-10-01",
+             "periodo_fim": "2026-10-21"},
+        ]
+        self.assertEqual(c.coverage(metas, ("S1", "S2"))["intervalos"], [])
+
     def test_confirmed_without_stock_or_issue_is_an_alert(self):
         item = audit()["items"].iloc[0]
         self.assertEqual(item.sem_saldo, 10)
