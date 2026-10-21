@@ -4,6 +4,7 @@ import base64
 import html
 import io
 from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -388,6 +389,31 @@ def load_inventory_overview() -> tuple[list[dict], list[dict]]:
         db.list_inventory_imports(),
         db.list_inventory_summaries(),
     )
+
+
+@st.cache_data(show_spinner=False, ttl=25, max_entries=6)
+def load_cb_page_snapshot(competencia: date) -> dict[str, list[dict]]:
+    """Leituras independentes da conferência, com cache curto e invalidação nas gravações.
+
+    As requisições são de leitura; o cache evita repetir sete consultas a cada
+    filtro ou abertura de seção. Nenhuma quantidade, valor ou critério é alterado.
+    """
+    sources = {
+        "saldos": lambda: db.list_cb_system_balances(competencia),
+        "catalogo": db.list_cb_catalog,
+        "contagens": lambda: db.list_cb_counts(competencia),
+        "mapeamentos_chapas": db.list_cb_sheet_mappings,
+        "mapeamentos_fisicos": db.list_cb_physical_mappings,
+        "importacoes": lambda: db.list_cb_imports(competencia),
+        "exclusoes": lambda: db.list_cb_exclusions(competencia),
+    }
+    try:
+        with ThreadPoolExecutor(max_workers=4, thread_name_prefix="fm-cb") as pool:
+            futures = {key: pool.submit(reader) for key, reader in sources.items()}
+            return {key: futures[key].result() for key in sources}
+    except Exception:
+        # Contingência para ambientes que não permitem leitura de secrets em threads.
+        return {key: reader() for key, reader in sources.items()}
 
 
 
@@ -1985,6 +2011,12 @@ if page not in PAGES:
 def _set_fm_page(target: str) -> None:
     if target in PAGES:
         st.session_state.nav_page = target
+        st.session_state["_fm_nav_collapsed"] = True
+
+
+def _open_fm_menu() -> None:
+    st.session_state["_fm_nav_collapsed"] = False
+
 
 menu_labels = cfg.get("menu_labels") or {}
 
@@ -1997,19 +2029,34 @@ _sidebar_status_class = {
     "status-warning",
 )
 
+if st.session_state.get("_fm_nav_collapsed", False):
+    # A navegação automática fecha a sidebar após escolher uma seção.
+    # O botão de reabertura permanece sempre visível no conteúdo.
+    st.markdown(
+        '<style>section[data-testid="stSidebar"]{display:none!important;'
+        'width:0!important;min-width:0!important;flex-basis:0!important;}</style>',
+        unsafe_allow_html=True,
+    )
+    st.button(
+        "☰ ABRIR MENU",
+        key="fm_reopen_navigation",
+        on_click=_open_fm_menu,
+        type="secondary",
+    )
+
 with st.sidebar:
-    # Card superior + título da navegação no mesmo bloco.
-    # Os espaçadores fazem parte do próprio HTML para não depender
-    # dos wrappers internos do Streamlit, que podem mudar entre versões.
+    # Blocos separados para a altura do título não colidir com o primeiro botão.
     st.markdown(
         (
             '<div class="sidebar-brand">'
             f'<div class="sidebar-brand-title">{html.escape(str(cfg["sidebar_title"]))}</div>'
             f'<div class="sidebar-brand-sub">{html.escape(str(cfg["sidebar_subtitle"]))}</div>'
             '</div>'
-            '<div class="sidebar-brand-gap" aria-hidden="true"></div>'
-            '<div class="sidebar-section-label sidebar-nav-label">NAVEGAÇÃO</div>'
         ),
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="sidebar-section-label sidebar-nav-label">NAVEGAÇÃO</div>',
         unsafe_allow_html=True,
     )
 
@@ -2613,31 +2660,18 @@ if page == "Dashboard":
 
 
 elif page == "Conferência de chapas e barramentos":
-    st.markdown(
-        """
-        <div class="cb-title-inline">
-            <div class="section-title cb-title-main">
-                CONFERÊNCIA DE CHAPAS E BARRAMENTOS
-            </div>
-            <div class="cb-info-wrap" tabindex="0">
-                <span class="cb-info-icon">i</span>
-                <div class="cb-info-tooltip">
-                    <strong>COMO FUNCIONA</strong>
-                    <span>
-                        O CADASTROS define o universo de materiais.
-                        Neste módulo, o Relatório Analítico fornece somente o
-                        SALDO EM ESTOQUE da competência.
-                        O físico é formado pelas fontes de Chapas, Barramentos
-                        e Almoxarifado. Materiais novos passam por validação e,
-                        depois de confirmados, permanecem automaticamente na
-                        base dos próximos fechamentos.
-                    </span>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    section_band(
+        "02 · CONFERÊNCIA",
+        "CHAPAS E BARRAMENTOS",
+        "Conciliação dos saldos sistêmicos e físicos, divergências e tratativas por competência.",
     )
+    with st.expander("COMO FUNCIONA A CONFERÊNCIA", expanded=False):
+        st.caption(
+            "O CADASTROS define os materiais monitorados. O Relatório Analítico "
+            "fornece o saldo sistêmico; Chapas, Barramentos e Almoxarifado "
+            "alimentam as contagens físicas. Materiais novos são validados "
+            "antes de integrar a base dos próximos fechamentos."
+        )
 
     if not visible_months:
         st.info(
@@ -2684,14 +2718,17 @@ elif page == "Conferência de chapas e barramentos":
             force=force_cadastros
         )
 
+        if cadastros_context.get("synchronized"):
+            load_cb_page_snapshot.clear()
         try:
-            cb_closing_stock_items = db.list_cb_system_balances(cb_month)
-            cb_catalog = db.list_cb_catalog()
-            cb_counts = db.list_cb_counts(cb_month)
-            cb_mappings = db.list_cb_sheet_mappings()
-            cb_physical_mappings = db.list_cb_physical_mappings()
-            cb_imports = db.list_cb_imports(cb_month)
-            cb_exclusions = db.list_cb_exclusions(cb_month)
+            cb_sources = load_cb_page_snapshot(cb_month)
+            cb_closing_stock_items = cb_sources["saldos"]
+            cb_catalog = cb_sources["catalogo"]
+            cb_counts = cb_sources["contagens"]
+            cb_mappings = cb_sources["mapeamentos_chapas"]
+            cb_physical_mappings = cb_sources["mapeamentos_fisicos"]
+            cb_imports = cb_sources["importacoes"]
+            cb_exclusions = cb_sources["exclusoes"]
             cb_error = ""
         except Exception as exc:
             cb_closing_stock_items = []
@@ -2993,6 +3030,7 @@ elif page == "Conferência de chapas e barramentos":
                         st.session_state["_cb_base_flash"] = (
                             f"Saldo do fechamento de {_closing_label} salvo."
                         )
+                        load_cb_page_snapshot.clear()
                         st.rerun()
                 except Exception as exc:
                     st.error(
@@ -3199,6 +3237,7 @@ elif page == "Conferência de chapas e barramentos":
                                             "CONFIRMADO",
                                             "APP · E-MAIL CHAPAS",
                                         )
+                                    load_cb_page_snapshot.clear()
                                     st.rerun()
                         else:
                             preview_email = pd.DataFrame(
@@ -3241,6 +3280,7 @@ elif page == "Conferência de chapas e barramentos":
                                 st.session_state["_cb_count_flash"] = (
                                     "Contagem de chapas importada."
                                 )
+                                load_cb_page_snapshot.clear()
                                 st.rerun()
                     except Exception as exc:
                         st.error(
@@ -3519,6 +3559,7 @@ elif page == "Conferência de chapas e barramentos":
                                     ] = (
                                         "Vínculos dos barramentos salvos."
                                     )
+                                    load_cb_page_snapshot.clear()
                                     st.rerun()
 
                         elif valid_bar_rows and st.button(
@@ -3554,6 +3595,7 @@ elif page == "Conferência de chapas e barramentos":
                                 "Contagem de barramentos importada. "
                                 "Todos os itens possuem vínculo com o sistema."
                             )
+                            load_cb_page_snapshot.clear()
                             st.rerun()
                     except Exception as exc:
                         st.error(
@@ -3920,6 +3962,7 @@ elif page == "Conferência de chapas e barramentos":
                                     ] = (
                                         "Vínculos do almoxarifado salvos."
                                     )
+                                    load_cb_page_snapshot.clear()
                                     st.rerun()
 
                         elif internal_valid and st.button(
@@ -3966,6 +4009,7 @@ elif page == "Conferência de chapas e barramentos":
                                 "Contagem do almoxarifado importada. "
                                 "Todos os itens possuem vínculo com o sistema."
                             )
+                            load_cb_page_snapshot.clear()
                             st.rerun()
                     except Exception as exc:
                         st.error(
@@ -4043,6 +4087,7 @@ elif page == "Conferência de chapas e barramentos":
                             st.session_state["_cb_count_flash"] = (
                                 "Contagem manual salva."
                             )
+                            load_cb_page_snapshot.clear()
                             st.rerun()
 
         flash_count = st.session_state.pop(
@@ -4542,6 +4587,7 @@ elif page == "Conferência de chapas e barramentos":
                             f"{len(selected_to_remove)} item(ns) removido(s) "
                             "da análise desta competência."
                         )
+                        load_cb_page_snapshot.clear()
                         st.rerun()
 
             if excluded_codes:
@@ -4584,6 +4630,7 @@ elif page == "Conferência de chapas e barramentos":
                                 False,
                                 "",
                             )
+                            load_cb_page_snapshot.clear()
                             st.rerun()
 
         st.markdown(
@@ -4819,6 +4866,7 @@ elif page == "Conferência de chapas e barramentos":
                 + month_label(cb_month)
                 + " registrados no histórico mensal."
             )
+            load_cb_page_snapshot.clear()
             st.rerun()
 
         if _adjustment_history_error:
