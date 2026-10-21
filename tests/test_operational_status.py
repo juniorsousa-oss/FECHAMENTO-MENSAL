@@ -111,7 +111,7 @@ class OpPriorityTests(unittest.TestCase):
         self.assertEqual(product.status, op.NAO_CONSUMIDO_OUTRO)
         self.assertTrue(product.divergente)
 
-    def test_advanced_op_with_only_separation_or_nothing_is_alert(self):
+    def test_advanced_op_alerts_start_only_after_separation(self):
         sep = model(rows=[raw_item(conferencia=False)],
                     master={"condicao": "FINALIZADO"})
         self.assertEqual(sep["items"].iloc[0].status, op.SEPARADO_SEM_CONFERENCIA)
@@ -119,7 +119,33 @@ class OpPriorityTests(unittest.TestCase):
         none = model(rows=[raw_item(separacao=False, conferencia=False)],
                      master={"nota_fiscal": "124"})
         self.assertEqual(none["items"].iloc[0].status, op.AGUARDANDO_SEPARACAO)
-        self.assertTrue(none["items"].iloc[0].divergente)
+        self.assertFalse(none["items"].iloc[0].divergente)
+        self.assertEqual(int(none["ops"].iloc[0].divergencias), 0)
+
+    def test_unseparated_items_are_exempt_across_all_op_stages(self):
+        scenarios = [
+            ({"dias_patio": "4"}, [], "FINALIZADO EM PÁTIO"),
+            ({"dias_patio": "FINALIZADO E ENTREGUE"}, [], "FINALIZADO E ENTREGUE"),
+            ({"nota_fiscal": "124"}, [], "NF EMITIDA"),
+            ({"condicao": "FINALIZADO"}, [], "FINALIZADO"),
+            ({}, [movement("00002000", 2)], "REPORTADO"),
+            ({}, [], "AGUARDANDO INÍCIO"),
+        ]
+        for extra, movements, stage in scenarios:
+            with self.subTest(stage=stage):
+                result = model(
+                    rows=[raw_item(separacao=False, conferencia=False)],
+                    master=extra, moves=movements,
+                )
+                self.assertEqual(result["ops"].iloc[0].status_op, stage)
+                self.assertEqual(result["items"].iloc[0].status, op.AGUARDANDO_SEPARACAO)
+                self.assertFalse(result["items"].iloc[0].divergente)
+
+    def test_unseparated_excess_consumption_is_not_alert_before_separation(self):
+        item = model(rows=[raw_item(separacao=False, conferencia=False, qty=1)],
+                     moves=[movement(quantity=3)], master={"condicao": "FINALIZADO"})
+        self.assertEqual(item["items"].iloc[0].status, op.AGUARDANDO_SEPARACAO)
+        self.assertFalse(item["items"].iloc[0].divergente)
 
     def test_op_without_consumption_and_unfinished_has_no_alert(self):
         for separate, confer, expected, op_stage in [
