@@ -138,6 +138,61 @@ class OpPriorityTests(unittest.TestCase):
         self.assertEqual(result["ops"].iloc[0].status_op, op.REPORTADO)
         self.assertTrue(result["items"].iloc[0].divergente)
 
+    def test_excess_consumption_uses_quantity_necessary_not_conference(self):
+        # 2 necessários, 1 separado e 3 baixados: excesso sobre SOLICITAÇÃO.
+        row = raw_item(qty=2)
+        row["Qtd. atendida"] = 1
+        result = model(rows=[row], moves=[movement(quantity=3)])
+        product = result["items"].iloc[0]
+        self.assertEqual(product.status, op.BAIXA_ACIMA_NECESSIDADE)
+        self.assertTrue(product.divergente)
+        self.assertEqual(int(result["ops"].iloc[0].divergencias), 1)
+
+    def test_type_ii_without_separation_is_consumption_material_not_alert(self):
+        initial = check.reconcile(
+            check.parse_general(pd.DataFrame([raw_item(separacao=False, conferencia=False)])),
+            [], [], history_metas=META, as_of="2026-10-21",
+        )
+        result = op.apply(initial, {OP: {"condicao": "FINALIZADO"}}, {CODE: "II"})
+        item = result["items"].iloc[0]
+        self.assertEqual(item.status, op.MATERIAL_CONSUMO)
+        self.assertFalse(item.divergente)
+        self.assertEqual(item.tipo_material, "II")
+        self.assertEqual(result["ops"].iloc[0].divergencias, 0)
+
+    def test_type_ii_with_separation_keeps_normal_rules(self):
+        initial = check.reconcile(
+            check.parse_general(pd.DataFrame([raw_item(conferencia=False)])),
+            [], [], history_metas=META, as_of="2026-10-21",
+        )
+        result = op.apply(initial, {OP: {"condicao": "FINALIZADO"}}, {CODE: "II"})
+        self.assertEqual(result["items"].iloc[0].status, op.SEPARADO_SEM_CONFERENCIA)
+        self.assertTrue(result["items"].iloc[0].divergente)
+
+    def test_overconsumption_alert_has_priority_even_for_unseparated_type_ii(self):
+        initial = check.reconcile(
+            check.parse_general(pd.DataFrame([raw_item(separacao=False, conferencia=False, qty=0)])),
+            [], [movement(quantity=2)], history_metas=META, as_of="2026-10-21",
+        )
+        result = op.apply(initial, {OP: {"condicao": "FINALIZADO"}}, {CODE: "II"})
+        self.assertEqual(result["items"].iloc[0].status, op.BAIXA_ACIMA_NECESSIDADE)
+        self.assertTrue(result["items"].iloc[0].divergente)
+
+    def test_other_addresses_only_if_g9_cannot_cover_separated_qty(self):
+        stock = [
+            raw_stock(10, "G9-PROD"),
+            raw_stock(20, "G9-RESERVA"),
+        ]
+        result = model(master={"condicao": "FINALIZADO"}, stocks=stock)
+        self.assertEqual(result["items"].iloc[0].outros_enderecos, "")
+        self.assertEqual(result["items"].iloc[0].enderecos_alternativos, [])
+        stock[0]["Quantidade"] = 7
+        partial = model(master={"condicao": "FINALIZADO"}, stocks=stock)
+        product = partial["items"].iloc[0]
+        self.assertEqual(product.status, op.NAO_CONSUMIDO_G9)
+        self.assertIn("G9-RESERVA", product.outros_enderecos)
+        self.assertEqual(float(product.enderecos_alternativos[0]["saldo"]), 20)
+
     def test_no_kardex_cannot_certify_consumption(self):
         result = model(master={"condicao": "FINALIZADO"}, metas=[])
         product = result["items"].iloc[0]
