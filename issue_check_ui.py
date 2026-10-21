@@ -222,9 +222,15 @@ def _audit(source_tokens: tuple, history_tokens: tuple, warehouses: tuple, versi
     return model
 
 
+@st.cache_resource(ttl=600, max_entries=2, show_spinner=False)
+def _operational_snapshot(source_tokens, history_tokens, warehouses, master_version, rules_version, _model, _records):
+    return op_rules.apply(_model, _records)
+
+
 def _reload():
     _states.clear(); _source.clear(); _imports.clear(); _history.clear(); _audit.clear()
     _master_plan_records.clear()
+    _operational_snapshot.clear()
     central.source_state_for.clear()
 
 
