@@ -69,6 +69,8 @@ TZ = ZoneInfo("America/Sao_Paulo")
 CONNECTED_API_SOURCE_KEYS = {
     "analitico",
     "cadastros",
+    "relatorio_geral",
+    "endereco",
 }
 
 DEFAULT_CONFIG = {
@@ -5052,20 +5054,9 @@ elif page == "Conferência de chapas e barramentos":
                     )
 
 elif page == "Conferência de baixas":
-    st.markdown(
-        '<div class="section-title">Conferência de baixas</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        """
-        <div class="module-hero">
-            <strong>Módulo destinado à validação das baixas que impactam o fechamento.</strong>
-            <span>As fontes, chaves e regras da conferência serão definidas depois.</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.info("Estrutura criada. Ainda não há regra de conferência aplicada.")
+    from issue_check_ui import render_issue_check
+
+    render_issue_check()
 
 
 elif page == "Análise de movimentações":
