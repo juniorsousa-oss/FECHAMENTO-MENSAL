@@ -18,20 +18,20 @@ import movements as mv
 
 SOURCE_KEYS = ("relatorio_geral", "endereco")
 TZ = ZoneInfo("America/Sao_Paulo")
-FILTERS = {"Todas": None, "Com divergências": "divergente",
-           "Sem saldo e sem baixa suficiente": check.MISSING,
-           "G9-PROD pendente de baixa": check.PROD_PENDING,
-           "Saldo compartilhado insuficiente": check.SHARED,
-           "OPs com baixas": "op_possui_baixa",
-           "OPs sem baixas no histórico": "op_sem_baixa",
-           "Baixa identificada": "BAIXA IDENTIFICADA",
-           "Aguardando conferência ou separação": "aguardando",
-           "Histórico incompleto": "historico_incompleto"}
+FILTERS = {
+    "Todos": None,
+    "Com alertas": "divergente",
+    "Sem alertas": "sem_alertas",
+    "G9-PROD pendente de baixa": check.PROD_PENDING,
+    "Conferido sem saldo suficiente": check.MISSING,
+    "Saldo compartilhado insuficiente": check.SHARED,
+}
+
 LABELS = {"op": "OP", "codigo": "Produto", "descricao": "Descrição", "lotes": "Lotes",
-          "necessaria": "Necessária", "atendida": "Atendida", "conferida": "Conferida",
-          "baixada": "Baixada líquida (OP/produto)", "saida_bruta": "Saídas", "devolvida": "Entradas / devoluções",
-          "pendente": "Pendente de baixa", "saldo": "Saldo nos lotes conferidos",
-          "saldo_g9_prod": "Saldo G9-PROD", "sem_saldo": "Sem cobertura de saldo ou baixa",
+          "necessaria": "Qtd necessária", "atendida": "Qtd atendida MES", "separada": "Qtd separada", "conferida": "Qtd conferida",
+          "baixada": "Qtd baixada", "saida_bruta": "Saídas", "devolvida": "Entradas / devoluções",
+          "pendente": "Qtd pendente baixa", "saldo": "Saldo no lote conferido",
+          "saldo_g9_prod": "Saldo G9-PROD", "outros_enderecos": "Outros endereços", "sem_saldo": "Sem cobertura de saldo ou baixa",
           "em_g9_prod": "Pendente com saldo G9-PROD", "status": "Resultado",
           "historico_incompleto": "Histórico incompleto", "saldo_compartilhado": "Saldo compartilhado",
           "conflito_saldo": "Demanda compartilhada maior que saldo", "itens": "Registros",
@@ -46,7 +46,7 @@ LABELS = {"op": "OP", "codigo": "Produto", "descricao": "Descrição", "lotes": 
           "reportado": "Reportado", "reporte": "Data de reporte", "pendencia_mes": "Pendente no MES",
           "data": "Data", "tes": "TES", "documento": "Documento", "qtd_entrada": "Entrada", "qtd_saida": "Saída",
           "ae_original": "AE original", "natureza": "Natureza", "arquivo_origem": "Arquivo de origem"}
-QUANTITIES = {"necessaria", "atendida", "conferida", "baixada", "saida_bruta", "devolvida", "pendente", "saldo",
+QUANTITIES = {"necessaria", "atendida", "separada", "conferida", "baixada", "saida_bruta", "devolvida", "pendente", "saldo",
               "saldo_g9_prod", "sem_saldo", "em_g9_prod", "empenho", "pendente_minima", "pendente_maxima",
               "demanda_compartilhada_minima", "demanda_compartilhada_maxima", "pendencia_mes", "qtd_entrada", "qtd_saida"}
 
@@ -72,8 +72,23 @@ def day(value) -> str:
 def _band():
     st.markdown('<div class="section-band"><div class="section-band-kicker">CONFERÊNCIAS</div>'
                 '<div class="section-band-title">CONFERÊNCIA DE BAIXAS</div>'
-                '<div class="section-band-note">Materiais por OP · conferência do MES · saldo por lote e endereço · baixas do KARDEX.</div></div>',
+                '<div class="section-band-note">Consulte OPs, confira o consumo do KARDEX e identifique pendências por produto e endereço.</div></div>',
                 unsafe_allow_html=True)
+    st.markdown("""
+    <style>
+    .st-key-fm_issue_filters {background:#fff;border:1px solid #e5e8ee;
+      border-radius:14px;padding:1.05rem 1.15rem .75rem;margin:.8rem 0 1.2rem;
+      box-shadow:0 3px 12px rgba(15,23,42,.04)}
+    [class*="st-key-fm_issue_op_alert_"] [data-testid="stExpander"] details {
+      background:#fff7f7!important;border:1px solid #fecaca!important;
+      border-left:5px solid #d43f49!important;border-radius:11px!important;
+    }
+    [class*="st-key-fm_issue_op_ok_"] [data-testid="stExpander"] details {
+      background:#fff!important;border:1px solid #dfe5ec!important;
+      border-left:4px solid #111827!important;border-radius:11px!important;
+    }
+    .st-key-fm_issue_ops{margin-top:1.15rem}
+    </style>""", unsafe_allow_html=True)
 
 
 def _cards(items):
@@ -184,6 +199,7 @@ def _table(frame: pd.DataFrame, columns=None, *, key=None):
     st.dataframe(styled, hide_index=True, width="stretch", key=key,
                  height=min(620, max(120, 77 + 35 * min(len(shown), 100))),
                  column_config={"Descrição": st.column_config.TextColumn(width="large"),
+                                "Outros endereços": st.column_config.TextColumn(width="large"),
                                 "Resultado": st.column_config.TextColumn(width="large")})
 
 
@@ -191,17 +207,14 @@ def _filter(frame: pd.DataFrame, query: str, choice: str) -> pd.DataFrame:
     view = frame
     term = mv.normalized(query)
     if term:
-        haystack = (view["op"] + " OP" + view["op"] + " " + view["codigo"] + " " + view["descricao"] + " " + view["lotes"]).map(mv.normalized)
-        view = view.loc[haystack.str.contains(term, regex=False)]
-    condition = FILTERS[choice]
-    if condition in ("divergente", "historico_incompleto", "op_possui_baixa"):
-        view = view.loc[view[condition]]
-    elif condition == "op_sem_baixa":
-        view = view.loc[~view["op_possui_baixa"]]
-    elif condition == "aguardando":
-        view = view.loc[view["itens_conferidos"] == 0]
-    elif condition == "BAIXA IDENTIFICADA":
-        view = view.loc[view["status"] == condition]
+        # Pesquisa restrita à OP. Localização de produto continua dentro da OP.
+        op = term.removeprefix("OP").strip(" :-/")
+        view = view.loc[view["op"].astype(str).str.contains(op, regex=False)]
+    condition = FILTERS.get(choice)
+    if condition == "divergente":
+        view = view.loc[view["divergente"]]
+    elif condition == "sem_alertas":
+        view = view.loc[~view["divergente"]]
     elif condition:
         view = view.loc[view["alertas"].map(lambda values: condition in values)]
     return view.copy()
@@ -229,51 +242,82 @@ def _details(model, item):
         _table(lots, ["lote", "conferida", "saldo", "saldo_g9_prod", "ops_com_demanda"])
         allowed_lots = {r["lote"] for r in model["general"] if r["item_id"] == item["item_id"]}
         addresses = pd.DataFrame([r for r in model["stock"] if r["codigo"] == item["codigo"] and r["lote"] in allowed_lots])
+        if item.get("outros_enderecos"):
+            st.caption("Endereços alternativos ordenados pela cobertura da quantidade faltante no G9-PROD. Não são reservas de estoque.")
+            st.info(item["outros_enderecos"])
         _table(addresses, ["codigo", "lote", "armazem", "endereco", "saldo", "empenho", "linha_origem"])
     with kardex_tab:
         movements = pd.DataFrame([r for r in model["movements"] if r["op"] == item["op"] and r["codigo"] == item["codigo"]])
         if not movements.empty:
             movements = movements.sort_values(["data", "documento"], kind="stable")
-        st.caption("Saídas menos entradas/devoluções da mesma OP e produto. TES 499/999 permanecem na consulta e não comprovam baixa de consumo.")
+        st.caption("Consumo = saídas − devoluções vinculadas à OP e ao produto. TES 999 sem compensação 499/999 conta como consumo; pares compensados e TES 499 isolada não contam.")
         _table(movements, ["data", "armazem", "tes", "documento", "qtd_entrada", "qtd_saida", "ae_original", "natureza", "arquivo_origem", "linha_origem"])
+
+
+
+def _move_issue_page(delta: int, pages: int):
+    current = int(st.session_state.get("fm_issue_page", 1))
+    st.session_state.fm_issue_page = min(max(current + delta, 1), pages)
 
 
 def _ops(model, view, token):
     rank = view.groupby("op")["divergente"].sum().sort_values(ascending=False, kind="stable")
     numbers = rank.index.tolist()
-    left, right = st.columns([1, 1])
-    with left:
-        size = st.selectbox("OPs por página", [10, 25, 50], key="fm_issue_page_size")
+    size = 10
     pages = max(1, math.ceil(len(numbers) / size))
     if st.session_state.get("fm_issue_view_token") != token:
         st.session_state.fm_issue_page = 1
         st.session_state.fm_issue_view_token = token
-    if st.session_state.get("fm_issue_page", 1) > pages:
-        st.session_state.fm_issue_page = pages
-    with right:
-        page = st.number_input("Página", min_value=1, max_value=pages, step=1, key="fm_issue_page")
-    st.caption(f"{count(len(numbers))} OPs encontradas · página {page} de {pages}. Os contadores respeitam os filtros.")
+    page = min(int(st.session_state.get("fm_issue_page", 1)), pages)
+    st.session_state.fm_issue_page = page
+    st.caption(f"{count(len(numbers))} OPs encontradas · página {page} de {pages} · 10 OPs por página")
     info = model["ops"].set_index("op").to_dict("index")
-    for number in numbers[(page - 1) * size:page * size]:
-        group = view.loc[view["op"] == number]
-        total = int(group["itens"].sum())
-        separated = int(group["itens_separados"].sum())
-        confirmed = int(group["itens_conferidos"].sum())
-        issues = int(group["divergente"].sum())
-        title = f"OP {number} · {total} itens · {separated} separados · {confirmed} conferidos · {issues} materiais com alerta"
-        with st.expander(title):
+    with st.container(key="fm_issue_ops"):
+        for number in numbers[(page - 1) * size:page * size]:
+            group = view.loc[view["op"] == number]
             context = info[number]
-            st.caption(f"P.A.: {context['pa'] or '—'} · {context['descricao_pa'] or 'Descrição não informada'}")
-            st.caption("Histórico da OP: " + ("possui baixas líquidas de material." if bool(group.iloc[0]["op_possui_baixa"]) else "nenhuma baixa líquida de material localizada."))
-            _table(group, ["codigo", "descricao", "lotes", "necessaria", "atendida", "conferida", "baixada", "pendente",
-                           "saldo", "saldo_g9_prod", "status", "historico_incompleto", "saldo_compartilhado"])
-            index = group.set_index("item_id").to_dict("index")
-            selected = st.selectbox("Detalhar material e evidências", group["item_id"].tolist(), index=None,
-                                    format_func=lambda value, rows=index: (rows[value]["codigo"] or "SEM CÓDIGO") + " · " + rows[value]["descricao"],
-                                    placeholder="Selecione um material", key=f"fm_issue_detail_{number}_{token}")
-            if selected:
-                item = group.loc[group["item_id"] == selected].iloc[0].to_dict()
-                _details(model, item)
+            total = int(context["itens"])
+            separated = int(context["separados"])
+            confirmed = int(context["conferidos"])
+            discharged = int(context.get("baixados", 0))
+            issues = int(context["divergencias"])
+            summary = "ORDEM COM ALERTA" if issues else "ORDEM OK"
+            title = (
+                f"OP {number} / {total} ITENS / {separated} SEPARADOS / "
+                f"{confirmed} CONFERIDOS / {discharged} BAIXADOS / "
+                f"{issues} COM ALERTA — {summary}"
+            )
+            css_key = "fm_issue_op_alert_" if issues else "fm_issue_op_ok_"
+            with st.container(key=css_key + number):
+                with st.expander(title, expanded=False):
+                    st.caption(f"P.A.: {context['pa'] or '—'} · {context['descricao_pa'] or 'Descrição não informada'}")
+                    if not bool(group.iloc[0]["op_possui_baixa"]):
+                        st.caption("Não há consumo líquido identificado no histórico desta OP até a data de referência.")
+                    _table(group, ["codigo", "descricao", "lotes", "necessaria", "separada",
+                                   "conferida", "baixada", "pendente", "saldo", "saldo_g9_prod",
+                                   "outros_enderecos", "status"])
+                    index = group.set_index("item_id").to_dict("index")
+                    selected = st.selectbox(
+                        "DETALHAR MATERIAL E EVIDÊNCIAS",
+                        group["item_id"].tolist(), index=None,
+                        format_func=lambda value, rows=index: (
+                            (rows[value]["codigo"] or "SEM CÓDIGO") + " · " + rows[value]["descricao"]),
+                        placeholder="Selecione o material",
+                        key=f"fm_issue_detail_{number}_{token}",
+                    )
+                    if selected:
+                        item = group.loc[group["item_id"] == selected].iloc[0].to_dict()
+                        _details(model, item)
+    if pages > 1:
+        previous, counter, following = st.columns([1, 2, 1])
+        with previous:
+            st.button("← ANTERIOR", key="fm_issue_prev", disabled=page <= 1,
+                      on_click=_move_issue_page, args=(-1, pages), use_container_width=True)
+        with counter:
+            st.caption(f"PÁGINA {page} / {pages}")
+        with following:
+            st.button("PRÓXIMA →", key="fm_issue_next", disabled=page >= pages,
+                      on_click=_move_issue_page, args=(1, pages), use_container_width=True)
 
 
 def _sources(model):
@@ -292,7 +336,7 @@ def _sources(model):
     st.markdown("**Critérios da conferência**")
     st.write("• Conferência identificada pela data de conferência do MES; a quantidade comparada é a atendida nessas linhas. Conferências parciais mantêm a necessária e a pendência visíveis.")
     st.write("• Estoque consultado por produto e lote nos armazéns selecionados. O saldo é a coluna Quantidade; o empenho aparece separado nas evidências.")
-    st.write("• KARDEX vinculado por OP completa da AE e código do produto, sem filtro de CF. Saídas menos entradas/devoluções; transferências 499/999 não integram o consumo.")
+    st.write("• KARDEX vinculado por OP completa da AE e código do produto, sem filtro de CF. Consumo inclui TES 999 não compensada. Transferências pareadas 499/999 e a TES 499 isolada não comprovam consumo.")
     st.write("• O alerta de G9-PROD destaca quantidade conferida ainda pendente quando a OP já possui baixa líquida de algum material. OPs sem nenhuma baixa no histórico ficam identificadas à parte.")
     st.write("• A baixa é comparada com o total conferido do produto na OP. O lote é usado para consultar o saldo por endereço; sobra de outro lote não cobre automaticamente uma falta.")
     st.write("• O mesmo saldo não é reservado para várias OPs. Demandas compartilhadas e insuficiência conjunta são identificadas separadamente.")
@@ -305,46 +349,73 @@ def _sources(model):
         st.warning(f"O relatório contém {count(model['negative_stock_rows'])} registros de saldo negativo nos armazéns selecionados. Eles foram mantidos no cálculo.")
 
 
+
 def render_results(model):
     frame = model["items"]
     period = model["coverage"]
     if not model["history_available"]:
-        st.warning("Nenhum KARDEX foi localizado para os armazéns selecionados. A consulta de materiais e saldos está disponível, mas a conferência de baixas aguarda histórico.")
+        st.warning("KARDEX não localizado para os armazéns selecionados. Baixas permanecem desconhecidas, não zeradas.")
     elif not period["fim"]:
-        st.warning("Os armazéns selecionados não possuem um período comum de cobertura do KARDEX. Confira as fontes antes de concluir os alertas.")
+        st.warning("A cobertura do KARDEX não contempla um período comum dos armazéns selecionados.")
     elif period["fim"] < model["as_of"]:
-        st.warning(f"KARDEX disponível até {day(period['fim'])}; bases consultadas em {day(model['as_of'])}. Os alertas com histórico incompleto precisam de atualização do KARDEX antes da conclusão.")
-    days = {_source_day(m) for m in model["source_meta"].values()}
-    if len(days) > 1:
-        st.warning("Relatório Geral e Endereço possuem datas de referência diferentes. A conferência usa a data mais antiga; atualize as duas bases para concluir a análise.")
+        st.warning(f"KARDEX disponível até {day(period['fim'])}; bases de referência em {day(model['as_of'])}. Existem períodos sem cobertura.")
+    dates = {_source_day(meta) for meta in model["source_meta"].values()}
+    if len(dates) > 1:
+        st.warning("Relatório Geral e Endereço com datas diferentes. Considerada a referência mais antiga.")
     if len(period["intervalos"]) > 1:
-        st.warning("Há intervalos sem cobertura entre os arquivos KARDEX. Consulte as fontes antes de concluir os alertas.")
-    a, b, c = st.columns([2, 1.5, 1])
-    with a:
-        query = st.text_input("Buscar OP, produto, descrição ou lote", key="fm_issue_search")
-    with b:
-        choice = st.selectbox("Situação", list(FILTERS), key="fm_issue_filter")
-    with c:
-        st.button("LIMPAR FILTROS", on_click=_clear_filters, key="fm_issue_clear")
+        st.warning("O histórico possui intervalos sem cobertura entre as importações KARDEX.")
+
+    with st.container(key="fm_issue_filters"):
+        fop, falert = st.columns([2, 1])
+        with fop:
+            query = st.text_input("LOCALIZAR OP", key="fm_issue_search",
+                                  placeholder="Digite o número da OP")
+        with falert:
+            choice = st.selectbox("ALERTAS", list(FILTERS), key="fm_issue_filter")
+
     view = _filter(frame, query, choice)
-    _cards([("OPs encontradas", count(view["op"].nunique()), "Ordens no filtro"),
-            ("Itens", count(view["itens"].sum()), "Registros de material no MES"),
-            ("Separados", count(view["itens_separados"].sum()), "Com data de separação"),
-            ("Conferidos", count(view["itens_conferidos"].sum()), "Com data de conferência")])
+    _cards([
+        ("OPs encontradas", count(view["op"].nunique()), "Ordens no recorte"),
+        ("Itens", count(view["itens"].sum()), "Registros de material MES"),
+        ("Separados", count(view["itens_separados"].sum()), "Com separação registrada"),
+        ("Conferidos", count(view["itens_conferidos"].sum()), "Com conferência registrada"),
+    ])
     alerts = view.loc[view["divergente"]]
-    st.caption(f"{count(alerts['op'].nunique())} OPs com alertas · {count(len(alerts))} materiais com alerta. As quantidades são apresentadas por produto, sem somar unidades diferentes.")
-    token = hashlib.sha256((check.VERSION + query + choice + str(model["warehouses"]) + str(model["source_meta"]) + str(period)).encode()).hexdigest()[:14]
-    area = st.radio("Consulta", ["Por OP", "Divergências", "Fontes e critérios"], horizontal=True, key="fm_issue_area", label_visibility="collapsed")
-    if area == "Fontes e critérios":
-        _sources(model)
-    elif view.empty:
-        st.info("Nenhum material corresponde aos filtros selecionados.")
-    elif area == "Por OP":
-        _ops(model, view, token)
+    st.caption(
+        f"{count(alerts['op'].nunique())} OPs com alertas · "
+        f"{count(len(alerts))} produtos em alerta · "
+        f"Referência {day(model['as_of'])}."
+    )
+    token = hashlib.sha256(
+        (check.VERSION + query + choice + str(model["warehouses"])
+         + str(model["source_meta"]) + str(period)).encode()
+    ).hexdigest()[:14]
+    if view.empty:
+        st.info("Nenhuma OP corresponde à pesquisa ou aos alertas selecionados.")
     else:
-        _table(alerts, ["op", "codigo", "descricao", "lotes", "conferida", "baixada", "pendente", "saldo", "saldo_g9_prod",
-                        "sem_saldo", "em_g9_prod", "status", "historico_incompleto", "saldo_compartilhado"])
-        st.caption("Abra a OP na consulta Por OP e selecione o material para visualizar as linhas do MES, endereços e movimentos que originaram o alerta.")
+        _ops(model, view, token)
+
+    st.markdown("---")
+    left, right = st.columns([1, 2])
+    with left:
+        if st.button("PREPARAR RELATÓRIO COMPLETO", use_container_width=True, key="fm_issue_prepare_report"):
+            from issue_check_export import export_complete_report
+            with st.spinner("Preparando o Excel completo com todas as OPs e evidências..."):
+                data = export_complete_report(model)
+            st.session_state["fm_issue_report_ready"] = (str(model["as_of"]), str(model["warehouses"]), data)
+    with right:
+        st.caption("Exportação integral: todas as OPs, produtos, alertas, lotes, endereços, movimentações e fontes, sem limitar aos filtros ou à página.")
+    prepared = st.session_state.get("fm_issue_report_ready")
+    if prepared and prepared[:2] == (str(model["as_of"]), str(model["warehouses"])):
+        st.download_button(
+            "BAIXAR RELATÓRIO COMPLETO · EXCEL",
+            data=prepared[2],
+            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + ".xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="fm_issue_download_complete", use_container_width=True,
+        )
+    with st.expander("FONTES, COBERTURA E CRITÉRIOS TÉCNICOS", expanded=False):
+        _sources(model)
 
 
 def render_issue_check():
@@ -361,7 +432,17 @@ def render_issue_check():
         options = sorted({r["armazem"] for r in stock})
         if "fm_issue_warehouses" in st.session_state:
             st.session_state.fm_issue_warehouses = [w for w in st.session_state.fm_issue_warehouses if w in options]
-        chosen = st.multiselect("Armazéns do saldo e do KARDEX", options, default=["S2"] if "S2" in options else options, key="fm_issue_warehouses")
+        # Seleção de armazéns é uma configuração secundária, não um filtro da
+        # conferência cotidiana. Padrão S2 fica evidente no texto resumido.
+        default_warehouses = ["S2"] if "S2" in options else options
+        if "fm_issue_warehouses" not in st.session_state:
+            st.session_state["fm_issue_warehouses"] = default_warehouses
+        with st.expander("ARMAZÉNS ANALISADOS", expanded=False):
+            chosen = st.multiselect(
+                "Armazéns do saldo e do KARDEX", options,
+                key="fm_issue_warehouses"
+            )
+        st.caption("Armazéns selecionados: " + (", ".join(chosen) if chosen else "NENHUM"))
         if not chosen:
             st.info("Selecione ao menos um armazém para conferir saldos e baixas.")
             return
