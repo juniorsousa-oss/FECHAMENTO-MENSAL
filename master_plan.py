@@ -159,7 +159,8 @@ def enrich_ops(ops: pd.DataFrame, records: dict[str, dict]) -> pd.DataFrame:
 
 
 def label_fields(info: dict) -> str:
+    values = {key: info.get(key) or "NI" for key in FIELDS}
+    patio = values["dias_patio"]
+    values["dias_patio"] = patio if patio == "NI" else f"{patio} DIAS"
     return ("CLIENTE: {cliente} | CONDIÇÃO: {condicao} | NF: {nota_fiscal} | "
-            "FATURAMENTO: {data_faturamento} | PÁTIO: {dias_patio} DIAS").format(
-        **{key: info.get(key) or "NI" for key in FIELDS}
-    )
+            "FATURAMENTO: {data_faturamento} | PÁTIO: {dias_patio}").format(**values)
