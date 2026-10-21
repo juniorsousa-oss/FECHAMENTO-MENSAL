@@ -186,14 +186,14 @@ class OpPriorityTests(unittest.TestCase):
         self.assertEqual(item.tipo_material, "II")
         self.assertEqual(result["ops"].iloc[0].divergencias, 0)
 
-    def test_type_ii_with_separation_keeps_normal_rules(self):
+    def test_type_ii_with_separation_remains_consumption_without_alert(self):
         initial = check.reconcile(
             check.parse_general(pd.DataFrame([raw_item(conferencia=False)])),
             [], [], history_metas=META, as_of="2026-10-21",
         )
         result = op.apply(initial, {OP: {"condicao": "FINALIZADO"}}, {CODE: "II"})
-        self.assertEqual(result["items"].iloc[0].status, op.SEPARADO_SEM_CONFERENCIA)
-        self.assertTrue(result["items"].iloc[0].divergente)
+        self.assertEqual(result["items"].iloc[0].status, op.MATERIAL_CONSUMO)
+        self.assertFalse(result["items"].iloc[0].divergente)
 
     def test_type_ii_without_separation_remains_consumption_material_even_if_not_required(self):
         initial = check.reconcile(
@@ -204,12 +204,35 @@ class OpPriorityTests(unittest.TestCase):
         self.assertEqual(result["items"].iloc[0].status, op.MATERIAL_CONSUMO)
         self.assertFalse(result["items"].iloc[0].divergente)
 
-    def test_type_ii_with_separation_is_flagged_if_consumption_exceeds_required(self):
+    def test_type_ii_with_separation_is_exempt_even_when_consumption_exceeds_required(self):
         initial = check.reconcile(
             check.parse_general(pd.DataFrame([raw_item(qty=1)])),
             [], [movement(quantity=2)], history_metas=META, as_of="2026-10-21",
         )
         result = op.apply(initial, {OP: {"condicao": "FINALIZADO"}}, {CODE: "II"})
+        self.assertEqual(result["items"].iloc[0].status, op.MATERIAL_CONSUMO)
+        self.assertFalse(result["items"].iloc[0].divergente)
+
+    def test_zero_requirement_with_real_consumption_is_flow_of_bars_not_alert(self):
+        # Caso real: barramento com necessidade e separação zero e consumo positivo.
+        result = model(
+            rows=[raw_item(qty=0, separacao=False, conferencia=False)],
+            moves=[movement(quantity=Decimal("14.13"))],
+            master={"condicao": "FINALIZADO"},
+        )
+        item = result["items"].iloc[0]
+        self.assertEqual(item.status, op.FLUXO_BARRAS)
+        self.assertFalse(item.divergente)
+        self.assertEqual(int(result["ops"].iloc[0].divergencias), 0)
+
+    def test_zero_requirement_without_consumption_is_still_awaiting_separation(self):
+        result = model(rows=[raw_item(qty=0, separacao=False, conferencia=False)],
+                       master={"condicao": "FINALIZADO"})
+        self.assertEqual(result["items"].iloc[0].status, op.AGUARDANDO_SEPARACAO)
+        self.assertFalse(result["items"].iloc[0].divergente)
+
+    def test_non_ii_positive_requirement_overconsumption_remains_alert(self):
+        result = model(moves=[movement(quantity=Decimal("14.13"))])
         self.assertEqual(result["items"].iloc[0].status, op.BAIXA_ACIMA_NECESSIDADE)
         self.assertTrue(result["items"].iloc[0].divergente)
 
