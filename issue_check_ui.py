@@ -580,9 +580,12 @@ def render_issue_check():
         # A regra operacional usa a fonte FOR001, mas nunca modifica a
         # reconciliação MES/KARDEX cacheada e nunca bloqueia sem a FOR001.
         master_records, master_meta = _optional_master_plan()
-        model = op_rules.apply(model, master_records)
-        model["master_plan_meta"] = master_meta
-        render_results(model)
+        master_version = str(master_meta.get("source_version", master_meta.get("version", ""))) + str(master_meta.get("content_sha256") or master_meta.get("erro") or "")
+        model = _operational_snapshot(
+            tokens, history_tokens, tuple(sorted(chosen)), master_version,
+            op_rules.VERSION, model, master_records,
+        )
+        render_results({**model, "master_plan_meta": master_meta})
     except Exception as exc:
         st.error(f"Não foi possível concluir a conferência: {exc}")
         st.info("A ausência de uma fonte não é tratada como saldo zero ou ausência de baixa. Use Atualizar conferência após regularizar a base.")
