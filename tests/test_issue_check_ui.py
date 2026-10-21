@@ -85,6 +85,27 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertIn("21/10/2026", markup)
         self.assertIn("FINALIZADO EM PÁTIO", markup)
 
+    def test_invoice_filters_have_two_independent_calendars_and_can_clear(self):
+        from datetime import date
+        app = AppTest.from_string(PROGRAM, default_timeout=20).run()
+        self.assertFalse(app.exception)
+        dates = {widget.label: widget for widget in app.date_input}
+        self.assertEqual(set(dates), {"DATA INICIAL", "DATA FINAL"})
+        self.assertTrue(all(widget.value is None for widget in dates.values()))
+        dates["DATA INICIAL"].set_value(date(2026, 10, 1)).run()
+        self.assertFalse(app.exception)
+        self.assertEqual(
+            next(x for x in app.date_input if x.label == "DATA INICIAL").value,
+            date(2026, 10, 1)
+        )
+        next(x for x in app.date_input if x.label == "DATA FINAL").set_value(
+            date(2026, 10, 31)
+        ).run()
+        self.assertFalse(app.exception)
+        next(x for x in app.button if x.label == "LIMPAR FILTROS").click().run()
+        self.assertFalse(app.exception)
+        self.assertTrue(all(widget.value is None for widget in app.date_input))
+
     def test_an_unavailable_source_is_not_presented_as_zero_stock_or_issues(self):
         program = '''
 from unittest.mock import patch
