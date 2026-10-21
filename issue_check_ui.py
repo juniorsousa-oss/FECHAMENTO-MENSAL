@@ -369,6 +369,16 @@ def _sources(model):
                                     "Competência": m.get("competencia", "—"), "De": day(m["periodo_inicio"]), "Até": day(m["periodo_fim"]),
                                     "Registros nesta cobertura": m["lancamentos"]} for m in model["history_meta"]]), hide_index=True, width="stretch")
         st.caption("A conferência utiliza somente as versões vigentes do KARDEX. A cobertura precisa atender a todos os armazéns selecionados.")
+    diagnostics = model.get("diagnostico_baixas") or {}
+    if diagnostics:
+        st.markdown("**Diagnóstico de vínculo das baixas**")
+        st.caption(
+            f"Movimentos no período: {count(diagnostics.get('movimentos_no_periodo', 0))} · "
+            f"Com OP reconhecida: {count(diagnostics.get('movimentos_op_reconhecida', 0))} · "
+            f"Saídas de consumo vinculadas: {count(diagnostics.get('consumos_vinculados', 0))} · "
+            f"TES 999 de OP não compensadas: {count(diagnostics.get('tes_999_sem_compensacao', 0))} · "
+            f"Linhas 499/999 compensadas: {count(diagnostics.get('enderecamentos_compensados', 0))}"
+        )
     st.markdown("**Critérios da conferência**")
     st.write("• Conferência identificada pela data de conferência do MES; a quantidade comparada é a atendida nessas linhas. Conferências parciais mantêm a necessária e a pendência visíveis.")
     st.write("• Estoque consultado por produto e lote nos armazéns selecionados. O saldo é a coluna Quantidade; o empenho aparece separado nas evidências.")
@@ -400,6 +410,15 @@ def render_results(model):
         st.warning("Relatório Geral e Endereço com datas diferentes. Considerada a referência mais antiga.")
     if len(period["intervalos"]) > 1:
         st.warning("O histórico possui intervalos sem cobertura entre as importações KARDEX.")
+    diagnostics = model.get("diagnostico_baixas") or {}
+    if (model.get("history_available") and diagnostics.get("movimentos_no_periodo", 0)
+            and not diagnostics.get("consumos_vinculados", 0)):
+        st.warning(
+            "O KARDEX possui movimentações no período, mas nenhuma saída de consumo "
+            "foi vinculada a uma OP nesta análise. Confira o conteúdo da coluna "
+            "AE original, a data de referência e os armazéns selecionados antes "
+            "de interpretar baixas zeradas como ausência de consumo."
+        )
 
     with st.container(key="fm_issue_filters"):
         fop, falert = st.columns([2, 1])
