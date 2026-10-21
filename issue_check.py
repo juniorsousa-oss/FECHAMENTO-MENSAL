@@ -98,8 +98,10 @@ def _table(frame: pd.DataFrame, fields: dict, required: set) -> list[dict]:
             raise ValueError("Cabeçalho incompatível com o relatório: " + ", ".join(sorted(required)))
     physical = frame.attrs.get("source_rows") or []
     result = []
-    for position in range(header + 1, len(frame)):
-        values = frame.iloc[position].tolist()
+    # itertuples reduz a criação de Series pandas para cada linha do MES.
+    for position, values in enumerate(frame.itertuples(index=False, name=None)):
+        if position <= header:
+            continue
         if not any(text(v) for v in values):
             continue
         current = {name: values[i] if i < len(values) else None for i, name in columns.items()}
@@ -234,6 +236,12 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
         address_pool[(row["codigo"], row["lote"], row["armazem"], row["endereco"])] += row["saldo"]
         if row["endereco"] == "G9-PROD":
             prod_pool[key] += row["saldo"]
+    # Índice por produto/lote elimina varredura de todos os endereços
+    # a cada produto com falta de baixa.
+    address_index = defaultdict(list)
+    for (code, lot, wh, address), quantity in address_pool.items():
+        if lot and address != "G9-PROD" and quantity > EPSILON:
+            address_index[code, lot].append((wh, address, quantity))
     by_item = defaultdict(list)
     for row in general:
         by_item[row["op"], row["item_id"]].append(row)
@@ -314,9 +322,8 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
         shortage_g9 = positive(pending - max(prod, ZERO)) if pending is not None else ZERO
         alternatives = []
         if confirmed and shortage_g9 > EPSILON:
-            for (candidate_code, lot, wh, address), quantity in address_pool.items():
-                if (candidate_code == code and lot in confirmed_lots
-                        and lot and address != "G9-PROD" and quantity > EPSILON):
+            for lot in confirmed_lots:
+                for wh, address, quantity in address_index.get((code, lot), ()):
                     alternatives.append({"armazem": wh, "endereco": address,
                                          "lote": lot, "saldo": quantity})
             alternatives.sort(key=lambda candidate: (
