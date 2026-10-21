@@ -211,12 +211,19 @@ def _filter(frame: pd.DataFrame, query: str, choice: str) -> pd.DataFrame:
         op = term.removeprefix("OP").strip(" :-/")
         view = view.loc[view["op"].astype(str).str.contains(op, regex=False)]
     condition = FILTERS.get(choice)
+    # O filtro seleciona as OPs, preservando todos os seus materiais na
+    # conferência, inclusive as linhas normais de uma ordem com alertas.
     if condition == "divergente":
-        view = view.loc[view["divergente"]]
+        eligible = view.loc[view["divergente"], "op"]
+        view = view.loc[view["op"].isin(eligible)]
     elif condition == "sem_alertas":
-        view = view.loc[~view["divergente"]]
+        alerted = set(view.loc[view["divergente"], "op"])
+        view = view.loc[~view["op"].isin(alerted)]
     elif condition:
-        view = view.loc[view["alertas"].map(lambda values: condition in values)]
+        selected = view.loc[
+            view["alertas"].map(lambda values: condition in values), "op"
+        ]
+        view = view.loc[view["op"].isin(selected)]
     return view.copy()
 
 
@@ -396,20 +403,25 @@ def render_results(model):
         _ops(model, view, token)
 
     st.markdown("---")
+    report_key = hashlib.sha256((
+        str(model.get("as_of")) + str(model.get("warehouses"))
+        + str(model.get("history_meta")) + str(model.get("source_meta"))
+        + check.VERSION
+    ).encode()).hexdigest()
     left, right = st.columns([1, 2])
     with left:
         if st.button("PREPARAR RELATÓRIO COMPLETO", use_container_width=True, key="fm_issue_prepare_report"):
             from issue_check_export import export_complete_report
             with st.spinner("Preparando o Excel completo com todas as OPs e evidências..."):
                 data = export_complete_report(model)
-            st.session_state["fm_issue_report_ready"] = (str(model["as_of"]), str(model["warehouses"]), data)
+            st.session_state["fm_issue_report_ready"] = (report_key, data)
     with right:
         st.caption("Exportação integral: todas as OPs, produtos, alertas, lotes, endereços, movimentações e fontes, sem limitar aos filtros ou à página.")
     prepared = st.session_state.get("fm_issue_report_ready")
-    if prepared and prepared[:2] == (str(model["as_of"]), str(model["warehouses"])):
+    if prepared and prepared[0] == report_key:
         st.download_button(
             "BAIXAR RELATÓRIO COMPLETO · EXCEL",
-            data=prepared[2],
+            data=prepared[1],
             file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + ".xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="fm_issue_download_complete", use_container_width=True,
