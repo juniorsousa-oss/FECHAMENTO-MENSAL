@@ -721,8 +721,8 @@ def _sources(model):
     st.write("• OP finalizada/faturada/reportada OU com algum consumo: exige baixa integral da quantidade separada e conferida. Se existir pendência de consumo, primeiro verifica saldo G9-PROD dos lotes conferidos; depois endereço alternativo que sozinho cubra a falta; senão classifica SEM SALDO. Todos os produtos não concluídos nessas OPs geram alerta.")
     st.write("• OP em andamento SEM nenhuma baixa: acompanha somente etapa do produto (conferido aguardando reporte, separado aguardando conferência ou aguardando separação), sem gerar alertas.")
     st.write("• A conferência de baixas é por OP e código do produto. Saldos por endereço consideram somente lotes efetivamente conferidos; nenhum saldo é reservado automaticamente para outras OPs.")
-    st.write("• Baixa líquida acima da quantidade NECESSÁRIA recebe 'PRODUTO COM BAIXA MAIOR QUE A NECESSIDADE' e alerta.")
-    st.write("• Produtos Tipo II do CADASTROS sem separação são 'MATERIAL DE CONSUMO' e não geram alerta por aguardarem separação, mesmo quando existe consumo sem separação. Quando há separação, aplicam-se as regras normais de baixa e excesso.")
+    st.write("• Baixa maior que a NECESSIDADE gera alerta, exceto para materiais Tipo II ou com necessidade zero e consumo positivo (FLUXO DE BARRAS).")
+    st.write("• Produtos Tipo II do CADASTROS recebem 'MATERIAL DE CONSUMO' e não geram alertas, independentemente de separação, conferência ou baixa.")
     st.write("• Outros endereços só são exibidos se o saldo G9-PROD dos lotes conferidos não cobrir toda a quantidade separada.")
     st.write("• Registros repetidos no MES são mantidos e somados. Sobreposição entre arquivos KARDEX é reconhecida sem duplicar movimentos.")
     st.write("• Diferenças de até 0,000001 são tratadas como precisão numérica. Os valores originais permanecem nas evidências.")
@@ -826,17 +826,20 @@ def render_results(model):
     view = _filter_op_status_invoice(
         _filter(frame, query, choice), model["ops"], selected_status, invoice_period
     )
-    _cards([
-        ("OPs encontradas", count(view["op"].nunique()), "Ordens no recorte"),
-        ("Produtos", count(len(view)), "Códigos distintos por OP"),
-        ("Separados", count(view["itens_separados"].gt(0).sum()), "Produtos com separação"),
-        ("Conferidos", count(view["itens_conferidos"].gt(0).sum()), "Produtos com conferência"),
-    ])
+    with st.container(key="fm_issue_summary"):
+        _cards([
+            ("OPs encontradas", count(view["op"].nunique()), "Ordens no recorte"),
+            ("Produtos", count(len(view)), "Códigos distintos por OP"),
+            ("Separados", count(view["itens_separados"].gt(0).sum()), "Produtos com separação"),
+            ("Conferidos", count(view["itens_conferidos"].gt(0).sum()), "Produtos com conferência"),
+        ])
     alerts = view.loc[view["divergente"]]
-    st.caption(
-        f"{count(alerts['op'].nunique())} OPs com alertas · "
-        f"{count(len(alerts))} produtos em alerta · "
-        f"Referência {day(model['as_of'])}."
+    st.markdown(
+        '<div class="fm-issue-results-heading"><strong>ORDENS DE PRODUÇÃO</strong>'
+        f'<span>{count(alerts["op"].nunique())} OPs com alertas · '
+        f'{count(len(alerts))} produtos para verificar · '
+        f'Referência: {day(model["as_of"])}</span></div>',
+        unsafe_allow_html=True,
     )
     token = hashlib.sha256(
         (op_rules.VERSION + query + choice + selected_status + str(invoice_period)
@@ -880,33 +883,30 @@ def render_results(model):
 
 def render_issue_check():
     _band()
-    st.button("ATUALIZAR CONFERÊNCIA", on_click=_reload, key="fm_issue_reload")
     try:
         states = _states()
         for key in SOURCE_KEYS:
             if key not in states or not states[key].get("available") or states[key].get("status") != "ATUALIZADO":
                 raise RuntimeError(f"Fonte {key} indisponível ou sem atualização concluída no Monitor API.")
         tokens = tuple((key, int(states[key]["version"]), str(states[key].get("last_update_at") or "")) for key in SOURCE_KEYS)
-        with st.spinner("Verificando armazéns disponíveis..."):
-            options = _warehouse_options(next(t for t in tokens if t[0] == "endereco"))
-        if "fm_issue_warehouses" in st.session_state:
-            st.session_state.fm_issue_warehouses = [w for w in st.session_state.fm_issue_warehouses if w in options]
-        # Seleção de armazéns é uma configuração secundária, não um filtro da
-        # conferência cotidiana. Padrão S2 fica evidente no texto resumido.
-        default_warehouses = ["S2"] if "S2" in options else options
-        if "fm_issue_warehouses" not in st.session_state:
-            st.session_state["fm_issue_warehouses"] = default_warehouses
-        with st.expander("ARMAZÉNS ANALISADOS", expanded=False):
-            chosen = st.multiselect(
-                "Armazéns do saldo e do KARDEX", options,
-                key="fm_issue_warehouses"
-            )
-        st.caption("Armazéns selecionados: " + (", ".join(chosen) if chosen else "NENHUM"))
-        if not chosen:
-            st.info("Selecione ao menos um armazém para conferir saldos e baixas.")
-            return
+        # Abrangência automática: estoque disponível em ENDEREÇO e qualquer
+        # armazém adicional já cadastrado no histórico KARDEX. Sem restringir
+        # silenciosamente a conferência ao antigo padrão S2.
+        options = _warehouse_options(next(t for t in tokens if t[0] == "endereco"))
         imports = _imports()
-        history_tokens = tuple((i["chave"], str(i.get("atualizado_em") or ""), i.get("meta") or {}) for i in imports)
+        import_warehouses = {
+            str((entry.get("meta") or {}).get("armazem") or "").strip()
+            for entry in imports
+            if (entry.get("meta") or {}).get("armazem")
+        }
+        chosen = tuple(sorted(set(options) | import_warehouses))
+        if not chosen:
+            st.warning("Ainda não existem armazéns disponíveis nas fontes ENDEREÇO ou KARDEX.")
+            return
+        history_tokens = tuple(
+            (i["chave"], str(i.get("atualizado_em") or ""), i.get("meta") or {})
+            for i in imports
+        )
         with st.spinner("Conferindo as OPs, os saldos por lote e as baixas registradas..."):
             model = _audit(tokens, history_tokens, tuple(sorted(chosen)), check.VERSION)
         # A regra operacional usa a fonte FOR001, mas nunca modifica a
