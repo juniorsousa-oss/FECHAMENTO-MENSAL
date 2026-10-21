@@ -58,12 +58,12 @@ def cards(items):
     st.markdown("".join(cells) + "</div>", unsafe_allow_html=True)
 
 
-@st.cache_data(show_spinner=False, ttl=45)
+@st.cache_data(show_spinner=False, ttl=60)
 def _imports():
     return store.list_imports()
 
 
-@st.cache_resource(show_spinner=False, ttl=300, max_entries=2)
+@st.cache_resource(show_spinner=False, ttl=600, max_entries=2)
 def _model(tokens: tuple, version: str):
     del version
     entries = [{"chave": key, "atualizado_em": updated, "meta": meta} for key, updated, meta in tokens]
