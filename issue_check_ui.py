@@ -749,7 +749,9 @@ def _sources(model):
 
 
 
+@st.fragment
 def render_results(model):
+    """Filtros e OPs atualizam em fragmento sem reconstruir o aplicativo inteiro."""
     if model.get("status_version") != op_rules.VERSION:
         # Compatibilidade de chamadas diretas e modelos anteriores: nunca
         # apresentar alertas legados na interface operacional.
