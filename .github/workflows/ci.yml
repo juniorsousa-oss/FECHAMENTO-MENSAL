@@ -20,6 +20,7 @@ on:
       - 'issue_check_export.py'
       - 'master_plan.py'
       - 'operational_status.py'
+      - 'catalog_types.py'
       - 'config/movement_rules.json'
       - 'supabase_schema.sql'
       - 'migrations/**'
@@ -40,7 +41,7 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
       - name: Compilar
-        run: python -m py_compile streamlit_app.py central_fechamento_data.py inventory_db.py report_parser.py cb_parser.py ui.py movements.py movement_store.py movement_analysis_ui.py issue_check.py issue_check_ui.py issue_check_export.py master_plan.py operational_status.py kardex_history.py
+        run: python -m py_compile streamlit_app.py central_fechamento_data.py inventory_db.py report_parser.py cb_parser.py ui.py movements.py movement_store.py movement_analysis_ui.py issue_check.py issue_check_ui.py issue_check_export.py master_plan.py operational_status.py catalog_types.py kardex_history.py
       - name: Validar análise de movimentações
         run: python -m unittest discover -s tests -p 'test_movement_analysis*.py'
       - name: Validar conferência de baixas e telas
@@ -49,6 +50,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_master_plan.py'
       - name: Validar nova lógica de estágios e alertas
         run: python -m unittest discover -s tests -p 'test_operational_status.py'
+      - name: Validar tipos do CADASTROS e novos filtros da conferência
+        run: python -m unittest discover -s tests -p 'test_catalog_types_filters.py'
       - name: Validar conexão paralela e cache da conferência
         run: python -m unittest discover -s tests -p 'test_cb_performance.py'
       - name: Validar cache, carregamento sob demanda e concorrência
