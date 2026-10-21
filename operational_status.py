@@ -222,12 +222,12 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
         products.at[idx, "status_op"] = group["status"]
         products.at[idx, "op_possui_baixa"] = group["possui_consumo"]
 
-        # Baixa acima da necessidade é divergência de consumo mesmo quando
-        # o item não deveria passar por separação (tipo II).
-        if net - decimal(item.get("necessaria")) > EPS:
-            status, alert = BAIXA_ACIMA_NECESSIDADE, True
-        elif tipo == "II" and separated <= EPS:
+        # Material Tipo II sem separação é consumo operacional e não deve
+        # criar falso alerta; nos demais, baixa além da necessidade prevalece.
+        if tipo == "II" and separated <= EPS:
             status, alert = MATERIAL_CONSUMO, False
+        elif net - decimal(item.get("necessaria")) > EPS:
+            status, alert = BAIXA_ACIMA_NECESSIDADE, True
         elif not group["exige_baixa"]:
             if confirmed > EPS:
                 status = CONFERIDO_AGUARDANDO_REPORTE
