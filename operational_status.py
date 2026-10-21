@@ -274,9 +274,8 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
         lambda op: int(counted.get_group(op)["divergente"].sum()))
     ops["baixados"] = ops["op"].map(
         lambda op: int(sum(
-            int(item["itens_conferidos"])
+            item["status"] == PRODUTO_CONSUMIDO
             for item in counted.get_group(op).to_dict("records")
-            if item["status"] == PRODUTO_CONSUMIDO
         )))
     result["items"], result["ops"] = products, ops
     result["status_version"] = VERSION
