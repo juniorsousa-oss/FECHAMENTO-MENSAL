@@ -299,6 +299,7 @@ def _ops(model, view, token):
     page = min(int(st.session_state.get("fm_issue_page", 1)), pages)
     st.session_state.fm_issue_page = page
     st.caption(f"{count(len(numbers))} OPs encontradas · página {page} de {pages} · 10 OPs por página")
+    st.caption("BAIXADOS: itens conferidos com consumo integral identificado por OP/produto. Baixas parciais aparecem na coluna Qtd baixada.")
     info = model["ops"].set_index("op").to_dict("index")
     with st.container(key="fm_issue_ops"):
         for number in numbers[(page - 1) * size:page * size]:
@@ -454,7 +455,10 @@ def render_results(model):
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="fm_issue_download_complete", use_container_width=True,
         )
-    with st.expander("FONTES, COBERTURA E CRITÉRIOS TÉCNICOS", expanded=False):
+    # st.expander executaria tabelas das fontes mesmo fechado; toggle
+    # evita trabalho desnecessário em cada pesquisa ou abertura de OP.
+    if st.toggle("FONTES, COBERTURA E CRITÉRIOS TÉCNICOS",
+                 value=False, key="fm_issue_show_sources"):
         _sources(model)
 
 
