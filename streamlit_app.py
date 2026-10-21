@@ -385,10 +385,32 @@ def load_api_sources() -> list[dict]:
 
 @st.cache_data(show_spinner=False, ttl=30, max_entries=2)
 def load_inventory_overview() -> tuple[list[dict], list[dict]]:
-    return (
-        db.list_inventory_imports(),
-        db.list_inventory_summaries(),
-    )
+    # São leituras independentes: executar juntas corta uma viagem sequencial.
+    url, key = db.supabase_url(), db.supabase_key()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        imports = executor.submit(
+            db.read_with_connection, db.list_inventory_imports, url, key
+        )
+        summaries = executor.submit(
+            db.read_with_connection, db.list_inventory_summaries, url, key
+        )
+        return imports.result(), summaries.result()
+
+
+@st.cache_data(show_spinner=False, ttl=90, max_entries=4)
+def load_cb_adjustment_history() -> list[dict]:
+    return db.list_cb_adjustment_history()
+
+
+@st.cache_data(show_spinner=False, ttl=600, max_entries=4)
+def cached_parse_cb_source(raw: bytes, file_name: str, source: str) -> dict:
+    if source == "chapas":
+        return parse_chapas_eml(raw, file_name)
+    if source == "barramentos":
+        return parse_barramentos_excel(raw, file_name)
+    if source == "almoxarifado":
+        return parse_interno_excel(raw, file_name)
+    raise ValueError("Fonte física inválida.")
 
 
 @st.cache_data(show_spinner=False, ttl=25, max_entries=6)
@@ -3090,19 +3112,21 @@ elif page == "Conferência de chapas e barramentos":
             "ALIMENTAÇÃO FÍSICA",
             "Importe as fontes de chapas, barramentos e almoxarifado e confira suas correspondências.",
         )
-        with st.expander(
+        # st.expander e st.tabs executam TODAS as seções mesmo fechadas.
+        # A chave abaixo só constrói controles e análises quando solicitados.
+        if st.toggle(
             "GERENCIAR FONTES E CONTAGENS",
-            expanded=False,
+            key="fm_cb_open_sources",
+            value=False,
         ):
-            tab_email, tab_bar, tab_internal = st.tabs(
-                [
-                    "CHAPAS · E-MAIL",
-                    "BARRAMENTOS · EXCEL",
-                    "ALMOXARIFADO · BARRAS",
-                ]
+            cb_source_active = st.segmented_control(
+                "Fonte de contagem",
+                ["CHAPAS · E-MAIL", "BARRAMENTOS · EXCEL", "ALMOXARIFADO · BARRAS"],
+                default="CHAPAS · E-MAIL",
+                key="fm_cb_source_active",
             )
 
-            with tab_email:
+            if cb_source_active == "CHAPAS · E-MAIL":
                 email_file = st.file_uploader(
                     "E-mail do setor de chapas",
                     type=["eml"],
@@ -3115,9 +3139,8 @@ elif page == "Conferência de chapas e barramentos":
 
                 if email_file is not None:
                     try:
-                        parsed_email = parse_chapas_eml(
-                            email_file.getvalue(),
-                            email_file.name,
+                        parsed_email = cached_parse_cb_source(
+                            email_file.getvalue(), email_file.name, "chapas"
                         )
 
                         detected_comp = parsed_email.get(
@@ -3336,7 +3359,7 @@ elif page == "Conferência de chapas e barramentos":
                             f"Não foi possível ler o e-mail de chapas: {exc}"
                         )
 
-            with tab_bar:
+            if cb_source_active == "BARRAMENTOS · EXCEL":
                 bar_file = st.file_uploader(
                     "Planilha da produção de barramentos",
                     type=["xlsx", "xltx"],
@@ -3349,9 +3372,8 @@ elif page == "Conferência de chapas e barramentos":
 
                 if bar_file is not None:
                     try:
-                        parsed_bar = parse_barramentos_excel(
-                            bar_file.getvalue(),
-                            bar_file.name,
+                        parsed_bar = cached_parse_cb_source(
+                            bar_file.getvalue(), bar_file.name, "barramentos"
                         )
 
                         catalog_bar = {
@@ -3651,7 +3673,7 @@ elif page == "Conferência de chapas e barramentos":
                             f"Não foi possível ler a planilha de barramentos: {exc}"
                         )
 
-            with tab_internal:
+            if cb_source_active == "ALMOXARIFADO · BARRAS":
                 internal_file = st.file_uploader(
                     "Planilha do almoxarifado de barras",
                     type=["xlsx", "xltx"],
@@ -4830,7 +4852,7 @@ elif page == "Conferência de chapas e barramentos":
         )
 
         try:
-            _adjustment_history = db.list_cb_adjustment_history()
+            _adjustment_history = load_cb_adjustment_history()
             _adjustment_history_error = ""
         except Exception as exc:
             _adjustment_history = []
@@ -4916,6 +4938,7 @@ elif page == "Conferência de chapas e barramentos":
                 closing_date(cb_month),
                 _rows_to_save,
             )
+            load_cb_adjustment_history.clear()
             st.session_state["_cb_count_flash"] = (
                 "Ajustes de "
                 + month_label(cb_month)
@@ -4930,9 +4953,12 @@ elif page == "Conferência de chapas e barramentos":
                 + _adjustment_history_error
             )
         elif _adjustment_history:
-            with st.expander(
+            # O histórico mensal possui consultas e formatações próprias: só
+            # executá-las quando o usuário solicitar abrir esta área.
+            if st.toggle(
                 "HISTÓRICO DE AJUSTES · MÊS A MÊS",
-                expanded=False,
+                key="fm_cb_open_adjustment_history",
+                value=False,
             ):
                 _history_rows = []
                 for row in _adjustment_history:
