@@ -75,6 +75,8 @@ def _days(value) -> str:
         days = (value.date() if isinstance(value, datetime) else value) - date(1899, 12, 30)
         return str(days.days) if 0 <= days.days < 10000 else "NI"
     s = str(value).strip()
+    if " ".join(s.upper().split()) == "FINALIZADO E ENTREGUE":
+        return "FINALIZADO E ENTREGUE"
     try:
         n = float(s.replace(",", "."))
         if not math.isfinite(n) or n < 0:
