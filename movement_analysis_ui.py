@@ -143,6 +143,14 @@ def _go_to(area):
     st.session_state.fm_mov_area = area
 
 
+def _area_changed(key):
+    selected = st.session_state.get(key)
+    if selected in AREAS:
+        st.session_state.fm_mov_area = selected
+    # The navigation reflects its destination, including changes made by table selections.
+    st.session_state.pop(key, None)
+
+
 def _clear_filters(area):
     _set_filters(area, {})
     if area == "Movimentações":
@@ -534,16 +542,21 @@ def _exports(frame, model, token, *, include_history=True):
 def render_results(model, imports):
     scope = _context(model["frame"], imports)
     st.markdown('''<style>
-    .st-key-fm_mov_area{margin:.1rem 0 .6rem}
-    .st-key-fm_mov_area button{min-height:44px!important;border-radius:10px!important;font-weight:700!important}
-    .st-key-fm_mov_area button[aria-pressed="true"]{background:#111827!important;color:#fff!important;border-color:#111827!important}
-    .st-key-fm_mov_area button[aria-pressed="true"] p{color:#fff!important}
+    .st-key-fm_mov_navigation{margin:.1rem 0 .6rem}
+    .st-key-fm_mov_navigation button{min-height:44px!important;border-radius:10px!important;font-weight:700!important}
+    .st-key-fm_mov_navigation button[aria-checked="true"]{background:#111827!important;color:#fff!important;border-color:#111827!important}
+    .st-key-fm_mov_navigation button[aria-checked="true"] p{color:#fff!important}
     </style>''', unsafe_allow_html=True)
-    if st.session_state.get("fm_mov_area") not in AREAS:
-        st.session_state.fm_mov_area = AREAS[0]
-    area = st.segmented_control("Funções da análise", AREAS, key="fm_mov_area", selection_mode="single",
-                                format_func=lambda value: AREA_LABELS.get(value, value),
-                                label_visibility="collapsed", width="stretch") or AREAS[0]
+    area = st.session_state.get("fm_mov_area")
+    if area not in AREAS:
+        area = AREAS[0]
+    st.session_state.fm_mov_area = area
+    navigation_key = "fm_mov_nav_area_" + str(AREAS.index(area))
+    with st.container(key="fm_mov_navigation"):
+        st.segmented_control("Funções da análise", AREAS, key=navigation_key, selection_mode="single",
+                             default=area, on_change=_area_changed, args=(navigation_key,),
+                             format_func=lambda value: AREA_LABELS.get(value, value),
+                             label_visibility="collapsed", width="stretch")
     headers = {
         "Visão geral": ("01 · RESUMO", "RESULTADO DO PERÍODO", "Acompanhe entradas, saídas e a composição por grupo. Selecione um grupo para aprofundar a análise."),
         "Grupos e TES": ("02 · GRUPOS E TES", "ANÁLISE POR GRUPO E CONDIÇÃO", "Abra um grupo e selecione uma TES ou condição para consultar os registros que compõem o valor."),
