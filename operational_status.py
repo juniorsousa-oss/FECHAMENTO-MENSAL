@@ -11,7 +11,7 @@ import re
 
 import pandas as pd
 
-VERSION = "2026-10-21.6"
+VERSION = "2026-10-21.7"
 EPS = Decimal("0.000001")
 ZERO = Decimal(0)
 
@@ -34,6 +34,7 @@ CONFERIDO_AGUARDANDO_REPORTE = "PRODUTO CONFERIDO AGUARDANDO REPORTE"
 AGUARDANDO_KARDEX = "AGUARDANDO KARDEX"
 BAIXA_ACIMA_NECESSIDADE = "PRODUTO COM BAIXA MAIOR QUE A NECESSIDADE"
 MATERIAL_CONSUMO = "MATERIAL DE CONSUMO"
+FLUXO_BARRAS = "FLUXO DE BARRAS"
 
 FINAL_STAGES = frozenset({FINALIZADO_PATIO, FINALIZADO_ENTREGUE, NF_EMITIDA, FINALIZADO, REPORTADO})
 ALERT_RESULTS = frozenset({
@@ -222,13 +223,17 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
         products.at[idx, "status_op"] = group["status"]
         products.at[idx, "op_possui_baixa"] = group["possui_consumo"]
 
-        # A conferência começa a gerar alertas somente após existir
-        # separação registrada para o produto, independentemente da OP,
-        # de uma baixa excedente ou do estágio de faturamento.
-        if separated <= EPS:
-            status = MATERIAL_CONSUMO if tipo == "II" else AGUARDANDO_SEPARACAO
-            alert = False
-        elif net - decimal(item.get("necessaria")) > EPS:
+        # Tipo II nunca gera alerta: seu processo de consumo não depende
+        # da separação nas listas. Baixa de item com necessidade zero
+        # é fluxo de barras, não excesso a investigar.
+        necessidade = decimal(item.get("necessaria"))
+        if tipo == "II":
+            status, alert = MATERIAL_CONSUMO, False
+        elif necessidade <= EPS and net > EPS:
+            status, alert = FLUXO_BARRAS, False
+        elif separated <= EPS:
+            status, alert = AGUARDANDO_SEPARACAO, False
+        elif net - necessidade > EPS:
             status, alert = BAIXA_ACIMA_NECESSIDADE, True
         elif not group["exige_baixa"]:
             if confirmed > EPS:
