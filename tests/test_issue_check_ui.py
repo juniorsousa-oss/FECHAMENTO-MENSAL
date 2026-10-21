@@ -32,11 +32,17 @@ class IssueCheckUITests(unittest.TestCase):
     def test_op_filters_material_evidence_and_export(self):
         app = AppTest.from_string(PROGRAM, default_timeout=20).run()
         self.assertFalse(app.exception)
-        self.assertEqual(len(app.expander), 3)  # duas OPs e critérios técnicos
-        self.assertTrue(any("ORDEM COM ALERTA" in exp.label for exp in app.expander))
-        self.assertTrue(any("ORDEM OK" in exp.label for exp in app.expander))
+        self.assertEqual(len(app.expander), 1)  # critérios; OPs são abertas sob demanda
+        self.assertTrue(any("ORDEM COM ALERTA" in b.label for b in app.button))
+        self.assertTrue(any("ORDEM OK" in b.label for b in app.button))
+        self.assertEqual(len(app.dataframe), 0)  # nenhum detalhe pesado antes do clique
         self.assertFalse(any(r.label == "Consulta" for r in app.radio))
+
+        next(b for b in app.button if "OP 26000101001" in b.label).click().run()
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.dataframe), 1)
         self.assertFalse(any("Histórico incompleto" in t.value.columns for t in app.dataframe))
+        self.assertIn("Outros endereços", app.dataframe[0].value.columns)
 
         detail = next(x for x in app.selectbox if x.label == "DETALHAR MATERIAL E EVIDÊNCIAS")
         detail.set_value("26000101001:00001000").run()
@@ -46,14 +52,13 @@ class IssueCheckUITests(unittest.TestCase):
 
         next(x for x in app.selectbox if x.label == "ALERTAS").set_value("Com alertas").run()
         self.assertFalse(app.exception)
-        self.assertEqual(len([exp for exp in app.expander if exp.label.startswith("OP ")]), 1)
+        self.assertEqual(len([b for b in app.button if "OP 2600" in b.label]), 1)
 
         next(x for x in app.selectbox if x.label == "ALERTAS").set_value("Todos").run()
         next(x for x in app.text_input if x.label == "LOCALIZAR OP").set_value("26000201001").run()
         self.assertFalse(app.exception)
-        self.assertEqual(len([exp for exp in app.expander if exp.label.startswith("OP ")]), 1)
-        self.assertTrue(any("ORDEM OK" in exp.label for exp in app.expander))
-        self.assertTrue(any("Produto" in table.value.columns for table in app.dataframe))
+        self.assertEqual(len([b for b in app.button if "OP 2600" in b.label]), 1)
+        self.assertTrue(any("ORDEM OK" in b.label for b in app.button))
         self.assertTrue(any("PREPARAR RELATÓRIO COMPLETO" in b.label for b in app.button))
 
 
