@@ -167,7 +167,7 @@ def _states():
     return {row["source_key"]: row for row in sources if row.get("source_key") in SOURCE_KEYS}
 
 
-@st.cache_data(ttl=600, max_entries=6, show_spinner=False)
+@st.cache_resource(max_entries=6, show_spinner=False)
 def _source(key: str, version: int, updated_at: str):
     del updated_at
     payload, meta = central.download_preferred_source(key)
@@ -184,7 +184,7 @@ def _source(key: str, version: int, updated_at: str):
     return rows, {k: v for k, v in meta.items() if k not in ("signed_url", "url")}
 
 
-@st.cache_data(ttl=600, max_entries=3, show_spinner=False)
+@st.cache_resource(max_entries=3, show_spinner=False)
 def _master_plan_records(version: int, updated_at: str):
     """Consulta FOR001 somente quando a versão da fonte é alterada."""
     del updated_at
@@ -200,7 +200,7 @@ def _master_plan_records(version: int, updated_at: str):
     return records, {key: value for key, value in meta.items() if key not in ("signed_url", "url")}
 
 
-@st.cache_data(ttl=600, max_entries=3, show_spinner=False)
+@st.cache_resource(max_entries=3, show_spinner=False)
 def _catalog_type_records(version: int, updated: str) -> tuple[dict[str, str], dict]:
     del updated
     payload, meta = central.download_preferred_source("cadastros")
@@ -242,7 +242,7 @@ def _optional_master_plan():
         return {}, {"erro": str(exc)}
 
 
-@st.cache_data(ttl=45, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def _imports():
     return movement_store.list_imports()
 
@@ -255,6 +255,13 @@ def _history(tokens: tuple):
     return snapshot["rows"], snapshot["coverage"], snapshot["duplicates"]
 
 
+@st.cache_data(ttl=600, max_entries=3, show_spinner=False)
+def _warehouse_options(source_token: tuple) -> list[str]:
+    """Devolve só os códigos: filtros não precisam copiar todo o estoque."""
+    stock, _ = _source(*source_token)
+    return sorted({row["armazem"] for row in stock})
+
+
 def _source_day(meta: dict) -> str:
     match = re.search(r"(\d{2})[-_](\d{2})[-_](\d{4})", str(meta.get("last_file_name") or ""))
     if match:
@@ -265,7 +272,7 @@ def _source_day(meta: dict) -> str:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(TZ).date().isoformat()
 
 
-@st.cache_resource(ttl=600, max_entries=1, show_spinner=False)
+@st.cache_resource(max_entries=2, show_spinner=False)
 def _audit(source_tokens: tuple, history_tokens: tuple, warehouses: tuple, version: str):
     del version
     sources, metas = {}, {}
@@ -282,7 +289,7 @@ def _audit(source_tokens: tuple, history_tokens: tuple, warehouses: tuple, versi
     return model
 
 
-@st.cache_resource(ttl=600, max_entries=2, show_spinner=False)
+@st.cache_resource(max_entries=3, show_spinner=False)
 def _operational_snapshot(source_tokens, history_tokens, warehouses,
                           master_version, catalog_version, rules_version,
                           _model, _records, _types):
@@ -290,7 +297,8 @@ def _operational_snapshot(source_tokens, history_tokens, warehouses,
 
 
 def _reload():
-    _states.clear(); _source.clear(); _imports.clear(); _history.clear(); _audit.clear()
+    _states.clear(); _source.clear(); _warehouse_options.clear()
+    _imports.clear(); _history.clear(); _audit.clear()
     _master_plan_records.clear()
     _catalog_type_records.clear()
     _operational_snapshot.clear()
@@ -720,9 +728,8 @@ def render_issue_check():
             if key not in states or not states[key].get("available") or states[key].get("status") != "ATUALIZADO":
                 raise RuntimeError(f"Fonte {key} indisponível ou sem atualização concluída no Monitor API.")
         tokens = tuple((key, int(states[key]["version"]), str(states[key].get("last_update_at") or "")) for key in SOURCE_KEYS)
-        with st.spinner("Lendo as bases diárias do Monitor API..."):
-            stock, _ = _source(*next(t for t in tokens if t[0] == "endereco"))
-        options = sorted({r["armazem"] for r in stock})
+        with st.spinner("Verificando armazéns disponíveis..."):
+            options = _warehouse_options(next(t for t in tokens if t[0] == "endereco"))
         if "fm_issue_warehouses" in st.session_state:
             st.session_state.fm_issue_warehouses = [w for w in st.session_state.fm_issue_warehouses if w in options]
         # Seleção de armazéns é uma configuração secundária, não um filtro da
