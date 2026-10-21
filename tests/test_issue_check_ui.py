@@ -48,7 +48,7 @@ class IssueCheckUITests(unittest.TestCase):
         detail.set_value("26000101001:00001000").run()
         self.assertFalse(app.exception)
         self.assertTrue(any(t.label == "MOVIMENTOS KARDEX" for t in app.tabs))
-        self.assertTrue(any("SALDO EM G9-PROD" in x.value for x in app.error))
+        self.assertTrue(any("PRODUTO NÃO CONSUMIDO COM SALDO NA PRODUÇÃO" in x.value for x in app.error))
 
         next(x for x in app.selectbox if x.label == "ALERTAS").set_value("Com alertas").run()
         self.assertFalse(app.exception)
