@@ -35,10 +35,10 @@ def op_key(value) -> str:
     if _missing(value):
         return ""
     value = str(value).strip()
-    value = re.sub(r"^OP\\s*[-:/]?\\s*", "", value, flags=re.I)
-    if re.fullmatch(r"\\d+\\.0+", value):
+    value = re.sub(r"^OP\s*[-:/]?\s*", "", value, flags=re.I)
+    if re.fullmatch(r"\d+\.0+", value):
         value = value.split(".", 1)[0]
-    return value if re.fullmatch(r"\\d+", value) else ""
+    return value if re.fullmatch(r"\d+", value) else ""
 
 
 def _text(value) -> str:
@@ -57,7 +57,7 @@ def _date(value) -> str:
     if isinstance(value, (datetime, date, pd.Timestamp)):
         return value.strftime("%d/%m/%Y")
     s = str(value).strip()
-    if re.fullmatch(r"\\d+(?:\\.0+)?", s):
+    if re.fullmatch(r"\d+(?:\.0+)?", s):
         numeric = float(s)
         if 1 <= numeric <= 90000:
             return (datetime(1899, 12, 30) + timedelta(days=numeric)).strftime("%d/%m/%Y")
