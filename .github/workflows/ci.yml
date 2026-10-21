@@ -81,6 +81,9 @@ jobs:
           assert 'href="?pagina=' not in app
           assert 'key=f"fm_nav_{_index}"' in app
           assert "def _set_fm_page(target: str)" in app
+          assert 'st.session_state["_fm_nav_collapsed"] = True' in app
+          assert 'key="fm_reopen_navigation"' in app
+          assert "def load_cb_page_snapshot(" in app
           assert 'if "_fm_nav_initialized" not in st.session_state' in app
           assert "def load_global_visual_config()" in app
           assert "_needs_inventory_core = page in" in app
@@ -92,11 +95,12 @@ jobs:
           assert "SIDEBAR SETTA — BLOCO ÚNICO" in ui
           assert "SIDEBAR SETTA V1 — PADRÃO VALIDADO" not in ui
           assert "SETTA SIDEBAR SPACING LOCK — WRAPPERS STREAMLIT" not in ui
-          assert ui.count('section[data-testid="stSidebar"] .block-container{') == 1
+          assert ui.count('section[data-testid="stSidebar"] .block-container{') == 2  # padrão + media query responsiva
           assert ui.count('section[data-testid="stSidebar"] .sidebar-brand{') == 1
           assert "sidebar-nav-label" in ui
           assert ".st-key-fm_nav_0" in ui
-          assert "margin-top:8px!important" in ui
+          assert "padding-top:4px!important" in ui
+          assert "padding:15px 0 12px 0!important" in ui
           assert "height:42px!important" in ui
           assert "margin:0 0 2px 0!important" in ui
           assert not Path("db.py").exists()
