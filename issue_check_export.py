@@ -70,6 +70,11 @@ def export_complete_report(model: dict) -> bytes:
         {"indicador": "Itens MES", "valor": len(model.get("general") or [])},
         {"indicador": "Movimentos vinculados à OP", "valor": len(model.get("movements") or [])},
     ])
+    for field, value in (model.get("diagnostico_baixas") or {}).items():
+        summary.loc[len(summary)] = {
+            "indicador": "Diagnóstico · " + str(field),
+            "valor": value,
+        }
     with pd.ExcelWriter(output, engine="openpyxl") as excel:
         summary.to_excel(excel, sheet_name="PARAMETROS", index=False)
         for sheet, key in TABLES:
