@@ -219,13 +219,27 @@ def _covered(intervals: list[list[str]], start: str, end: str) -> bool:
 
 
 def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
-              history_metas: list[dict], as_of: str, warehouses: tuple[str, ...] = ("S2",), sources_same_day: bool = True) -> dict:
-    """Never allocate a lot-less issue to individual lots or reserve shared stock."""
+              history_metas: list[dict], as_of: str, warehouses: tuple[str, ...] = ("S2",),
+              sources_same_day: bool = True, accumulated_history: bool = False) -> dict:
+    """Concilia baixas por OP/produto; não atribui consumo sem lote a um lote."""
     date.fromisoformat(as_of)
     warehouses = tuple(warehouses)
     if not warehouses:
         raise ValueError("Selecione ao menos um armazém para a conferência.")
-    period = coverage(history_metas, warehouses)
+    # A auditoria convencional usa interseção dos períodos dos armazéns.
+    # A conferência acumulada aceita históricos independentes: é a UNIÃO
+    # de todas as importações até a data de referência, sem exigir período
+    # comum entre armazéns. A cobertura individual permanece rastreável.
+    if accumulated_history:
+        relevant = [m for m in history_metas if not m.get("armazem") or m.get("armazem") in warehouses]
+        period = coverage(relevant)
+        period["por_armazem"] = {
+            warehouse: coverage([m for m in relevant if not m.get("armazem") or m.get("armazem") == warehouse])
+            for warehouse in warehouses
+        }
+        period["modo"] = "ACUMULADO"
+    else:
+        period = coverage(history_metas, warehouses)
     has_history = any(not meta.get("armazem") or meta["armazem"] in warehouses for meta in history_metas)
     pool, prod_pool = defaultdict(Decimal), defaultdict(Decimal)
     address_pool = defaultdict(Decimal)
@@ -332,7 +346,12 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
                 -candidate["saldo"], candidate["armazem"], candidate["endereco"]
             ))
         first_date = min((r["conferencia"][:10] for r in confirmed), default=as_of)
-        incomplete = bool(confirmed) and (not sources_same_day or not _covered(period["intervalos"], first_date, as_of))
+        # No modo acumulado não se exige cobertura ininterrupta até a data
+        # atual. Ausência de histórico comprovado de um intervalo pode ser
+        # consultada no detalhamento técnico, mas não impede somar as baixas.
+        incomplete = (bool(confirmed) and not sources_same_day) if accumulated_history else (
+            bool(confirmed) and (not sources_same_day or not _covered(period["intervalos"], first_date, as_of))
+        )
         item = {"item_id": item_id, "op": number, "codigo": code, "descricao": rows[0]["descricao"],
                 "itens": len(rows), "itens_separados": sum(bool(r["separacao"]) for r in rows),
                 "itens_conferidos": len(confirmed), "op_possui_baixa": number in ops_with_issues,
@@ -445,4 +464,5 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
             "coverage": period, "as_of": as_of, "warehouses": warehouses,
             "history_available": has_history, "movimentos_apos_base": after_snapshot,
             "diagnostico_baixas": diagnostics,
-            "negative_stock_rows": sum(r["saldo"] < 0 for r in stock_rows), "version": VERSION}
+            "negative_stock_rows": sum(r["saldo"] < 0 for r in stock_rows),
+            "accumulated_history": accumulated_history, "version": VERSION}
