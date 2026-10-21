@@ -52,6 +52,55 @@ class MasterPlanTests(unittest.TestCase):
         self.assertEqual(records["26000301001"]["nota_fiscal"], "123")
         self.assertEqual(records["26000301001"]["dias_patio"], "445")
 
+    def test_iso_dates_never_swap_day_and_month(self):
+        cases = {
+            "2026-10-06": "06/10/2026",
+            "2026-10-06T00:00:00": "06/10/2026",
+            "2026-10-06T00:00:00.000Z": "06/10/2026",
+            "2026-10-06 03:45:11": "06/10/2026",
+            "2026-06-10T00:00:00": "10/06/2026",
+            "2026-10-16": "16/10/2026",
+            "06/10/2026": "06/10/2026",
+            "16/10/2026": "16/10/2026",
+        }
+        for source, expected in cases.items():
+            with self.subTest(source=source):
+                self.assertEqual(plan._date(source), expected)
+
+    def test_normalized_for001_iso_faturamento_preserves_calendar_date(self):
+        frame = pd.DataFrame([
+            row("26000101001", "CLIENTE TESTE", "FINALIZADO", 10255,
+                "2026-10-06T00:00:00.000", None),
+            row("26000201001", "OUTRO CLIENTE", "FINALIZADO", 9840,
+                "2026-06-10T00:00:00", None),
+        ])
+        records = plan.parse_frame(frame)
+        self.assertEqual(records["26000101001"]["data_faturamento"], "06/10/2026")
+        self.assertEqual(records["26000201001"]["data_faturamento"], "10/06/2026")
+        self.assertIn("FATURAMENTO: 06/10/2026", plan.label_fields(records["26000101001"]))
+
+    def test_faturamento_filter_uses_corrected_dates(self):
+        records = plan.parse_frame(pd.DataFrame([
+            row("26000101001", "CLIENTE TESTE", "FINALIZADO", 10255,
+                "2026-10-06T00:00:00", None),
+            row("26000201001", "OUTRO CLIENTE", "FINALIZADO", 9840,
+                "2026-06-10T00:00:00", None),
+        ]))
+        ops = pd.DataFrame([
+            {"op": "26000101001", "status_op": "NF EMITIDA"},
+            {"op": "26000201001", "status_op": "NF EMITIDA"},
+        ])
+        enriched = plan.enrich_ops(ops, records)
+        items = pd.DataFrame([
+            {"op": "26000101001", "codigo": "A"},
+            {"op": "26000201001", "codigo": "B"},
+        ])
+        from datetime import date
+        october = ui._filter_op_status_invoice(
+            items, enriched, "Todos os status", (date(2026, 10, 1), date(2026, 10, 31))
+        )
+        self.assertEqual(october["codigo"].tolist(), ["A"])
+
     def test_dias_patio_can_signal_delivered_without_numeric_days(self):
         frame = pd.DataFrame([row("26000401001", "CLIENTE", "FINALIZADO",
                                   None, None, "FINALIZADO E ENTREGUE")])
