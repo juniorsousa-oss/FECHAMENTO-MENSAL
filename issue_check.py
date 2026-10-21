@@ -410,8 +410,26 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
                     ),
                     "divergencias": sum(r["divergente"] for r in group),
                     "incompletos": sum(r["historico_incompleto"] for r in group)})
+    diagnostics = {
+        "movimentos_no_periodo": len(scoped_movements),
+        "movimentos_op_reconhecida": len(audit_movements),
+        "consumos_vinculados": sum(
+            row["natureza"] in ("BAIXA / DEVOLUÇÃO", "CONSUMO DE OP")
+            and mv.decimal(row.get("qtd_saida")) > ZERO
+            for row in audit_movements
+        ),
+        "tes_999_sem_compensacao": sum(
+            str(row.get("tes") or "").zfill(3) == "999"
+            and not row.get("enderecamento_compensado")
+            for row in audit_movements
+        ),
+        "enderecamentos_compensados": sum(
+            bool(row.get("enderecamento_compensado")) for row in scoped_movements
+        ),
+    }
     return {"items": items_frame, "ops": pd.DataFrame(ops), "lots": pd.DataFrame(lot_rows),
             "general": general, "stock": stock_rows, "movements": audit_movements,
             "coverage": period, "as_of": as_of, "warehouses": warehouses,
             "history_available": has_history, "movimentos_apos_base": after_snapshot,
+            "diagnostico_baixas": diagnostics,
             "negative_stock_rows": sum(r["saldo"] < 0 for r in stock_rows), "version": VERSION}
