@@ -37,6 +37,20 @@ class MovementAnalysisTests(unittest.TestCase):
         self.assertEqual(set(frame.grupo_analise), {mv.FLOW})
         self.assertEqual(frame.iloc[0].op_identificada, "OP00001234567")
 
+    def test_confirmed_tes_subgroups_and_production_order_description(self):
+        rows = [record(tes="040", documento="DEVOLUCAO"),
+                record(tes="550", documento="GARANTIA"),
+                record(tes="999", documento="CONSUMO")]
+        frame = mv.build_model([imported(rows)])["frame"]
+        self.assertEqual(frame["grupo_analise"].tolist(), [mv.FLOW] * 3)
+        self.assertEqual(frame["subgrupo_analise"].tolist(),
+                         ["RETORNO DE PRODUÇÃO", "AG, GARANTIA, ADEQUAÇÃO", "CONSUMO DE OPS"])
+        self.assertEqual(frame["regra_classificacao"].tolist(),
+                         ["040_SUBGRUPO_CONFIRMADO", "550_SUBGRUPO_CONFIRMADO", "999_SUBGRUPO_CONFIRMADO"])
+        self.assertEqual(frame["descricao_tes"].tolist(),
+                         ["DEVOLUCAO MES", "BAIXA PRODUCAO MES", "ORDEM DE PRODUÇÃO"])
+        self.assertEqual(frame["valor_saida"].tolist(), [10, 10, 10])
+
     def test_flow_priority_and_remaining_pa_pi(self):
         rows = [record(ae_original="OP00001234567", tipo="PI"),
                 record(ae_original="CC123456", documento="GR"),
@@ -47,6 +61,7 @@ class MovementAnalysisTests(unittest.TestCase):
         expected = ["520_OP_MANUAL", "520_CC_GERENCIAL", "520_CC_CONSUMO", "520_CC_CONSUMO",
                     "520_CC_CONSUMO", "520_BASE_A_VALIDAR", "520_BASE_A_VALIDAR"]
         self.assertEqual(frame.regra_classificacao.tolist(), expected)
+        self.assertEqual(frame.iloc[2].subgrupo_analise, "MATERIAIS DE CONSUMO")
         self.assertEqual(frame.iloc[0].grupo_analise, mv.FLOW)
         self.assertEqual(frame.iloc[-2].grupo_analise, mv.ADJUSTMENT)
         self.assertEqual(frame.iloc[-1].grupo_analise, mv.ADJUSTMENT)
