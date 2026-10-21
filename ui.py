@@ -103,7 +103,23 @@ section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation div[data-testid="
   font-weight:600!important;
   text-align:left!important;
 }
-section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation div[data-testid="stButton"] button p{
+/* Streamlit centraliza o MarkdownContainer DENTRO dos botões.
+   Alinhar apenas o <button> não altera esse wrapper interno. */
+section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation div[data-testid="stButton"] button > div,
+section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation div[data-testid="stButton"] button [data-testid="stMarkdownContainer"]{
+  display:flex!important;
+  flex:1 1 auto!important;
+  width:100%!important;
+  min-width:0!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  text-align:left!important;
+  margin:0!important;
+  padding:0!important;
+}
+section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation div[data-testid="stButton"] button p,
+section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation div[data-testid="stButton"] button span{
+  width:100%!important;
   margin:0!important;
   padding:0!important;
   font-size:12px!important;
