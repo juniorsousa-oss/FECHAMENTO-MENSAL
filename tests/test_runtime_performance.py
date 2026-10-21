@@ -79,6 +79,19 @@ class KardexParallelTests(unittest.TestCase):
 
 
 class LazyRenderingTests(unittest.TestCase):
+    def test_cross_page_navigation_clears_previous_page_and_persists_visual_cache(self):
+        source = (Path(__file__).resolve().parents[1] / "streamlit_app.py").read_text("utf-8")
+        checks = (Path(__file__).resolve().parents[1] / "issue_check_ui.py").read_text("utf-8")
+        self.assertIn("_fm_page_surface = st.empty()", source)
+        self.assertIn("with _fm_page_surface.container():", source)
+        self.assertIn('@st.cache_data(show_spinner=False, ttl=600, max_entries=1)', source)
+        self.assertIn("def load_global_visual_config()", source)
+        self.assertIn('@st.cache_resource(show_spinner=False, max_entries=1)', source)
+        self.assertIn("def browser_icon()", source)
+        self.assertIn("@st.fragment\ndef render_results(model):", checks)
+        self.assertIn('if page == "Dashboard":', source)
+        self.assertIn('elif page == "Conferência de baixas":', source)
+
     def test_expensive_physical_imports_and_history_require_user_action(self):
         source = (Path(__file__).resolve().parents[1] / "streamlit_app.py").read_text("utf-8")
         self.assertRegex(source, r'if\s+st\.toggle\(\s*"GERENCIAR FONTES E CONTAGENS"')
