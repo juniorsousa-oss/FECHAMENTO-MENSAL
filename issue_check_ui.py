@@ -706,7 +706,7 @@ def _sources(model):
         st.dataframe(pd.DataFrame([{"Arquivo KARDEX": m["arquivo_nome"], "Armazém": m.get("armazem", "—"),
                                     "Competência": m.get("competencia", "—"), "De": day(m["periodo_inicio"]), "Até": day(m["periodo_fim"]),
                                     "Registros nesta cobertura": m["lancamentos"]} for m in model["history_meta"]]), hide_index=True, width="stretch")
-        st.caption("A conferência utiliza somente as versões vigentes do KARDEX. A cobertura precisa atender a todos os armazéns selecionados.")
+        st.caption("A conferência é acumulada desde o primeiro KARDEX disponível até a referência do MES. Cada armazém mantém cobertura própria; não é necessário que as datas dos arquivos coincidam. Versões mensais substituídas não são somadas novamente.")
     diagnostics = model.get("diagnostico_baixas") or {}
     if diagnostics:
         st.markdown("**Diagnóstico de vínculo das baixas**")
@@ -720,9 +720,9 @@ def _sources(model):
     st.markdown("**Critérios da conferência**")
     st.write("• Conferência identificada pela data de conferência do MES; a quantidade comparada é a atendida nessas linhas. Conferências parciais mantêm a necessária e a pendência visíveis.")
     st.write("• Estoque consultado por produto e lote nos armazéns selecionados. O saldo é a coluna Quantidade; o empenho aparece separado nas evidências.")
-    st.write("• KARDEX vinculado por OP completa da AE e código do produto, sem filtro de CF. Consumo inclui TES 999 não compensada. Transferências pareadas 499/999 e a TES 499 isolada não comprovam consumo.")
+    st.write("• Histórico KARDEX acumulado por OP completa da AE e código do produto, desde todas as importações vigentes anteriores à referência. Saídas de meses diferentes são somadas; entradas/devoluções são descontadas. Consumo inclui TES 999 não compensada. Pares 499/999 e TES 499 isolada não comprovam consumo.")
     st.write("• Prioridade da OP: dias de pátio numéricos → FINALIZADO EM PÁTIO; texto FINALIZADO E ENTREGUE → mesmo status; NF ou faturamento → NF EMITIDA; condição FINALIZADO → FINALIZADO; consumo líquido no KARDEX → REPORTADO; conferência → EM CONFERÊNCIA; separação → EM SEPARAÇÃO; caso contrário → AGUARDANDO INÍCIO.")
-    st.write("• OP finalizada/faturada/reportada OU com algum consumo: exige baixa integral da quantidade separada e conferida. Se existir pendência de consumo, primeiro verifica saldo G9-PROD dos lotes conferidos; depois endereço alternativo que sozinho cubra a falta; senão classifica SEM SALDO. Todos os produtos não concluídos nessas OPs geram alerta.")
+    st.write("• OP finalizada/faturada/reportada OU com algum consumo: a análise de baixa começa após a separação do produto. Havendo pendência, verifica G9-PROD dos lotes conferidos e endereços alternativos que cubram a falta; produtos ainda não separados não geram alerta.")
     st.write("• OP em andamento SEM nenhuma baixa: acompanha somente etapa do produto (conferido aguardando reporte, separado aguardando conferência ou aguardando separação), sem gerar alertas.")
     st.write("• A conferência de baixas é por OP e código do produto. Saldos por endereço consideram somente lotes efetivamente conferidos; nenhum saldo é reservado automaticamente para outras OPs.")
     st.write("• Baixa maior que a NECESSIDADE gera alerta, exceto para materiais Tipo II ou com necessidade zero e consumo positivo (FLUXO DE BARRAS).")
@@ -776,6 +776,16 @@ def render_results(model):
             "AE original, a data de referência e os armazéns selecionados antes "
             "de interpretar baixas zeradas como ausência de consumo."
         )
+
+    # Compatibilidade com filtros de texto antigos salvos na sessão Streamlit:
+    # o novo calendário exige date/None, nunca strings remanescentes.
+    for date_key in ("fm_issue_invoice_start", "fm_issue_invoice_end"):
+        existing = st.session_state.get(date_key)
+        if isinstance(existing, str):
+            try:
+                st.session_state[date_key] = _billing_date(existing)
+            except (ValueError, TypeError, OverflowError):
+                st.session_state[date_key] = None
 
     with st.container(key="fm_issue_filters"):
         st.markdown(
