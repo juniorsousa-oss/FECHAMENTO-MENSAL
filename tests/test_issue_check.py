@@ -110,6 +110,24 @@ class IssueCheckTests(unittest.TestCase):
         self.assertEqual(model["lots"].pendente_minima.tolist(), [0, 0])
         self.assertEqual(model["lots"].pendente_maxima.tolist(), [4, 4])
 
+    def test_op_counters_use_distinct_product_codes_not_mes_lines(self):
+        rows = [
+            general(**{"Qtd. atendida": 4, "Qtd. necessária": 4}),
+            general(Lote="000002", **{"Qtd. atendida": 6, "Qtd. necessária": 6}),
+            general(Código="00002000", Lote="000003",
+                    **{"Data de conferência": None}),
+        ]
+        result = audit(g=rows)
+        op_row = result["ops"].iloc[0]
+        self.assertEqual(int(op_row.itens), 2)
+        self.assertEqual(int(op_row.produtos), 2)
+        self.assertEqual(int(op_row.separados), 2)
+        self.assertEqual(int(op_row.conferidos), 1)
+        self.assertEqual(int(op_row.linhas_mes), 3)
+        self.assertEqual(int(op_row.linhas_separadas_mes), 3)
+        self.assertEqual(int(op_row.linhas_conferidas_mes), 2)
+        self.assertEqual(len(result["items"]), 2)
+
     def test_stock_of_another_lot_does_not_cover_the_confirmed_lot(self):
         item = audit(s=[stock(Lote="000002", Quantidade=100)])["items"].iloc[0]
         self.assertEqual(item.saldo, 0)
