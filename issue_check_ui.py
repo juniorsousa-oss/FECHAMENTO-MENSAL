@@ -158,6 +158,7 @@ def _band():
       box-shadow:0 9px 26px rgba(15,23,42,.06)!important;
     }
     .st-key-fm_issue_filters [data-testid="stTextInput"] [data-baseweb="input"],
+    .st-key-fm_issue_filters [data-testid="stDateInput"] [data-baseweb="input"],
     .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div {
       background:#f8fafc!important;
       border:1.5px solid #c4cfdd!important;
@@ -166,11 +167,13 @@ def _band():
       min-height:46px!important;transition:border-color .14s,box-shadow .14s!important;
     }
     .st-key-fm_issue_filters [data-testid="stTextInput"] [data-baseweb="input"]:focus-within,
+    .st-key-fm_issue_filters [data-testid="stDateInput"] [data-baseweb="input"]:focus-within,
     .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div:focus-within {
       background:#fff!important;border-color:#273955!important;
       box-shadow:0 0 0 3px rgba(39,57,85,.12)!important;
     }
-    .st-key-fm_issue_filters [data-testid="stTextInput"] input {
+    .st-key-fm_issue_filters [data-testid="stTextInput"] input,
+    .st-key-fm_issue_filters [data-testid="stDateInput"] input {
       color:#101827!important;min-height:42px!important;padding:0 .9rem!important;
       background:transparent!important;font-size:.87rem!important;
       font-weight:550!important;caret-color:#111827!important;
@@ -412,7 +415,8 @@ def _audit(source_tokens: tuple, history_tokens: tuple, warehouses: tuple, versi
     as_of = min(_source_day(metas[key]) for key in SOURCE_KEYS)
     model = check.reconcile(sources["relatorio_geral"], sources["endereco"], rows,
                             history_metas=history_metas, as_of=as_of, warehouses=warehouses,
-                            sources_same_day=len({_source_day(meta) for meta in metas.values()}) == 1)
+                            sources_same_day=len({_source_day(meta) for meta in metas.values()}) == 1,
+                            accumulated_history=True)
     model["source_meta"] = metas
     model["history_meta"] = history_metas
     model["duplicates"] = duplicates
@@ -439,8 +443,8 @@ def _clear_filters():
     st.session_state.fm_issue_search = ""
     st.session_state.fm_issue_filter = "Todos"
     st.session_state.fm_issue_op_status = "Todos os status"
-    st.session_state.fm_issue_invoice_start = ""
-    st.session_state.fm_issue_invoice_end = ""
+    st.session_state.fm_issue_invoice_start = None
+    st.session_state.fm_issue_invoice_end = None
     st.session_state.fm_issue_page = 1
 
 
@@ -751,14 +755,15 @@ def render_results(model):
     period = model["coverage"]
     if not model["history_available"]:
         st.warning("KARDEX não localizado para os armazéns selecionados. Baixas permanecem desconhecidas, não zeradas.")
-    elif not period["fim"]:
-        st.warning("A cobertura do KARDEX não contempla um período comum dos armazéns selecionados.")
-    elif period["fim"] < model["as_of"]:
+    elif not model.get("accumulated_history") and not period["fim"]:
+        st.warning("KARDEX sem cobertura de datas para os armazéns selecionados.")
+    elif (not model.get("accumulated_history") and period["fim"]
+          and period["fim"] < model["as_of"]):
         st.warning(f"KARDEX disponível até {day(period['fim'])}; bases de referência em {day(model['as_of'])}. Existem períodos sem cobertura.")
     dates = {_source_day(meta) for meta in model["source_meta"].values()}
     if len(dates) > 1:
         st.warning("Relatório Geral e Endereço com datas diferentes. Considerada a referência mais antiga.")
-    if len(period["intervalos"]) > 1:
+    if len(period["intervalos"]) > 1 and not model.get("accumulated_history"):
         st.warning("O histórico possui intervalos sem cobertura entre as importações KARDEX.")
     diagnostics = model.get("diagnostico_baixas") or {}
     if model.get("catalog_meta", {}).get("erro"):
@@ -800,19 +805,21 @@ def render_results(model):
             st.markdown(
                 '<div class="fm-issue-date-title">PERÍODO DE FATURAMENTO</div>'
                 '<div class="fm-issue-date-note">'
-                'Digite as datas no formato DD/MM/AAAA. Deixe em branco para não limitar.'
+                'Selecione as datas no calendário. O período filtra somente o faturamento das OPs.'
                 '</div>', unsafe_allow_html=True,
             )
             c_from, c_to, c_clear = st.columns([1.25, 1.25, 2], gap="medium")
             with c_from:
-                date_from_raw = st.text_input(
-                    "DATA INICIAL", placeholder="DD/MM/AAAA",
-                    key="fm_issue_invoice_start", max_chars=10,
+                date_from_raw = st.date_input(
+                    "DATA INICIAL", value=None, format="DD/MM/YYYY",
+                    key="fm_issue_invoice_start",
+                    help="Toque no campo ou ícone de calendário para escolher a data inicial.",
                 )
             with c_to:
-                date_to_raw = st.text_input(
-                    "DATA FINAL", placeholder="DD/MM/AAAA",
-                    key="fm_issue_invoice_end", max_chars=10,
+                date_to_raw = st.date_input(
+                    "DATA FINAL", value=None, format="DD/MM/YYYY",
+                    key="fm_issue_invoice_end",
+                    help="Toque no campo ou ícone de calendário para escolher a data final.",
                 )
             with c_clear:
                 st.button(
@@ -923,4 +930,4 @@ def render_issue_check():
         render_results({**model, "master_plan_meta": master_meta, "catalog_meta": catalog_meta})
     except Exception as exc:
         st.error(f"Não foi possível concluir a conferência: {exc}")
-        st.info("A ausência de uma fonte não é tratada como saldo zero ou ausência de baixa. Use Atualizar conferência após regularizar a base.")
+        st.info("A ausência de uma fonte não é tratada como saldo zero ou ausência de baixa. Regularize a fonte no Monitor de APIs e recarregue o aplicativo.")
