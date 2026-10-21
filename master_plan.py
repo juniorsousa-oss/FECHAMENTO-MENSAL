@@ -52,6 +52,12 @@ def _text(value) -> str:
 
 
 def _date(value) -> str:
+    """Interpreta a origem da data antes de apresentar DD/MM/AAAA.
+
+    A Central entrega datas Excel tanto como número serial quanto como
+    timestamp ISO (AAAA-MM-DD[T]HH:MM:SS). Passar dayfirst=True para um
+    timestamp ISO pode inverter mês e dia, especialmente quando ambos <= 12.
+    """
     if _missing(value):
         return "NI"
     if isinstance(value, (datetime, date, pd.Timestamp)):
@@ -61,10 +67,20 @@ def _date(value) -> str:
         numeric = float(s)
         if 1 <= numeric <= 90000:
             return (datetime(1899, 12, 30) + timedelta(days=numeric)).strftime("%d/%m/%Y")
+        return "NI"
     try:
-        return pd.to_datetime(s, dayfirst=True, errors="raise").strftime("%d/%m/%Y")
+        # A origem ISO é ano-mês-dia, independentemente da configuração regional.
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}(?:[T ].+)?", s):
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).strftime("%d/%m/%Y")
+        # Planilhas e digitação brasileiras são sempre dia-mês-ano.
+        for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y"):
+            try:
+                return datetime.strptime(s, fmt).strftime("%d/%m/%Y")
+            except ValueError:
+                continue
     except (TypeError, ValueError, OverflowError):
         return "NI"
+    return "NI"
 
 
 def _days(value) -> str:
