@@ -12,7 +12,11 @@ import streamlit as st
 import movement_store as store
 import movements as mv
 
-AREAS = ["Visão geral", "Grupos e TES", "Por OP", "Movimentações", "Classificação"]
+AREAS = ["Visão geral", "Grupos e TES", "Por OP", "Movimentações", "Classificação", "Fontes e relatórios"]
+AREA_LABELS = {"Visão geral": "Resumo", "Por OP": "Consulta por OP", "Movimentações": "Registros"}
+FILTER_AREAS = {"Grupos e TES": "groups", "Por OP": "ops", "Movimentações": "ledger"}
+FILTER_FIELDS = {"groups": "Grupo", "tes": "TES", "subgroups": "Condição", "search": "Busca",
+                 "op": "OP", "cc": "CC / CR", "categories": "Categoria"}
 MONEY_COLUMNS = {"valor_entrada": "Entrada (R$)", "valor_saida": "Saída (R$)", "liquido_valor": "Variação (R$)"}
 NAMES = {"grupo_analise": "Grupo", "subgrupo_analise": "Subgrupo / condição", "tes": "TES", "descricao_tes": "Descrição principal",
          "lancamentos": "Movimentos", "produtos": "Produtos", "tes_distintas": "TES distintas", "competencia": "Competência",
@@ -78,9 +82,7 @@ def _group_selected(key, names):
     position = _selected(key)
     if position is None or position >= len(names):
         return
-    st.session_state.fm_mov_groups = [names[position]]
-    st.session_state.fm_mov_tes = []
-    st.session_state.fm_mov_subgroups = []
+    _set_filters("Grupos e TES", {"groups": [names[position]]})
     st.session_state.fm_mov_area = "Grupos e TES"
 
 
@@ -89,40 +91,71 @@ def _tes_selected(key, values):
     if position is None or position >= len(values):
         return
     group, tes, subgroup = values[position]
-    st.session_state.fm_mov_groups = [group]
-    st.session_state.fm_mov_tes = [tes]
-    st.session_state.fm_mov_subgroups = [subgroup]
-    st.session_state.fm_mov_area = "Movimentações"
-    st.session_state.fm_mov_page = 1
+    _open_records({"groups": [group], "tes": [tes], "subgroups": [subgroup]}, "Grupos e TES")
 
 
 def _op_selected(key, values):
     position = _selected(key)
     if position is None or position >= len(values):
         return
-    st.session_state.fm_mov_op = values[position]
+    _open_records({"op": values[position]}, "Por OP")
+
+
+def _defaults():
+    return {"groups": [], "tes": [], "subgroups": [], "categories": [], "search": "", "op": "", "cc": ""}
+
+
+def _filter_key(area, field):
+    return f"fm_mov_{FILTER_AREAS[area]}_{field}"
+
+
+def _values(area):
+    return {**_defaults(), **st.session_state.get("fm_mov_local_filters", {}).get(area, {})}
+
+
+def _set_filters(area, values):
+    current = {**_defaults(), **values}
+    state = dict(st.session_state.get("fm_mov_local_filters", {}))
+    state[area] = current
+    st.session_state.fm_mov_local_filters = state
+    # Called before rendering or from callbacks, including widgets not rendered in this area.
+    for field, value in current.items():
+        st.session_state[_filter_key(area, field)] = value
+    st.session_state.fm_mov_page = 1
+
+
+def _remember_filter(area, field, key):
+    values = _values(area)
+    values[field] = st.session_state[key]
+    state = dict(st.session_state.get("fm_mov_local_filters", {}))
+    state[area] = values
+    st.session_state.fm_mov_local_filters = state
+    st.session_state.fm_mov_page = 1
+
+
+def _open_records(values, origin):
+    _set_filters("Movimentações", values)
+    st.session_state.fm_mov_record_origin = origin
     st.session_state.fm_mov_area = "Movimentações"
-    st.session_state.fm_mov_page = 1
 
 
-def _clear_filters():
-    for key in ("fm_mov_groups", "fm_mov_tes", "fm_mov_subgroups", "fm_mov_categories"):
-        st.session_state[key] = []
-    for key in ("fm_mov_search", "fm_mov_op", "fm_mov_cc"):
-        st.session_state[key] = ""
-    st.session_state.fm_mov_page = 1
+def _go_to(area):
+    st.session_state.fm_mov_area = area
+
+
+def _clear_filters(area):
+    _set_filters(area, {})
+    if area == "Movimentações":
+        st.session_state.pop("fm_mov_record_origin", None)
 
 
 def _adjustments():
-    _clear_filters()
-    st.session_state.fm_mov_groups = [mv.ADJUSTMENT]
+    _set_filters("Grupos e TES", {"groups": [mv.ADJUSTMENT]})
     st.session_state.fm_mov_area = "Grupos e TES"
 
 
 def _all_groups():
-    st.session_state.fm_mov_groups = []
-    st.session_state.fm_mov_tes = []
-    st.session_state.fm_mov_subgroups = []
+    _set_filters("Grupos e TES", {})
     st.session_state.fm_mov_area = "Grupos e TES"
 
 
@@ -133,6 +166,78 @@ def _multiselect(label, options, key, format_func=None):
             st.session_state[key] = valid
     args = {"format_func": format_func} if format_func else {}
     return st.multiselect(label, options, key=key, **args)
+
+
+def _local_input(area, field, label, *, options=None, placeholder=None):
+    key = _filter_key(area, field)
+    value = _values(area)[field]
+    if options is not None:
+        valid = [v for v in value if v in options]
+        if valid != value:
+            state = dict(st.session_state.get("fm_mov_local_filters", {}))
+            state[area] = {**_values(area), field: valid}
+            st.session_state.fm_mov_local_filters = state
+        value = valid
+    if key not in st.session_state or st.session_state[key] != value:
+        st.session_state[key] = value
+    args = {"key": key, "on_change": _remember_filter, "args": (area, field, key)}
+    if options is None:
+        return st.text_input(label, placeholder=placeholder, **args)
+    return st.multiselect(label, options, placeholder="Todos", **args)
+
+
+def _apply_filters(frame, values):
+    view = frame
+    for field, column in (("groups", "grupo_analise"), ("tes", "tes"),
+                          ("subgroups", "subgrupo_analise"), ("categories", "tipo")):
+        if values.get(field):
+            view = view.loc[view[column].isin(values[field])]
+    search = mv.normalized(values.get("search", ""))
+    if search:
+        view = view.loc[view["_search"].str.contains(search, regex=False)]
+    for field, column in (("op", "op_identificada"), ("cc", "cc_identificado")):
+        text = str(values.get(field) or "").strip().upper()
+        if text:
+            view = view.loc[view[column].str.contains(text, regex=False)]
+    return view.copy()
+
+
+def _consultation_filters(frame, area):
+    if area == "Grupos e TES":
+        a, b = st.columns(2)
+        with a:
+            groups = _local_input(area, "groups", "Grupo de análise", options=sorted(frame["grupo_analise"].unique()))
+        with b:
+            options = frame.loc[frame["grupo_analise"].isin(groups)] if groups else frame
+            _local_input(area, "tes", "TES", options=sorted(options["tes"].unique()))
+    elif area == "Por OP":
+        _local_input(area, "search", "Buscar OP ou material", placeholder="Número da OP, código ou descrição do produto")
+    else:
+        _local_input(area, "search", "Buscar nos registros", placeholder="Produto, documento ou vínculo AE")
+        active = sum(bool(v) for k, v in _values(area).items() if k != "search")
+        title = "REFINAR CONSULTA" + (f" · {active} filtro(s) ativo(s)" if active else "")
+        with st.expander(title):
+            a, b, c = st.columns(3)
+            with a:
+                _local_input(area, "groups", "Grupo de análise", options=sorted(frame["grupo_analise"].unique()))
+                _local_input(area, "subgroups", "Subgrupo / condição", options=sorted(frame["subgrupo_analise"].unique()))
+            with b:
+                _local_input(area, "tes", "TES", options=sorted(frame["tes"].unique()))
+                _local_input(area, "categories", "Categoria do produto", options=sorted(frame["tipo"].unique()))
+            with c:
+                _local_input(area, "op", "OP", placeholder="OP ou número completo/parcial")
+                _local_input(area, "cc", "CC / CR", placeholder="Ex.: 600307")
+    values = _values(area)
+    # Read the current widget values as options can change when switching period or warehouse.
+    for field in values:
+        key = _filter_key(area, field)
+        if key in st.session_state:
+            values[field] = st.session_state[key]
+    active = [f"{FILTER_FIELDS[k]}: {', '.join(v) if isinstance(v, list) else v}" for k, v in values.items() if v]
+    if active:
+        st.caption("FILTROS DESTA CONSULTA · " + " · ".join(active))
+        st.button("LIMPAR CONSULTA", on_click=_clear_filters, args=(area,), key=f"fm_mov_clear_{FILTER_AREAS[area]}")
+    return _apply_filters(frame, values)
 
 
 def _table(data: pd.DataFrame, key=None, on_select=None, height=600):
@@ -189,18 +294,34 @@ def _import_controls(imports):
             st.dataframe(history, hide_index=True, width="stretch")
 
 
-def _filters(frame, imports):
+def _context(frame, imports):
     months = sorted(frame["competencia"].unique())
     requested = str(st.query_params.get("mes") or "")
     if "fm_mov_month" not in st.session_state:
         st.session_state.fm_mov_month = requested if requested in months else months[-1]
     if st.session_state.fm_mov_month not in months:
         st.session_state.fm_mov_month = months[-1]
-    first, second, third = st.columns([1.05, 1.5, 1])
-    with first:
-        month = st.selectbox("Competência analisada", months, format_func=lambda m:m[5:]+"/"+m[:4], key="fm_mov_month")
-    with second:
-        mode = st.selectbox("Período da análise", ["MÊS SELECIONADO", "ACUMULADO DO ANO", "TODO O HISTÓRICO"], key="fm_mov_period")
+    mode = st.session_state.get("fm_mov_period", "MÊS SELECIONADO")
+    month = st.session_state.fm_mov_month
+    modes = {"MÊS SELECIONADO": "Mensal", "ACUMULADO DO ANO": "Acumulado do ano", "TODO O HISTÓRICO": "Todo o histórico"}
+    selected_warehouses = st.session_state.get("fm_mov_warehouses") or []
+    label = f"PERÍODO E ARMAZÉM · {month[5:]}/{month[:4]} · {modes[mode]}"
+    if selected_warehouses:
+        label += " · " + ", ".join(selected_warehouses)
+    with st.expander(label):
+        first, second, third = st.columns([1.05, 1.5, 1])
+        with first:
+            month = st.selectbox("Competência analisada", months, format_func=lambda m:m[5:]+"/"+m[:4], key="fm_mov_month")
+        with second:
+            mode = st.selectbox("Período da análise", list(modes), key="fm_mov_period")
+        with third:
+            warehouses = sorted(frame["armazem"].unique())
+            if len(warehouses) > 1:
+                chosen = _multiselect("Armazéns", warehouses, "fm_mov_warehouses")
+            else:
+                chosen = warehouses
+                st.markdown("**ARMAZÉM**")
+                st.write(warehouses[0] if warehouses else "—")
     selected_date = date.fromisoformat(month+"-01")
     if mode == "MÊS SELECIONADO":
         view = frame.loc[frame["competencia"] == month]
@@ -210,15 +331,8 @@ def _filters(frame, imports):
         view = frame
     if str(st.query_params.get("mes") or "") != month:
         st.query_params["mes"] = month
-    with third:
-        warehouses = sorted(view["armazem"].unique())
-        if len(warehouses) > 1:
-            chosen = _multiselect("Armazéns", warehouses, "fm_mov_warehouses")
-            if chosen:
-                view = view.loc[view["armazem"].isin(chosen)]
-        else:
-            st.markdown("**ARMAZÉM**")
-            st.write(warehouses[0] if warehouses else "—")
+    if chosen:
+        view = view.loc[view["armazem"].isin(chosen)]
     coverage_end = max((str((i.get("meta") or {}).get("periodo_fim") or "") for i in imports), default="")
     if coverage_end and coverage_end[:7] == month:
         if selected_date.month == 12:
@@ -228,43 +342,10 @@ def _filters(frame, imports):
         from datetime import timedelta
         if coverage_end < (next_month - timedelta(days=1)).isoformat():
             st.caption(f"PERÍODO PARCIAL · histórico disponível até {date.fromisoformat(coverage_end).strftime('%d/%m/%Y')}.")
-    warehouse_view = view
-    a, b, c = st.columns([1.25, 1, 1.5])
-    with a:
-        group_options = sorted(view["grupo_analise"].unique())
-        groups = _multiselect("Grupo de análise", group_options, "fm_mov_groups")
-    if groups:
-        view = view.loc[view["grupo_analise"].isin(groups)]
-    with b:
-        tes = _multiselect("TES", sorted(view["tes"].unique()), "fm_mov_tes")
-    if tes:
-        view = view.loc[view["tes"].isin(tes)]
-    with c:
-        search = st.text_input("Produto, documento ou vínculo AE", key="fm_mov_search", placeholder="Código, descrição, documento ou OP")
-    if search.strip():
-        view = view.loc[view["_search"].str.contains(mv.normalized(search), regex=False)]
-    expanded = bool(st.session_state.get("fm_mov_subgroups") or st.session_state.get("fm_mov_op") or st.session_state.get("fm_mov_cc"))
-    with st.expander("FILTROS ADICIONAIS", expanded=expanded):
-        a, b = st.columns(2)
-        with a:
-            subs = _multiselect("Subgrupo / condição", sorted(view["subgrupo_analise"].unique()), "fm_mov_subgroups")
-            op = st.text_input("OP", key="fm_mov_op", placeholder="OP ou número completo/parcial")
-        with b:
-            cc = st.text_input("CC / CR", key="fm_mov_cc", placeholder="Ex.: 600307")
-            categories = _multiselect("Categoria do produto", sorted(view["tipo"].unique()), "fm_mov_categories")
-    if subs:
-        view = view.loc[view["subgrupo_analise"].isin(subs)]
-    if op.strip():
-        view = view.loc[view["op_identificada"].str.contains(op.strip().upper(), regex=False)]
-    if cc.strip():
-        view = view.loc[view["cc_identificado"].str.contains(cc.strip(), regex=False)]
-    if categories:
-        view = view.loc[view["tipo"].isin(categories)]
-    st.button("LIMPAR FILTROS", key="fm_mov_clear", on_click=_clear_filters)
     if not view.empty:
         start, end = date.fromisoformat(view["data"].min()), date.fromisoformat(view["data"].max())
-        st.caption(f"MOVIMENTOS DO RECORTE · {start:%d/%m/%Y} A {end:%d/%m/%Y}.")
-    return view.copy(), warehouse_view
+        st.caption(f"BASE DA ANÁLISE · {start:%d/%m/%Y} a {end:%d/%m/%Y} · armazém: {', '.join(sorted(view['armazem'].unique()))}.")
+    return view.copy()
 
 
 def _ordered_groups(frame):
@@ -288,17 +369,17 @@ def _overview(frame, token):
            ("VARIAÇÃO DO PERÍODO", cash(current["liquido_valor"].sum()))])
     st.caption(f"{count(len(frame))} registros · {count(frame.codigo.nunique())} produtos · {count(frame.tes.nunique())} TES distintas · "
                f"{count(frame.loc[frame.op_identificada != '', 'op_identificada'].nunique())} OPs. Variação = entradas − saídas.")
-    band("01 · GRUPOS", "MOVIMENTAÇÕES POR GRUPO", "Selecione uma linha para abrir as TES e condições do grupo.")
+    st.markdown("**COMPOSIÇÃO POR GRUPO**")
+    st.caption("Selecione um grupo para avançar às TES e condições que compõem seus valores.")
     _groups_table(frame, token + "_overview")
-    band("02 · HISTÓRICO", "EVOLUÇÃO MENSAL", "Valores consolidados dos movimentos efetivos no recorte selecionado.")
-    monthly = mv.summarize(current, ["competencia"]).sort_values("competencia")
-    _table(monthly[["competencia", "lancamentos", "valor_entrada", "valor_saida", "liquido_valor"]])
+    with st.expander("EVOLUÇÃO MENSAL DO PERÍODO"):
+        monthly = mv.summarize(current, ["competencia"]).sort_values("competencia")
+        _table(monthly[["competencia", "lancamentos", "valor_entrada", "valor_saida", "liquido_valor"]])
 
 
 def _groups(frame, token):
     active = mv.effective(frame)
-    band("02 · GRUPOS E TES", "CLASSIFICAÇÃO POR TES E CONDIÇÃO", "A mesma TES pode aparecer em mais de um grupo; cada movimento é contado uma vez.")
-    if len(st.session_state.get("fm_mov_groups") or []) != 1:
+    if frame["grupo_analise"].nunique() != 1:
         _groups_table(frame, token + "_groups")
         st.caption("Selecione um grupo na tabela ou use o filtro Grupo de análise para abrir suas condições.")
         return
@@ -317,7 +398,6 @@ def _ops(frame, token):
     linked = frame.loc[frame["op_identificada"] != ""]
     cards([("OPS IDENTIFICADAS", count(len(summary))), ("MOVIMENTOS COM OP", count(len(linked))),
            ("SAÍDAS EFETIVAS COM OP", cash(mv.effective(linked)["valor_saida"].sum()))])
-    band("03 · ORDENS DE PRODUÇÃO", "REGISTROS POR OP", "Selecione uma OP para consultar seus produtos, documentos e movimentações.")
     if summary.empty:
         st.info("Nenhuma movimentação com OP no recorte selecionado.")
         return
@@ -354,8 +434,10 @@ def _detail(row):
 
 
 def _ledger(frame, token):
-    band("04 · REGISTRO", "MOVIMENTAÇÕES DO RELATÓRIO", "Selecione uma linha para abrir o registro original e o motivo da classificação.")
     st.caption(f"{count(len(frame))} registros encontrados. A exportação inclui todo o recorte, independentemente da página.")
+    if st.session_state.get("fm_mov_page_token") != token:
+        st.session_state.fm_mov_page = 1
+        st.session_state.fm_mov_page_token = token
     a, b = st.columns(2)
     with a:
         size = st.selectbox("Registros por página", [100, 250, 500], key="fm_mov_page_size")
@@ -383,7 +465,6 @@ def _ledger(frame, token):
 
 
 def _classification(frame, model):
-    band("05 · CLASSIFICAÇÃO", "REGRAS CONFIRMADAS", "A condição específica de chapas e barras tem prioridade sobre as condições genéricas da TES 520.")
     specs = [
         (mv.CLOSING_RULE, "020 / 520 · chapa ou barra de cobre", mv.FLOW, mv.CLOSING),
         ("520_OP_MANUAL", "520 · AE com OP", mv.FLOW, "BAIXA DE OP MANUAL"),
@@ -422,10 +503,13 @@ def _classification(frame, model):
         st.caption(f"Regras {model['versao']} · {len(mv.rules()['materiais_h001'])} materiais vinculados à lista H0001.")
 
 
-def _exports(frame, model, token):
-    with st.expander("EXPORTAR RELATÓRIO E BASE HISTÓRICA"):
-        a, b = st.columns(2)
-        with a:
+def _exports(frame, model, token, *, include_history=True):
+    title = "EXPORTAR RELATÓRIOS" if include_history else "EXPORTAR REGISTROS DESTA CONSULTA"
+    with st.expander(title, expanded=include_history):
+        columns = st.columns(2) if include_history else [st.container()]
+        with columns[0]:
+            st.markdown("**EXCEL DO PERÍODO**" if include_history else "**EXCEL DOS REGISTROS FILTRADOS**")
+            st.caption(f"{count(len(frame))} registros · inclui os detalhamentos e a AE original.")
             if st.button("PREPARAR EXCEL DO RECORTE", key="fm_mov_prepare_excel"):
                 with st.spinner("Preparando o Excel com os registros do recorte..."):
                     st.session_state.fm_mov_excel = (token, mv.export_excel(frame))
@@ -433,15 +517,71 @@ def _exports(frame, model, token):
             if prepared and prepared[0] == token:
                 st.download_button("BAIXAR EXCEL DO RECORTE", prepared[1], file_name="Analise_Movimentacoes.xlsx",
                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="fm_mov_download_excel")
-        with b:
-            if st.button("PREPARAR BASE HISTÓRICA COMPLETA", key="fm_mov_prepare_history"):
-                with st.spinner("Preparando a base histórica completa..."):
-                    st.session_state.fm_mov_history = (model["token"], mv.export_history(model))
-            prepared = st.session_state.get("fm_mov_history")
-            if prepared and prepared[0] == model["token"]:
-                st.download_button("BAIXAR BASE HISTÓRICA", prepared[1], file_name="Base_Historica_KARDEX.zip",
-                                   mime="application/zip", key="fm_mov_download_history")
-        st.caption("O Excel respeita os filtros e mantém a AE original na coluna AE. A base histórica contém todos os períodos importados.")
+        if include_history:
+            with columns[1]:
+                st.markdown("**BASE HISTÓRICA COMPLETA**")
+                st.caption("Todos os arquivos e períodos importados, para backup ou reimportação.")
+                if st.button("PREPARAR BASE HISTÓRICA COMPLETA", key="fm_mov_prepare_history"):
+                    with st.spinner("Preparando a base histórica completa..."):
+                        st.session_state.fm_mov_history = (model["token"], mv.export_history(model))
+                prepared = st.session_state.get("fm_mov_history")
+                if prepared and prepared[0] == model["token"]:
+                    st.download_button("BAIXAR BASE HISTÓRICA", prepared[1], file_name="Base_Historica_KARDEX.zip",
+                                       mime="application/zip", key="fm_mov_download_history")
+            st.caption("O Excel usa o período e o armazém da base da análise. Para um recorte por produto, OP ou TES, exporte pela área Registros.")
+
+
+def render_results(model, imports):
+    scope = _context(model["frame"], imports)
+    st.markdown('''<style>
+    .st-key-fm_mov_area{margin:.1rem 0 .6rem}
+    .st-key-fm_mov_area button{min-height:44px!important;border-radius:10px!important;font-weight:700!important}
+    .st-key-fm_mov_area button[aria-pressed="true"]{background:#111827!important;color:#fff!important;border-color:#111827!important}
+    .st-key-fm_mov_area button[aria-pressed="true"] p{color:#fff!important}
+    </style>''', unsafe_allow_html=True)
+    if st.session_state.get("fm_mov_area") not in AREAS:
+        st.session_state.fm_mov_area = AREAS[0]
+    area = st.segmented_control("Funções da análise", AREAS, key="fm_mov_area", selection_mode="single",
+                                format_func=lambda value: AREA_LABELS.get(value, value),
+                                label_visibility="collapsed", width="stretch") or AREAS[0]
+    headers = {
+        "Visão geral": ("01 · RESUMO", "RESULTADO DO PERÍODO", "Acompanhe entradas, saídas e a composição por grupo. Selecione um grupo para aprofundar a análise."),
+        "Grupos e TES": ("02 · GRUPOS E TES", "ANÁLISE POR GRUPO E CONDIÇÃO", "Abra um grupo e selecione uma TES ou condição para consultar os registros que compõem o valor."),
+        "Por OP": ("03 · ORDENS DE PRODUÇÃO", "CONSULTA POR OP", "Localize a OP e selecione sua linha para abrir os materiais, documentos e movimentações vinculados."),
+        "Movimentações": ("04 · REGISTROS", "CONSULTA DOS MOVIMENTOS", "Busque um registro e selecione sua linha para conferir a AE original e o motivo da classificação."),
+        "Classificação": ("05 · CLASSIFICAÇÃO", "REGRAS E AJUSTES A REFINAR", "Consulte os critérios aplicados e avance aos ajustes que ainda precisam de refinamento."),
+        "Fontes e relatórios": ("06 · FONTES E RELATÓRIOS", "HISTÓRICO, IMPORTAÇÃO E EXPORTAÇÃO", "Consulte os arquivos utilizados, importe novos relatórios e gere o Excel ou a base histórica."),
+    }
+    band(*headers[area])
+    if area == "Fontes e relatórios":
+        _import_controls(imports)
+        _exports(scope, model, _view_token(scope))
+        if model["duplicates"]:
+            st.caption(f"Importações sobrepostas: {count(model['duplicates'])} repetições reconhecidas, sem soma em duplicidade.")
+        return
+    view = _consultation_filters(scope, area) if area in FILTER_AREAS else scope
+    if area == "Movimentações" and st.session_state.get("fm_mov_record_origin"):
+        origin = st.session_state.fm_mov_record_origin
+        st.button("← VOLTAR PARA " + AREA_LABELS.get(origin, origin).upper(),
+                  on_click=_go_to, args=(origin,), key="fm_mov_back")
+    if view.empty:
+        st.info("Nenhuma movimentação corresponde a esta consulta. Ajuste os filtros ou o período da análise.")
+        return
+    token = _view_token(view, area)
+    if area == "Visão geral":
+        _overview(view, token)
+    elif area == "Grupos e TES":
+        _groups(view, token)
+    elif area == "Por OP":
+        _ops(view, token)
+    elif area == "Movimentações":
+        _ledger(view, token)
+        _exports(view, model, token, include_history=False)
+    else:
+        _classification(view, model)
+    confirmed = int(view["enderecamento_compensado"].sum())
+    if confirmed:
+        st.caption(f"{count(confirmed)} registros de endereço compensados permanecem na consulta e estão fora dos valores efetivos.")
 
 
 def render_movement_analysis():
@@ -455,8 +595,8 @@ def render_movement_analysis():
         st.error(f"Não foi possível carregar o histórico de movimentações: {exc}")
         st.button("RECARREGAR HISTÓRICO", key="fm_mov_retry", on_click=_reload)
         return
-    _import_controls(imports)
     if not imports:
+        _import_controls(imports)
         st.info("Importe os relatórios KARDEX para iniciar a análise e formar o histórico.")
         return
     try:
@@ -471,25 +611,4 @@ def render_movement_analysis():
     if frame.empty:
         st.info("O histórico não possui movimentações.")
         return
-    view, scope = _filters(frame, imports)
-    if view.empty:
-        st.info("Nenhuma movimentação corresponde aos filtros selecionados.")
-        return
-    confirmed = int(view["enderecamento_compensado"].sum())
-    if confirmed:
-        st.caption(f"{count(confirmed)} registros de endereço compensados permanecem disponíveis na consulta e estão fora dos valores efetivos.")
-    token = _view_token(view)
-    area = st.radio("Área da análise", AREAS, horizontal=True, key="fm_mov_area", label_visibility="collapsed")
-    if area == "Visão geral":
-        _overview(view, token)
-    elif area == "Grupos e TES":
-        _groups(view, token)
-    elif area == "Por OP":
-        _ops(view, token)
-    elif area == "Movimentações":
-        _ledger(view, token)
-    else:
-        _classification(view, model)
-    _exports(view, model, token)
-    if model["duplicates"]:
-        st.caption(f"Importações sobrepostas: {count(model['duplicates'])} repetições já reconhecidas na base histórica, sem soma em duplicidade.")
+    render_results(model, imports)
