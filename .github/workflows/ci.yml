@@ -42,6 +42,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_movement_analysis*.py'
       - name: Validar conferência de baixas e telas
         run: python -m unittest discover -s tests -p 'test_issue_check*.py'
+      - name: Validar conexão paralela e cache da conferência
+        run: python -m unittest discover -s tests -p 'test_cb_performance.py'
       - name: Validar substituição mensal dos arquivos KARDEX
         run: python -m unittest discover -s tests -p 'test_kardex*.py'
       - name: Testar relatório completo de contagens
