@@ -524,6 +524,7 @@ def _detail(row):
 
 def _ledger(frame, token):
     st.caption(f"{count(len(frame))} registros encontrados. A exportação inclui todo o recorte, independentemente da página.")
+    st.caption("Endereçamento compensado = par de TES 499/999 com produto, armazém, documento, data, quantidade e valor coincidentes. O par continua no histórico, mas fica fora dos totais efetivos.")
     if st.session_state.get("fm_mov_page_token") != token:
         st.session_state.fm_mov_page = 1
         st.session_state.fm_mov_page_token = token
@@ -540,7 +541,7 @@ def _ledger(frame, token):
     shown = pd.DataFrame({"Data": pd.to_datetime(visible["data"]).dt.date, "Código": visible["codigo"], "Produto": visible["descricao"],
                           "Armazém": visible["armazem"], "TES": visible["tes"], "Entrada (R$)": visible["valor_entrada"],
                           "Saída (R$)": visible["valor_saida"], "AE original": visible["ae_original"], "Grupo": visible["grupo_analise"],
-                          "Subgrupo": visible["subgrupo_analise"], "Endereçamento compensado": visible["enderecamento_compensado"]})
+                          "Subgrupo": visible["subgrupo_analise"], "Endereçamento compensado": visible["enderecamento_compensado"].map({True: "SIM", False: "NÃO"})})
     key = f"fm_mov_ledger_{token}_{page}_{size}"
     event = st.dataframe(shown, key=key, hide_index=True, width="stretch", height=600,
                          on_select="rerun", selection_mode="single-row",
@@ -560,6 +561,9 @@ def _classification(frame, model):
         ("520_CC_GERENCIAL", "520 · CC diferente de 600307", mv.FLOW, "ACERTO GERENCIAL"),
         ("520_CC_CONSUMO", "520 · CC 600307 e II, MC ou código da lista H0001", mv.FLOW, "MATERIAIS DE CONSUMO"),
         ("AJUSTE_PA_PI_PRODUCAO_INTERNA", "020 · PA / PI que permanecia em Ajuste", mv.PRODUCTION, mv.PRODUCTION),
+        ("040_SUBGRUPO_CONFIRMADO", "040 · retorno de produção", mv.FLOW, "RETORNO DE PRODUÇÃO"),
+        ("550_SUBGRUPO_CONFIRMADO", "550 · AG, garantia, adequação", mv.FLOW, "AG, GARANTIA, ADEQUAÇÃO"),
+        ("999_SUBGRUPO_CONFIRMADO", "999 · consumo de OPs / descrição ORDEM DE PRODUÇÃO", mv.FLOW, "CONSUMO DE OPS"),
     ]
     active = mv.effective(frame)
     rows = [{"Ordem": i, "Condição": condition, "Grupo": group, "Subgrupo": sub,
