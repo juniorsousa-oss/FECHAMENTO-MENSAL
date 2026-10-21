@@ -376,7 +376,7 @@ def build_cb_protheus_movement_report(
     return output.getvalue()
 
 
-@st.cache_data(show_spinner=False, ttl=60, max_entries=2)
+@st.cache_data(show_spinner=False, ttl=300, max_entries=2)
 def load_api_sources() -> list[dict]:
     sources = db.list_data_sources()
     return [
