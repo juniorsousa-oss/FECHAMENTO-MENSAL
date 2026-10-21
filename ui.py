@@ -13,8 +13,9 @@ CSS = """
 [data-testid="stAppViewContainer"]{background:#f4f7fb!important}
 [data-testid="stHeader"]{background:rgba(255,255,255,.96)!important}
 .block-container{max-width:1780px!important;padding-top:3.2rem!important;padding-left:2.7rem!important;padding-right:2.7rem!important;padding-bottom:3rem!important;width:100%!important}
-/* SIDEBAR SETTA — BLOCO ÚNICO
-   Estrutura: 26 / 20 / 8 / 42 / 2 / 18 / 20 / 8 px */
+/* SIDEBAR SETTA — ESTRUTURA VALIDÁVEL
+   Os títulos e botões usam contêineres Streamlit separados.
+   Não forçar gap:0 nos blocos internos: isso causava encavalamento. */
 section[data-testid="stSidebar"]{
   background:#fff!important;
   border-right:1px solid #e8ebf0!important;
@@ -24,130 +25,116 @@ section[data-testid="stSidebar"]{
   flex-basis:260px!important;
 }
 section[data-testid="stSidebar"] .block-container{
-  width:260px!important;
-  min-width:260px!important;
-  max-width:260px!important;
   box-sizing:border-box!important;
+  width:100%!important;
+  max-width:100%!important;
+  min-width:0!important;
   padding:26px 16px!important;
 }
-section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{
-  gap:0!important;
-  row-gap:0!important;
-}
 section[data-testid="stSidebar"] .sidebar-brand{
-  width:100%!important;
   box-sizing:border-box!important;
+  width:100%!important;
   background:#f8fafc!important;
   border:1px solid #e5e8ee!important;
   border-radius:12px!important;
-  padding:14px 16px!important;
+  padding:14px 13px!important;
   margin:0!important;
 }
 section[data-testid="stSidebar"] .sidebar-brand-title{
   margin:0!important;
   padding:0!important;
-  font-size:15px!important;
+  font-size:13px!important;
   line-height:18px!important;
   font-weight:800!important;
   color:#111827!important;
   letter-spacing:-.01em!important;
+  overflow-wrap:anywhere!important;
 }
 section[data-testid="stSidebar"] .sidebar-brand-sub{
-  margin:3px 0 0 0!important;
+  margin:4px 0 0!important;
   padding:0!important;
   font-size:12px!important;
   line-height:16px!important;
   font-weight:400!important;
   color:#6b7280!important;
 }
-section[data-testid="stSidebar"] .sidebar-brand-gap{
-  display:block!important;
+section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation{
+  margin-top:24px!important;
+  padding:0!important;
   width:100%!important;
-  height:20px!important;
-  min-height:20px!important;
-  margin:0!important;
-  padding:0!important;
+  min-width:0!important;
 }
-section[data-testid="stSidebar"] .sidebar-section-label{
-  display:block!important;
-  margin:0!important;
-  padding:0!important;
-  color:#374151!important;
-  font-size:12px!important;
-  line-height:15px!important;
-  font-weight:800!important;
-  text-transform:uppercase!important;
-  letter-spacing:.055em!important;
+section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation [data-testid="stVerticalBlock"]{
+  gap:6px!important;
+  row-gap:6px!important;
 }
 section[data-testid="stSidebar"] .sidebar-nav-label{
-  margin:0!important;
-  padding:15px 0 12px 0!important;
-  min-height:42px!important;
+  display:block!important;
   box-sizing:border-box!important;
-  clear:both!important;
+  margin:0 0 12px!important;
+  padding:0 0 10px!important;
+  min-height:26px!important;
+  border-bottom:1px solid #edf0f4!important;
+  font-size:11px!important;
+  line-height:16px!important;
+  font-weight:800!important;
+  color:#64748b!important;
+  letter-spacing:.07em!important;
+  text-transform:uppercase!important;
 }
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){
-  margin:0 0 2px 0!important;
-  padding:0!important;
-}
-section[data-testid="stSidebar"] .st-key-fm_nav_0{
-  padding-top:4px!important;
-}
-section[data-testid="stSidebar"] div[data-testid="stButton"]{
+section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation div[data-testid="stButton"]{
   width:100%!important;
   margin:0!important;
   padding:0!important;
 }
-section[data-testid="stSidebar"] div[data-testid="stButton"] button{
+section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation div[data-testid="stButton"] button{
   position:relative!important;
   display:flex!important;
   align-items:center!important;
   justify-content:flex-start!important;
+  box-sizing:border-box!important;
   width:100%!important;
   height:42px!important;
   min-height:42px!important;
-  max-height:42px!important;
-  margin:0!important;
   padding:0 12px 0 24px!important;
   border-radius:10px!important;
-  font-size:13px!important;
-  line-height:16px!important;
-  font-weight:500!important;
+  font-size:12px!important;
+  line-height:1.25!important;
+  font-weight:600!important;
   text-align:left!important;
 }
-section[data-testid="stSidebar"] div[data-testid="stButton"] button > div,
-section[data-testid="stSidebar"] div[data-testid="stButton"] button p{
-  overflow-wrap:anywhere!important;
-  width:100%!important;
+section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation div[data-testid="stButton"] button p{
   margin:0!important;
   padding:0!important;
-  line-height:16px!important;
-  text-align:left!important;
+  font-size:12px!important;
+  line-height:1.25!important;
+  overflow-wrap:anywhere!important;
   white-space:normal!important;
+  text-align:left!important;
 }
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]{
+section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation button[data-testid="stBaseButton-secondary"]{
   background:transparent!important;
   border:1px solid transparent!important;
   color:#374151!important;
   box-shadow:none!important;
 }
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover{
+section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation button[data-testid="stBaseButton-secondary"]:hover{
   background:#f8fafc!important;
   border-color:#e5e7eb!important;
   color:#111827!important;
 }
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]{
+section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation button[data-testid="stBaseButton-primary"]{
   background:#111827!important;
   border:1px solid #111827!important;
   color:#fff!important;
-  box-shadow:0 5px 14px rgba(17,24,39,.14)!important;
   font-weight:700!important;
+  box-shadow:0 5px 14px rgba(17,24,39,.14)!important;
 }
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"] p{
+section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation button[data-testid="stBaseButton-primary"] p{
   color:#fff!important;
   font-weight:700!important;
 }
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]::before{
+section[data-testid="stSidebar"] .st-key-fm_sidebar_navigation button[data-testid="stBaseButton-primary"]::before{
   content:"";
   position:absolute;
   left:7px;
@@ -160,37 +147,26 @@ section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid=
 }
 section[data-testid="stSidebar"] .sidebar-status-section{
   display:block!important;
+  box-sizing:border-box!important;
   width:100%!important;
-  margin:0!important;
-  padding:0!important;
-}
-section[data-testid="stSidebar"] .sidebar-status-top-gap{
-  display:block!important;
-  width:100%!important;
-  height:18px!important;
-  min-height:18px!important;
-  margin:0!important;
-  padding:0!important;
-}
-section[data-testid="stSidebar"] .sidebar-divider{
-  display:block!important;
-  width:100%!important;
-  height:1px!important;
-  min-height:1px!important;
-  margin:0 0 20px 0!important;
-  padding:0!important;
-  background:#d1d5db!important;
+  margin:22px 0 0!important;
+  padding:18px 0 0!important;
+  border-top:1px solid #d1d5db!important;
 }
 section[data-testid="stSidebar"] .sidebar-status-label{
   display:block!important;
-  margin:0 0 8px 0!important;
+  margin:0 0 10px!important;
   padding:0!important;
-  line-height:15px!important;
+  color:#374151!important;
+  font-size:11px!important;
+  line-height:16px!important;
+  font-weight:800!important;
+  text-transform:uppercase!important;
+  letter-spacing:.06em!important;
 }
 section[data-testid="stSidebar"] .sidebar-status-card{
-  display:block!important;
-  width:100%!important;
   box-sizing:border-box!important;
+  width:100%!important;
   margin:0!important;
   padding:12px 14px!important;
   background:#f8fafc!important;
@@ -209,7 +185,7 @@ section[data-testid="stSidebar"] .sidebar-status-name{
   letter-spacing:.025em!important;
 }
 section[data-testid="stSidebar"] .sidebar-status-value{
-  margin:4px 0 0 0!important;
+  margin:4px 0 0!important;
   padding:0!important;
   font-size:13px!important;
   line-height:16px!important;
@@ -220,95 +196,13 @@ section[data-testid="stSidebar"] .sidebar-status-value.status-ok{color:#16a34a!i
 section[data-testid="stSidebar"] .sidebar-status-value.status-warning{color:#f59e0b!important}
 section[data-testid="stSidebar"] .sidebar-status-value.status-error{color:#ef4444!important}
 section[data-testid="stSidebar"] .sidebar-status-meta{
-  margin:6px 0 0 0!important;
+  margin:6px 0 0!important;
   padding:0!important;
   color:#6b7280!important;
   font-size:11px!important;
   line-height:15px!important;
   text-transform:uppercase!important;
 }
-
-.api-status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin:.15rem 0 1rem}
-.api-status-card{position:relative;background:#fff;border:1px solid #dfe3e8;border-radius:11px;padding:.8rem .85rem .75rem;min-height:92px;box-sizing:border-box;box-shadow:0 3px 11px rgba(15,23,42,.035);overflow:hidden}
-.api-status-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--api-accent,#94a3b8)}
-.api-status-name{font-size:.66rem;font-weight:900;letter-spacing:.035em;color:#64748b;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.api-status-value{margin-top:.42rem;font-size:.78rem;font-weight:900;color:#111827;text-transform:uppercase}
-.api-status-meta{margin-top:.42rem;font-size:.61rem;line-height:1.35;color:#94a3b8}
-.api-overview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin:0 0 .9rem}
-.api-overview-card{background:#fff;border:1px solid #dfe3e8;border-radius:11px;padding:.75rem .85rem}
-.api-overview-label{font-size:.64rem;font-weight:900;color:#64748b;text-transform:uppercase}
-.api-overview-value{margin-top:.28rem;font-size:1.08rem;font-weight:900;color:#111827}
-.logo-preview{width:100%;min-height:150px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid #e5e8ee;border-radius:12px;padding:1rem;box-sizing:border-box;margin:.5rem 0 1rem}
-.logo-preview img{display:block;max-width:205px;max-height:86px;width:auto;height:auto;object-fit:contain}
-section[data-testid="stSidebar"] div[role="radiogroup"]{display:flex!important;flex-direction:column!important;gap:.46rem!important;margin:0!important;padding:0!important}
-section[data-testid="stSidebar"] div[role="radiogroup"] label{position:relative;width:100%;min-height:40px;display:flex!important;align-items:center!important;gap:0!important;padding:.55rem .72rem .55rem .78rem!important;margin:0!important;border:1px solid #e5e8ee!important;border-radius:9px!important;background:#fff!important;cursor:pointer;box-sizing:border-box!important}
-section[data-testid="stSidebar"] div[role="radiogroup"] label>div:first-child,
-section[data-testid="stSidebar"] div[role="radiogroup"] label [data-baseweb="radio"],
-section[data-testid="stSidebar"] div[role="radiogroup"] label input[type="radio"],
-section[data-testid="stSidebar"] div[role="radiogroup"] label svg{display:none!important;position:absolute!important;opacity:0!important;width:0!important;height:0!important;overflow:hidden!important}
-section[data-testid="stSidebar"] div[role="radiogroup"] label p{margin:0!important;font-size:.83rem!important;font-weight:600!important;color:#374151!important;white-space:normal!important;line-height:1.25!important}
-section[data-testid="stSidebar"] div[role="radiogroup"] label:hover{background:#f8fafc!important;border-color:#d7dce3!important}
-section[data-testid="stSidebar"] div[data-testid="stButton"]{margin:0!important}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button{
-  position:relative!important;
-  min-height:42px!important;
-  justify-content:flex-start!important;
-  text-align:left!important;
-  padding:.56rem .72rem .56rem calc(.88rem + 10px)!important;
-  border-radius:10px!important;
-  font-size:.83rem!important;
-  font-weight:600!important;
-  line-height:1.2!important;
-  width:100%!important
-}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button > div{
-  width:100%!important;
-  text-align:left!important;
-  justify-content:flex-start!important
-}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button p{
-  width:100%!important;
-  margin:0!important;
-  text-align:left!important;
-  white-space:normal!important
-}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]{
-  background:transparent!important;
-  border:1px solid transparent!important;
-  color:#374151!important;
-  box-shadow:none!important
-}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover{
-  background:#f8fafc!important;
-  border-color:#e5e7eb!important;
-  color:#111827!important
-}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]{
-  background:#111827!important;
-  border:1px solid #111827!important;
-  color:#fff!important;
-  box-shadow:0 5px 14px rgba(17,24,39,.14)!important;
-  font-weight:700!important
-}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"] p{
-  color:#fff!important;
-  font-weight:700!important
-}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]::before{
-  content:"";
-  position:absolute;
-  left:.42rem;
-  top:50%;
-  width:4px;
-  height:20px;
-  border-radius:999px;
-  background:#ef4444;
-  transform:translateY(-50%)
-}
-section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked){background:#111827!important;border-color:#111827!important;box-shadow:0 5px 14px rgba(17,24,39,.14)!important}
-section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)::before{content:"";position:absolute;left:.42rem;top:50%;width:4px;height:20px;border-radius:999px;background:#ef4444;transform:translateY(-50%)}
-section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p{color:#fff!important;font-weight:700!important}
-
 [data-testid="stAppViewContainer"] > .main,
 [data-testid="stAppViewContainer"] .main,
 [data-testid="stMain"],
@@ -447,11 +341,6 @@ section[data-testid="stSidebar"]{
   max-width:min(280px,88vw)!important;
   min-width:0!important;
   flex-basis:min(280px,88vw)!important;
-}
-section[data-testid="stSidebar"] .block-container{
-  width:100%!important;
-  max-width:100%!important;
-  min-width:0!important;
 }
 .block-container{padding-top:2rem!important;padding-left:1rem!important;padding-right:1rem!important;padding-bottom:2rem!important}
 .setta-logo-card{min-height:105px;margin-bottom:1.8rem;padding:.9rem 1rem}
