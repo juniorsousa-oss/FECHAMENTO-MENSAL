@@ -18,6 +18,7 @@ on:
       - 'issue_check.py'
       - 'issue_check_ui.py'
       - 'issue_check_export.py'
+      - 'master_plan.py'
       - 'config/movement_rules.json'
       - 'supabase_schema.sql'
       - 'migrations/**'
@@ -38,11 +39,13 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
       - name: Compilar
-        run: python -m py_compile streamlit_app.py central_fechamento_data.py inventory_db.py report_parser.py cb_parser.py ui.py movements.py movement_store.py movement_analysis_ui.py issue_check.py issue_check_ui.py issue_check_export.py kardex_history.py
+        run: python -m py_compile streamlit_app.py central_fechamento_data.py inventory_db.py report_parser.py cb_parser.py ui.py movements.py movement_store.py movement_analysis_ui.py issue_check.py issue_check_ui.py issue_check_export.py master_plan.py kardex_history.py
       - name: Validar análise de movimentações
         run: python -m unittest discover -s tests -p 'test_movement_analysis*.py'
       - name: Validar conferência de baixas e telas
         run: python -m unittest discover -s tests -p 'test_issue_check*.py'
+      - name: Validar integração FOR001 Plano Mestre
+        run: python -m unittest discover -s tests -p 'test_master_plan.py'
       - name: Validar conexão paralela e cache da conferência
         run: python -m unittest discover -s tests -p 'test_cb_performance.py'
       - name: Validar cache, carregamento sob demanda e concorrência
