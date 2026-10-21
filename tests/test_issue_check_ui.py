@@ -62,6 +62,29 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertTrue(any("PREPARAR RELATÓRIO COMPLETO" in b.label for b in app.button))
 
 
+    def test_responsive_filters_cards_and_all_warehouses_without_manual_controls(self):
+        import issue_check_ui as ui
+        source = (Path(__file__).resolve().parents[1] / "issue_check_ui.py").read_text("utf-8")
+        renderer = source.split("def render_issue_check():", 1)[1]
+        self.assertNotIn('ATUALIZAR CONFERÊNCIA', renderer)
+        self.assertNotIn('st.multiselect(', renderer)
+        self.assertIn('chosen = tuple(sorted(set(options) | import_warehouses))', renderer)
+        self.assertIn('fm-issue-filter-heading', source)
+        self.assertIn('[data-baseweb="input"]', source)
+        self.assertIn('focus-within', source)
+        self.assertIn('.fm-issue-meta', source)
+        self.assertIn('grid-template-columns:repeat(2,minmax(0,1fr))', source)
+        markup = ui._op_metadata({
+            "cliente": "<script>alert(1)</script>",
+            "condicao": "FINALIZADO", "nota_fiscal": "100",
+            "data_faturamento": "21/10/2026", "dias_patio": "3",
+            "status_op": "FINALIZADO EM PÁTIO",
+        })
+        self.assertIn("&lt;script&gt;", markup)
+        self.assertNotIn("<script>", markup)
+        self.assertIn("21/10/2026", markup)
+        self.assertIn("FINALIZADO EM PÁTIO", markup)
+
     def test_an_unavailable_source_is_not_presented_as_zero_stock_or_issues(self):
         program = '''
 from unittest.mock import patch
