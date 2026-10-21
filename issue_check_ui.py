@@ -84,9 +84,37 @@ def _band():
                 unsafe_allow_html=True)
     st.markdown("""
     <style>
-    .st-key-fm_issue_filters {background:#fff;border:1px solid #e5e8ee;
-      border-radius:14px;padding:1.05rem 1.15rem .75rem;margin:.8rem 0 1.2rem;
-      box-shadow:0 3px 12px rgba(15,23,42,.04)}
+    .st-key-fm_issue_filters {
+      background:#fff;border:1px solid #dce2e9;border-top:4px solid #121a2b;
+      border-radius:15px;padding:1.15rem 1.35rem 1rem;margin:1.1rem 0 1.35rem;
+      box-shadow:0 6px 20px rgba(15,23,42,.055);
+    }
+    .fm-issue-filter-heading {
+      color:#131e30;font-size:.87rem;font-weight:850;letter-spacing:.035em;
+      text-transform:uppercase;line-height:1.4;margin:0 0 .3rem;
+    }
+    .fm-issue-filter-subtitle {
+      color:#66758a;font-size:.73rem;line-height:1.4;
+      margin:0 0 1rem;
+    }
+    .st-key-fm_issue_date_filters {
+      margin-top:.85rem;padding:1rem 0 0;
+      border-top:1px solid #e6eaf0;
+    }
+    .fm-issue-date-title {
+      color:#344054;font-weight:800;font-size:.72rem;
+      letter-spacing:.065em;text-transform:uppercase;margin:0 0 .15rem;
+    }
+    .fm-issue-date-note {
+      font-size:.71rem;color:#7b8797;margin:0 0 .7rem;
+    }
+    .st-key-fm_issue_filters label {
+      font-size:.73rem!important;font-weight:650!important;
+      color:#334155!important;
+    }
+    @media(max-width:640px){
+      .st-key-fm_issue_filters {padding:.85rem!important}
+    }
     [class*="st-key-fm_issue_op_alert_"] [data-testid="stButton"] button {
       background:#fff3f3!important;border:1px solid #f6c7ca!important;
       border-left:5px solid #ce3c48!important;color:#8b1d2c!important;
@@ -272,6 +300,9 @@ def _reload():
 def _clear_filters():
     st.session_state.fm_issue_search = ""
     st.session_state.fm_issue_filter = "Todos"
+    st.session_state.fm_issue_op_status = "Todos os status"
+    st.session_state.fm_issue_invoice_start = ""
+    st.session_state.fm_issue_invoice_end = ""
     st.session_state.fm_issue_page = 1
 
 
@@ -328,20 +359,53 @@ def _filter(frame: pd.DataFrame, query: str, choice: str) -> pd.DataFrame:
     return view.copy()
 
 
+def _billing_date(value):
+    """Data digitável (DD/MM/AAAA); vazio significa sem limite."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not re.fullmatch(r"\\d{1,2}/\\d{1,2}/\\d{4}", text):
+            raise ValueError("Informe a data no formato DD/MM/AAAA.")
+        return datetime.strptime(text, "%d/%m/%Y").date()
+    return pd.Timestamp(value).date()
+
+
+def _invoice_bounds(raw_start: str, raw_end: str):
+    """Não aplica períodos parciais ou invertidos sem avisar ao usuário."""
+    try:
+        start, end = _billing_date(raw_start), _billing_date(raw_end)
+    except (ValueError, TypeError, OverflowError) as exc:
+        return (), f"Data de faturamento inválida. Use DD/MM/AAAA. ({exc})"
+    if start is not None and end is not None and start > end:
+        return (), "A data inicial do faturamento não pode ser posterior à data final."
+    return (start, end), ""
+
+
 def _filter_op_status_invoice(view: pd.DataFrame, ops: pd.DataFrame,
                               status: str, invoice_period) -> pd.DataFrame:
-    """Filtra OP, sem excluir produtos da ordem selecionada."""
+    """Filtra a OP inteira por status e data real do faturamento, inclusiva."""
     selected = ops
     if status != "Todos os status":
         selected = selected.loc[selected["status_op"] == status]
     if invoice_period:
-        boundaries = list(invoice_period) if isinstance(invoice_period, (tuple, list)) else [invoice_period]
-        boundaries = [pd.Timestamp(value).date() for value in boundaries if value is not None]
-        if boundaries:
-            issued = pd.to_datetime(selected["data_faturamento"], dayfirst=True, errors="coerce").dt.date
-            minimum = boundaries[0]
-            maximum = boundaries[-1] if len(boundaries) > 1 else boundaries[0]
-            selected = selected.loc[(issued >= minimum) & (issued <= maximum)]
+        values = list(invoice_period) if isinstance(invoice_period, (tuple, list)) else [invoice_period]
+        dates = [_billing_date(value) for value in values]
+        if len(dates) >= 2:
+            minimum, maximum = dates[0], dates[1]
+        else:
+            minimum = maximum = dates[0]
+        if minimum is not None or maximum is not None:
+            issued = pd.to_datetime(
+                selected["data_faturamento"].replace("NI", pd.NA),
+                format="%d/%m/%Y", errors="coerce",
+            ).dt.date
+            condition = pd.Series(True, index=selected.index)
+            if minimum is not None:
+                condition &= issued >= minimum
+            if maximum is not None:
+                condition &= issued <= maximum
+            selected = selected.loc[condition]
     return view.loc[view["op"].isin(selected["op"])].copy()
 
 
@@ -401,8 +465,6 @@ def _ops(model, view, token):
         st.session_state.fm_issue_view_token = token
     page = min(int(st.session_state.get("fm_issue_page", 1)), pages)
     st.session_state.fm_issue_page = page
-    st.caption(f"{count(len(numbers))} OPs encontradas · página {page} de {pages} · 10 OPs por página")
-    st.caption("BAIXADOS: itens conferidos com consumo integral identificado por OP/produto. Baixas parciais aparecem na coluna Qtd baixada.")
     info = model["ops"].set_index("op").to_dict("index")
     with st.container(key="fm_issue_ops"):
         for number in numbers[(page - 1) * size:page * size]:
@@ -544,10 +606,17 @@ def render_results(model):
         )
 
     with st.container(key="fm_issue_filters"):
-        fop, falert, fstatus, finvoice = st.columns([1.65, 1.1, 1.1, 1.4])
+        st.markdown(
+            '<div class="fm-issue-filter-heading">FILTROS DA CONFERÊNCIA</div>'
+            '<div class="fm-issue-filter-subtitle">'
+            'Localize uma OP ou combine situação, alertas e faturamento.'
+            '</div>', unsafe_allow_html=True,
+        )
+        fop, falert, fstatus = st.columns([1.7, 1.2, 1.3], gap="medium")
         with fop:
-            query = st.text_input("LOCALIZAR OP", key="fm_issue_search",
-                                  placeholder="Digite o número da OP")
+            query = st.text_input(
+                "LOCALIZAR OP", key="fm_issue_search", placeholder="Número da OP"
+            )
         with falert:
             choice = st.selectbox("ALERTAS", list(FILTERS), key="fm_issue_filter")
         with fstatus:
@@ -560,13 +629,33 @@ def render_results(model):
             selected_status = st.selectbox(
                 "STATUS DA OP", statuses, key="fm_issue_op_status"
             )
-        with finvoice:
-            invoice_period = st.date_input(
-                "DATA DE FATURAMENTO", value=(), format="DD/MM/YYYY",
-                key="fm_issue_invoice_dates",
-                help="Escolha uma data ou um intervalo. Sem seleção, todas as datas são consideradas.",
+        with st.container(key="fm_issue_date_filters"):
+            st.markdown(
+                '<div class="fm-issue-date-title">PERÍODO DE FATURAMENTO</div>'
+                '<div class="fm-issue-date-note">'
+                'Digite as datas no formato DD/MM/AAAA. Deixe em branco para não limitar.'
+                '</div>', unsafe_allow_html=True,
             )
+            c_from, c_to, c_clear = st.columns([1.25, 1.25, 2], gap="medium")
+            with c_from:
+                date_from_raw = st.text_input(
+                    "DATA INICIAL", placeholder="DD/MM/AAAA",
+                    key="fm_issue_invoice_start", max_chars=10,
+                )
+            with c_to:
+                date_to_raw = st.text_input(
+                    "DATA FINAL", placeholder="DD/MM/AAAA",
+                    key="fm_issue_invoice_end", max_chars=10,
+                )
+            with c_clear:
+                st.button(
+                    "LIMPAR FILTROS", on_click=_clear_filters,
+                    key="fm_issue_clear_filters", use_container_width=True,
+                )
 
+    invoice_period, invoice_error = _invoice_bounds(date_from_raw, date_to_raw)
+    if invoice_error:
+        st.warning(invoice_error + " O período não foi aplicado.")
     view = _filter_op_status_invoice(
         _filter(frame, query, choice), model["ops"], selected_status, invoice_period
     )
