@@ -365,7 +365,7 @@ def _billing_date(value):
         return None
     if isinstance(value, str):
         text = value.strip()
-        if not re.fullmatch(r"\\d{1,2}/\\d{1,2}/\\d{4}", text):
+        if not re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", text):
             raise ValueError("Informe a data no formato DD/MM/AAAA.")
         return datetime.strptime(text, "%d/%m/%Y").date()
     return pd.Timestamp(value).date()
