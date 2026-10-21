@@ -94,17 +94,18 @@ jobs:
           assert 'class="sidebar-status-section"' in app
           assert "sidebar-status-section" in app
           ui = Path("ui.py").read_text(encoding="utf-8")
-          assert "SIDEBAR SETTA — BLOCO ÚNICO" in ui
-          assert "SIDEBAR SETTA V1 — PADRÃO VALIDADO" not in ui
+          assert "SIDEBAR SETTA — ESTRUTURA VALIDÁVEL" in ui
+          assert "SIDEBAR SETTA — BLOCO ÚNICO" not in ui
           assert "SETTA SIDEBAR SPACING LOCK — WRAPPERS STREAMLIT" not in ui
-          assert ui.count('section[data-testid="stSidebar"] .block-container{') == 2  # padrão + media query responsiva
-          assert ui.count('section[data-testid="stSidebar"] .sidebar-brand{') == 1
-          assert "sidebar-nav-label" in ui
-          assert ".st-key-fm_nav_0" in ui
-          assert "padding-top:4px!important" in ui
-          assert "padding:15px 0 12px 0!important" in ui
-          assert "height:42px!important" in ui
-          assert "margin:0 0 2px 0!important" in ui
+          assert 'with st.container(key="fm_sidebar_navigation")' in app
+          assert 'class="sidebar-nav-label"' in app
+          assert ".st-key-fm_sidebar_navigation" in ui
+          assert "margin-top:24px!important" in ui
+          assert "margin:0 0 12px!important" in ui
+          assert "gap:6px!important" in ui
+          assert "row-gap:0!important" not in ui
+          assert '[data-testid="stVerticalBlock"]{\n  gap:0!important;' not in ui
+          assert 'class="sidebar-status-section"' in app
           assert not Path("db.py").exists()
           assert "_saldo_codes = set(final_analysis_codes)" in app
           assert '"01 · ALIMENTAÇÃO FÍSICA"' in app
