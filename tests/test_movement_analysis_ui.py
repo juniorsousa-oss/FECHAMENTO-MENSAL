@@ -107,6 +107,8 @@ class MovementAnalysisUITests(unittest.TestCase):
     def test_op_drilldown_clears_old_record_filters_and_preserves_original_ae(self):
         app = self.app()
         self.area(app, "Movimentações")
+        self.assertEqual(set(app.dataframe[0].value["Endereçamento compensado"]), {"NÃO"})
+        self.assertTrue(any("Endereçamento compensado" in x.value for x in app.caption))
         next(x for x in app.text_input if x.label == "Buscar nos registros").set_value("INEXISTENTE").run()
         self.assertEqual(len(app.dataframe), 0)
         app.session_state["_test_action"] = "op"
@@ -127,7 +129,8 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.assertEqual(len(app.dataframe), 0)
         self.area(app, "Classificação")
         self.assertEqual(len(app.text_input), 0)
-        self.assertEqual(len(app.dataframe[0].value), 5)
+        self.assertEqual(len(app.dataframe[0].value), 8)
+        self.assertIn("999 · consumo de OPs / descrição ORDEM DE PRODUÇÃO", app.dataframe[0].value["Condição"].tolist())
         next(x for x in app.button if x.label == "DETALHAR AJUSTES A REFINAR").click().run()
         self.assertFalse(app.exception)
         self.assertEqual(app.segmented_control[0].value, "Grupos e TES")
