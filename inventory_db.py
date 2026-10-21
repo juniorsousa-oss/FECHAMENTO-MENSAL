@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import date
+from contextvars import ContextVar
+from typing import Callable, TypeVar
 import os
 
 import requests
@@ -33,15 +35,36 @@ def _secret(*names: str) -> str:
     return ""
 
 
+# Credenciais resolvidas na thread principal. Cada worker mantém as suas
+# credenciais no próprio contexto, sem chamar st.secrets fora da sessão Streamlit.
+_CONNECTION_OVERRIDE: ContextVar[tuple[str, str] | None] = ContextVar(
+    "_fm_connection_override", default=None
+)
+_T = TypeVar("_T")
+
+
 def supabase_url() -> str:
-    return _secret("SUPABASE_URL") or DEFAULT_SUPABASE_URL
+    override = _CONNECTION_OVERRIDE.get()
+    return override[0] if override is not None else (
+        _secret("SUPABASE_URL") or DEFAULT_SUPABASE_URL
+    )
 
 
 def supabase_key() -> str:
-    return (
+    override = _CONNECTION_OVERRIDE.get()
+    return override[1] if override is not None else (
         _secret("SUPABASE_ANON_KEY", "SUPABASE_KEY", "SUPABASE_PUBLISHABLE_KEY")
         or DEFAULT_SUPABASE_ANON_KEY
     )
+
+
+def read_with_connection(reader: Callable[[], _T], url: str, key: str) -> _T:
+    """Executa leitura paralela com credenciais explícitas e contexto isolado."""
+    token = _CONNECTION_OVERRIDE.set((url, key))
+    try:
+        return reader()
+    finally:
+        _CONNECTION_OVERRIDE.reset(token)
 
 
 def configured() -> bool:
