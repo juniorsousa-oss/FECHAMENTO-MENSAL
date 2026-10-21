@@ -81,14 +81,17 @@ section[data-testid="stSidebar"] .sidebar-section-label{
 }
 section[data-testid="stSidebar"] .sidebar-nav-label{
   margin:0!important;
-  padding:0!important;
+  padding:15px 0 12px 0!important;
+  min-height:42px!important;
+  box-sizing:border-box!important;
+  clear:both!important;
 }
 section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){
   margin:0 0 2px 0!important;
   padding:0!important;
 }
 section[data-testid="stSidebar"] .st-key-fm_nav_0{
-  margin-top:8px!important;
+  padding-top:4px!important;
 }
 section[data-testid="stSidebar"] div[data-testid="stButton"]{
   width:100%!important;
@@ -114,6 +117,7 @@ section[data-testid="stSidebar"] div[data-testid="stButton"] button{
 }
 section[data-testid="stSidebar"] div[data-testid="stButton"] button > div,
 section[data-testid="stSidebar"] div[data-testid="stButton"] button p{
+  overflow-wrap:anywhere!important;
   width:100%!important;
   margin:0!important;
   padding:0!important;
@@ -438,6 +442,17 @@ div[data-testid="stPopover"] button:hover{background:#f8fafc!important;border-co
 .api-overview{grid-template-columns:repeat(2,minmax(0,1fr))!important}
 }
 @media (max-width:900px){
+section[data-testid="stSidebar"]{
+  width:min(280px,88vw)!important;
+  max-width:min(280px,88vw)!important;
+  min-width:0!important;
+  flex-basis:min(280px,88vw)!important;
+}
+section[data-testid="stSidebar"] .block-container{
+  width:100%!important;
+  max-width:100%!important;
+  min-width:0!important;
+}
 .block-container{padding-top:2rem!important;padding-left:1rem!important;padding-right:1rem!important;padding-bottom:2rem!important}
 .setta-logo-card{min-height:105px;margin-bottom:1.8rem;padding:.9rem 1rem}
 .setta-logo-card img{max-width:170px;max-height:72px}
