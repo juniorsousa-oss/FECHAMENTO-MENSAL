@@ -10,7 +10,7 @@ import pandas as pd
 
 import movements as mv
 
-VERSION = "2026-10-21.2"
+VERSION = "2026-10-21.3"
 EPSILON = Decimal("0.000001")
 ZERO = Decimal(0)
 MISSING = "CONFERIDO SEM SALDO E SEM BAIXA SUFICIENTE"
@@ -47,7 +47,9 @@ def normalized_header(value) -> str:
 
 def op_number(value, *, require_prefix=False) -> str:
     value = text(value)
-    expression = r"OP\s*(\d+)" if require_prefix else r"(?:OP\s*)?(\d+)"
+    # Aceita espaços, dois-pontos, barras ou hífens usuais do vínculo da OP,
+    # sem aceitar número parcial ou números extras no campo AE.
+    expression = r"OP[\s:/-]*(\d+)(?:\.0+)?" if require_prefix else r"(?:OP[\s:/-]*)?(\d+)(?:\.0+)?"
     match = re.fullmatch(expression, value, re.I)
     return match.group(1) if match else ""
 
@@ -224,10 +226,12 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
     period = coverage(history_metas, warehouses)
     has_history = any(not meta.get("armazem") or meta["armazem"] in warehouses for meta in history_metas)
     pool, prod_pool = defaultdict(Decimal), defaultdict(Decimal)
+    address_pool = defaultdict(Decimal)
     stock_rows = [r for r in stock if r["armazem"] in warehouses]
     for row in stock_rows:
         key = (row["codigo"], row["lote"])
         pool[key] += row["saldo"]
+        address_pool[(row["codigo"], row["lote"], row["armazem"], row["endereco"])] += row["saldo"]
         if row["endereco"] == "G9-PROD":
             prod_pool[key] += row["saldo"]
     by_item = defaultdict(list)
@@ -235,18 +239,37 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
         by_item[row["op"], row["item_id"]].append(row)
     audit_movements, after_snapshot = [], 0
     outgoing_totals, incoming_totals = defaultdict(Decimal), defaultdict(Decimal)
-    for raw in movements:
-        number = op_number(raw.get("ae_original"), require_prefix=True)
-        if not number or raw.get("armazem") not in warehouses:
+    scoped_movements = []
+    for idx, raw in enumerate(movements):
+        if raw.get("armazem") not in warehouses:
             continue
-        if raw["data"] > as_of:
+        if str(raw.get("data") or "")[:10] > as_of:
             after_snapshot += 1
             continue
         row = dict(raw)
+        # Identifica compensações com todo o KARDEX do armazém, inclusive o
+        # par de entrada que pode não conter a OP na AE original.
+        row.setdefault("id_registro", f"auditoria-{idx}")
+        row.setdefault("enderecamento_compensado", False)
+        for field in ("codigo", "armazem", "um", "documento", "data", "tes"):
+            row.setdefault(field, "")
+        scoped_movements.append(row)
+    mv.match_addresses(scoped_movements)
+    for row in scoped_movements:
+        number = op_number(row.get("ae_original"), require_prefix=True)
+        if not number:
+            continue
         row["op"] = number
-        row["natureza"] = "ENDEREÇAMENTO" if row.get("tes") in ("499", "999") else "BAIXA / DEVOLUÇÃO"
+        tes = str(row.get("tes") or "").zfill(3)
+        paired = bool(row.get("enderecamento_compensado"))
+        row["natureza"] = (
+            "ENDEREÇAMENTO COMPENSADO" if paired
+            else "ENDEREÇAMENTO" if tes == "499"
+            else "CONSUMO DE OP" if tes == "999"
+            else "BAIXA / DEVOLUÇÃO"
+        )
         audit_movements.append(row)
-        if row["natureza"] != "ENDEREÇAMENTO":
+        if row["natureza"] in ("BAIXA / DEVOLUÇÃO", "CONSUMO DE OP"):
             outgoing_totals[number, row["codigo"]] += mv.decimal(row.get("qtd_saida"))
             incoming_totals[number, row["codigo"]] += mv.decimal(row.get("qtd_entrada"))
     ops_with_issues = {number for (number, code), amount in outgoing_totals.items()
@@ -280,8 +303,27 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
             missing = None
         if missing is not None and missing > 0:
             alerts.append(MISSING)
-        if in_prod is not None and in_prod > EPSILON and number in ops_with_issues:
+        if (in_prod is not None and in_prod > EPSILON
+                and pending is not None and pending > EPSILON
+                and any(r["separacao"] for r in rows)
+                and number in ops_with_issues):
             alerts.append(PROD_PENDING)
+        # Endereços alternativos são sugestões de localização, não reservas:
+        # prioriza saldos que cobrem a falta no G9-PROD, começando pelo mais
+        # próximo da quantidade faltante. Nunca mistura lotes distintos.
+        shortage_g9 = positive(pending - max(prod, ZERO)) if pending is not None else ZERO
+        alternatives = []
+        if confirmed and shortage_g9 > EPSILON:
+            for (candidate_code, lot, wh, address), quantity in address_pool.items():
+                if (candidate_code == code and lot in confirmed_lots
+                        and lot and address != "G9-PROD" and quantity > EPSILON):
+                    alternatives.append({"armazem": wh, "endereco": address,
+                                         "lote": lot, "saldo": quantity})
+            alternatives.sort(key=lambda candidate: (
+                candidate["saldo"] < shortage_g9,
+                abs(candidate["saldo"] - shortage_g9),
+                -candidate["saldo"], candidate["armazem"], candidate["endereco"]
+            ))
         first_date = min((r["conferencia"][:10] for r in confirmed), default=as_of)
         incomplete = bool(confirmed) and (not sources_same_day or not _covered(period["intervalos"], first_date, as_of))
         item = {"item_id": item_id, "op": number, "codigo": code, "descricao": rows[0]["descricao"],
@@ -293,6 +335,11 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
                 "baixada": net if has_history else None, "pendente": pending,
                 "saldo": sum((pool[code, lot] for lot in confirmed_lots if lot), ZERO),
                 "saldo_g9_prod": sum((prod_pool[code, lot] for lot in confirmed_lots if lot), ZERO),
+                "outros_enderecos": " | ".join(
+                    f"{entry['armazem']}/{entry['endereco']} · lote {entry['lote']}: {entry['saldo']}"
+                    for entry in alternatives
+                ),
+                "enderecos_alternativos": alternatives,
                 "cobertura_saldo": available, "sem_saldo": missing, "em_g9_prod": in_prod,
                 "lotes": ", ".join(sorted({r["lote"] or "(não informado)" for r in rows})),
                 "alertas": alerts, "historico_incompleto": incomplete, "saldo_compartilhado": False,
@@ -354,6 +401,11 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
                     "produtos": len(group), "itens": len(rows),
                     "separados": sum(bool(r["separacao"]) for r in rows),
                     "conferidos": sum(bool(r["conferencia"]) for r in rows),
+                    "baixados": sum(
+                        r["itens_conferidos"] for r in group
+                        if r["conferida"] > EPSILON and r["baixada"] is not None
+                        and r["pendente"] is not None and r["pendente"] <= EPSILON
+                    ),
                     "divergencias": sum(r["divergente"] for r in group),
                     "incompletos": sum(r["historico_incompleto"] for r in group)})
     return {"items": items_frame, "ops": pd.DataFrame(ops), "lots": pd.DataFrame(lot_rows),
