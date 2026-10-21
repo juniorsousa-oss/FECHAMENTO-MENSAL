@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
+from threading import local
 
 import requests
 
@@ -12,7 +13,16 @@ import kardex_history as history
 from movements import pack_import, unpack_import
 
 PREFIX = "fm_movimentacoes_import_v1_"
-HTTP = requests.Session()  # reaproveita conexões nas consultas do registro
+_HTTP_LOCAL = local()
+
+
+def _http() -> requests.Session:
+    """Reutiliza TCP por worker sem compartilhar requests.Session entre threads."""
+    session = getattr(_HTTP_LOCAL, "session", None)
+    if session is None:
+        session = requests.Session()
+        _HTTP_LOCAL.session = session
+    return session
 
 
 def _key(digest: str) -> str:
@@ -24,7 +34,7 @@ def _key(digest: str) -> str:
 def list_imports() -> list[dict]:
     result, offset = [], 0
     while True:
-        response = HTTP.get(
+        response = _http().get(
             f"{db.supabase_url()}/rest/v1/fm_configuracoes", headers=db._headers(),
             params={"select": "chave,meta:valor->meta,atualizado_em", "chave": f"like.{PREFIX}*",
                     "order": "atualizado_em.asc,chave.asc", "limit": "1000", "offset": str(offset)}, timeout=30,
@@ -37,11 +47,11 @@ def list_imports() -> list[dict]:
         offset += 1000
 
 
-@lru_cache(maxsize=48)
+@lru_cache(maxsize=12)
 def load_import(key: str) -> dict:
     if not key.startswith(PREFIX) or _key(key[len(PREFIX):]) != key:
         raise ValueError("Chave de histórico inválida.")
-    response = HTTP.get(
+    response = _http().get(
         f"{db.supabase_url()}/rest/v1/fm_configuracoes", headers=db._headers(),
         params={"select": "valor,atualizado_em", "chave": f"eq.{key}", "limit": "1"}, timeout=90,
     )
