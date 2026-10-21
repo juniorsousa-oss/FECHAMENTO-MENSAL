@@ -11,7 +11,7 @@ import re
 
 import pandas as pd
 
-VERSION = "2026-10-21.5"
+VERSION = "2026-10-21.6"
 EPS = Decimal("0.000001")
 ZERO = Decimal(0)
 
@@ -222,10 +222,12 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
         products.at[idx, "status_op"] = group["status"]
         products.at[idx, "op_possui_baixa"] = group["possui_consumo"]
 
-        # Material Tipo II sem separação é consumo operacional e não deve
-        # criar falso alerta; nos demais, baixa além da necessidade prevalece.
-        if tipo == "II" and separated <= EPS:
-            status, alert = MATERIAL_CONSUMO, False
+        # A conferência começa a gerar alertas somente após existir
+        # separação registrada para o produto, independentemente da OP,
+        # de uma baixa excedente ou do estágio de faturamento.
+        if separated <= EPS:
+            status = MATERIAL_CONSUMO if tipo == "II" else AGUARDANDO_SEPARACAO
+            alert = False
         elif net - decimal(item.get("necessaria")) > EPS:
             status, alert = BAIXA_ACIMA_NECESSIDADE, True
         elif not group["exige_baixa"]:
