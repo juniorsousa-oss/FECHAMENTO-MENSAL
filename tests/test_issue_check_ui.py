@@ -32,7 +32,7 @@ class IssueCheckUITests(unittest.TestCase):
     def test_op_filters_material_evidence_and_export(self):
         app = AppTest.from_string(PROGRAM, default_timeout=20).run()
         self.assertFalse(app.exception)
-        self.assertEqual(len(app.expander), 1)  # critérios; OPs são abertas sob demanda
+        self.assertEqual(len(app.expander), 0)  # fontes e OPs são abertas sob demanda
         self.assertTrue(any("ORDEM COM ALERTA" in b.label for b in app.button))
         self.assertTrue(any("ORDEM OK" in b.label for b in app.button))
         self.assertEqual(len(app.dataframe), 0)  # nenhum detalhe pesado antes do clique
