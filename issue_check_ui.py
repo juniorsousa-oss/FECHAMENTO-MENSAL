@@ -502,6 +502,14 @@ def _ops(model, view, token):
             if is_open:
                 with st.container(key="fm_issue_op_detail_" + number):
                     st.caption(f"P.A.: {context['pa'] or '—'} · {context['descricao_pa'] or 'Descrição não informada'}")
+                    source_lines = int(context.get("linhas_mes", total))
+                    if source_lines != total:
+                        st.caption(
+                            f"{source_lines} linhas no Relatório Geral do MES "
+                            f"consolidadas em {total} produtos distintos nesta OP. "
+                            "A tabela mostra uma linha por código; lotes e registros "
+                            "originais permanecem disponíveis nas evidências."
+                        )
                     if not bool(group.iloc[0]["op_possui_baixa"]):
                         st.caption("Não há consumo líquido identificado no histórico desta OP até a data de referência.")
                     _table(group, ["codigo", "descricao", "lotes", "necessaria", "separada",
@@ -669,9 +677,9 @@ def render_results(model):
     )
     _cards([
         ("OPs encontradas", count(view["op"].nunique()), "Ordens no recorte"),
-        ("Itens", count(view["itens"].sum()), "Registros de material MES"),
-        ("Separados", count(view["itens_separados"].sum()), "Com separação registrada"),
-        ("Conferidos", count(view["itens_conferidos"].sum()), "Com conferência registrada"),
+        ("Produtos", count(len(view)), "Códigos distintos por OP"),
+        ("Separados", count(view["itens_separados"].gt(0).sum()), "Produtos com separação"),
+        ("Conferidos", count(view["itens_conferidos"].gt(0).sum()), "Produtos com conferência"),
     ])
     alerts = view.loc[view["divergente"]]
     st.caption(
