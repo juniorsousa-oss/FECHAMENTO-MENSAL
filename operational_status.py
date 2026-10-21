@@ -142,11 +142,25 @@ def apply(model: dict, master_records: dict[str, dict] | None = None) -> dict:
     amounts = _stock_by_lot(model)
     lots = _item_lots(model)
     by_op = products.groupby("op", sort=False)
+    # O KARDEX pode trazer consumo da OP em materiais que não constam na
+    # fotografia atual do MES. Esse consumo também avança a OP para REPORTADO.
+    by_op_code = defaultdict(lambda: [ZERO, ZERO])
+    for movement in model.get("movements") or ():
+        if movement.get("natureza") not in ("BAIXA / DEVOLUÇÃO", "CONSUMO DE OP"):
+            continue
+        key = (_text(movement.get("op")), _text(movement.get("codigo")))
+        by_op_code[key][0] += decimal(movement.get("qtd_saida"))
+        by_op_code[key][1] += decimal(movement.get("qtd_entrada"))
+    op_consumed = {
+        op for (op, _), (outgoing, incoming) in by_op_code.items()
+        if outgoing - incoming > EPS
+    }
     op_info = {}
     for row in ops.to_dict("records"):
         op = row["op"]
         group = by_op.get_group(op)
-        has_issue = any(has_consumption(item) for item in group.to_dict("records"))
+        has_issue = (op in op_consumed or
+                     any(has_consumption(item) for item in group.to_dict("records")))
         stage = op_status(
             row,
             has_issue=has_issue,
@@ -163,8 +177,6 @@ def apply(model: dict, master_records: dict[str, dict] | None = None) -> dict:
         net = max(decimal(item.get("baixada")), ZERO)
         expected = max(separated, confirmed)
         outstanding = max(expected - net, ZERO)
-        old_stock = _text(item.get("outros_enderecos"))
-        del old_stock
         alternatives = []
         for (code, lot, wh, addr), qty in amounts.items():
             if (code == item.get("codigo") and lot in lots.get(item["item_id"], set())
@@ -184,6 +196,7 @@ def apply(model: dict, master_records: dict[str, dict] | None = None) -> dict:
         products.at[idx, "qtd_necessaria_baixa"] = expected
         products.at[idx, "qtd_faltante_operacional"] = outstanding
         products.at[idx, "status_op"] = group["status"]
+        products.at[idx, "op_possui_baixa"] = group["possui_consumo"]
 
         if not group["exige_baixa"]:
             if confirmed > EPS:
