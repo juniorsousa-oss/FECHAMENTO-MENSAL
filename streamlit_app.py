@@ -407,13 +407,15 @@ def load_cb_page_snapshot(competencia: date) -> dict[str, list[dict]]:
         "importacoes": lambda: db.list_cb_imports(competencia),
         "exclusoes": lambda: db.list_cb_exclusions(competencia),
     }
-    try:
-        with ThreadPoolExecutor(max_workers=4, thread_name_prefix="fm-cb") as pool:
-            futures = {key: pool.submit(reader) for key, reader in sources.items()}
-            return {key: futures[key].result() for key in sources}
-    except Exception:
-        # Contingência para ambientes que não permitem leitura de secrets em threads.
-        return {key: reader() for key, reader in sources.items()}
+    # Resolve credenciais uma única vez na thread Streamlit. Nenhum worker
+    # acessa st.secrets, evitando autenticação incorreta em segundo plano.
+    url, key = db.supabase_url(), db.supabase_key()
+    with ThreadPoolExecutor(max_workers=4, thread_name_prefix="fm-cb") as pool:
+        futures = {
+            name: pool.submit(db.read_with_connection, reader, url, key)
+            for name, reader in sources.items()
+        }
+        return {name: futures[name].result() for name in sources}
 
 
 
