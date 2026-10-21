@@ -400,9 +400,15 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
         group = item_ops[number]
         ops.append({"op": number, "pa": ", ".join(sorted({r["pa"] for r in rows if r["pa"]})),
                     "descricao_pa": " / ".join(dict.fromkeys(r["descricao_pa"] for r in rows if r["descricao_pa"])),
-                    "produtos": len(group), "itens": len(rows),
-                    "separados": sum(bool(r["separacao"]) for r in rows),
-                    "conferidos": sum(bool(r["conferencia"]) for r in rows),
+                    # Contadores do cabeçalho seguem a mesma unidade da
+                    # tabela: código de produto por OP, não linhas duplicadas
+                    # de lote/fonte no Relatório Geral.
+                    "produtos": len(group), "itens": len(group),
+                    "separados": sum(bool(item["itens_separados"]) for item in group),
+                    "conferidos": sum(bool(item["itens_conferidos"]) for item in group),
+                    "linhas_mes": len(rows),
+                    "linhas_separadas_mes": sum(bool(r["separacao"]) for r in rows),
+                    "linhas_conferidas_mes": sum(bool(r["conferencia"]) for r in rows),
                     "baixados": sum(
                         r["itens_conferidos"] for r in group
                         if r["conferida"] > EPSILON and r["baixada"] is not None
