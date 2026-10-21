@@ -18,11 +18,11 @@ def _code(value) -> str:
     if value is None or bool(pd.isna(value)):
         return ""
     raw = str(value).strip()
-    if re.fullmatch(r"\\d+\\.0+", raw):
+    if re.fullmatch(r"\d+\.0+", raw):
         raw = raw.split(".")[0]
     if isinstance(value, (float, int)) and not isinstance(value, bool):
         raw = str(int(value)) if float(value).is_integer() else raw
-    if not re.fullmatch(r"\\d{1,8}", raw):
+    if not re.fullmatch(r"\d{1,8}", raw):
         return ""
     return raw.zfill(8)
 
