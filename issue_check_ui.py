@@ -230,7 +230,7 @@ def _reload():
 
 def _clear_filters():
     st.session_state.fm_issue_search = ""
-    st.session_state.fm_issue_filter = "Todas"
+    st.session_state.fm_issue_filter = "Todos"
     st.session_state.fm_issue_page = 1
 
 
