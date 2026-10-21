@@ -169,9 +169,18 @@ class OpPriorityTests(unittest.TestCase):
         self.assertEqual(result["items"].iloc[0].status, op.SEPARADO_SEM_CONFERENCIA)
         self.assertTrue(result["items"].iloc[0].divergente)
 
-    def test_overconsumption_alert_has_priority_even_for_unseparated_type_ii(self):
+    def test_type_ii_without_separation_remains_consumption_material_even_if_not_required(self):
         initial = check.reconcile(
             check.parse_general(pd.DataFrame([raw_item(separacao=False, conferencia=False, qty=0)])),
+            [], [movement(quantity=2)], history_metas=META, as_of="2026-10-21",
+        )
+        result = op.apply(initial, {OP: {"condicao": "FINALIZADO"}}, {CODE: "II"})
+        self.assertEqual(result["items"].iloc[0].status, op.MATERIAL_CONSUMO)
+        self.assertFalse(result["items"].iloc[0].divergente)
+
+    def test_type_ii_with_separation_is_flagged_if_consumption_exceeds_required(self):
+        initial = check.reconcile(
+            check.parse_general(pd.DataFrame([raw_item(qty=1)])),
             [], [movement(quantity=2)], history_metas=META, as_of="2026-10-21",
         )
         result = op.apply(initial, {OP: {"condicao": "FINALIZADO"}}, {CODE: "II"})
