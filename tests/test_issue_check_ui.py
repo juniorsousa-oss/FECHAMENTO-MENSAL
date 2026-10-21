@@ -36,7 +36,7 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertTrue(any("ORDEM COM ALERTA" in exp.label for exp in app.expander))
         self.assertTrue(any("ORDEM OK" in exp.label for exp in app.expander))
         self.assertFalse(any(r.label == "Consulta" for r in app.radio))
-        self.assertFalse(any(t.label == "Histórico incompleto" for t in app.dataframe))
+        self.assertFalse(any("Histórico incompleto" in t.value.columns for t in app.dataframe))
 
         detail = next(x for x in app.selectbox if x.label == "DETALHAR MATERIAL E EVIDÊNCIAS")
         detail.set_value("26000101001:00001000").run()
