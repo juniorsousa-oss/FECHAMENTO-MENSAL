@@ -372,7 +372,7 @@ def build_cb_protheus_movement_report(
     return output.getvalue()
 
 
-@st.cache_data(show_spinner=False, ttl=30)
+@st.cache_data(show_spinner=False, ttl=60, max_entries=2)
 def load_api_sources() -> list[dict]:
     sources = db.list_data_sources()
     return [
@@ -581,6 +581,13 @@ def load_central_cadastros(
     return parsed, meta
 
 
+@st.cache_resource(show_spinner=False, ttl=360, max_entries=6)
+def _cached_preview_summaries(competencia: date, version_token: str, _rows: list[dict]) -> list[dict]:
+    # A chave inclui a versão da fonte; o payload extenso não é re-hasheado a cada filtro.
+    del version_token
+    return build_preview_summaries(competencia, _rows)
+
+
 def build_preview_summaries(competencia: date, rows: list[dict]) -> list[dict]:
     if not rows:
         return []
@@ -756,6 +763,10 @@ def build_manual_closing_context(
 
 
 def central_analitico_context(force: bool = False) -> dict:
+    if force:
+        central_data.source_state_for.clear()
+        central_data._consumer_status_rows.clear()
+        st.session_state.pop("_fm_analitico_synced", None)
     try:
         meta = central_data.source_state()
     except Exception as exc:
@@ -771,22 +782,26 @@ def central_analitico_context(force: bool = False) -> dict:
     try:
         parsed, balance, download_meta = load_central_analitico(token)
         status = "ATUALIZADO" if not parsed.get("errors") else "ATENÇÃO"
-        sync = central_data.sync_state()
-        if (
-            str(sync.get("version_token") or "") != token
-            or str(sync.get("status") or "").upper() != status
-        ):
-            central_data.commit_sync(
-                token,
-                meta.get("last_update_at"),
-                int(parsed.get("valid_rows") or 0),
-                status=status,
-                error_message=(
-                    None
-                    if status == "ATUALIZADO"
-                    else f"{int(parsed.get('invalid_rows') or 0)} inconsistência(s)"
-                ),
-            )
+        # A sincronização já confirmada nesta sessão não precisa consultar
+        # novamente o endpoint a cada alteração de filtro.
+        signature = (token, status)
+        if st.session_state.get("_fm_analitico_synced") != signature:
+            sync = central_data.sync_state()
+            if (
+                str(sync.get("version_token") or "") != token
+                or str(sync.get("status") or "").upper() != status
+            ):
+                central_data.commit_sync(
+                    token,
+                    meta.get("last_update_at"),
+                    int(parsed.get("valid_rows") or 0),
+                    status=status,
+                    error_message=(
+                        None if status == "ATUALIZADO"
+                        else f"{int(parsed.get('invalid_rows') or 0)} inconsistência(s)"
+                    ),
+                )
+            st.session_state["_fm_analitico_synced"] = signature
         return {
             "available": True,
             "meta": {**meta, **download_meta},
@@ -818,6 +833,10 @@ def central_analitico_context(force: bool = False) -> dict:
 def central_cadastros_context(
     force: bool = False,
 ) -> dict:
+    if force:
+        central_data.source_state_for.clear()
+        central_data._consumer_status_rows.clear()
+        st.session_state.pop("_fm_cadastros_synced", None)
     try:
         meta = central_data.source_state_for("cadastros")
     except Exception as exc:
@@ -844,29 +863,32 @@ def central_cadastros_context(
         parsed, download_meta = load_central_cadastros(
             token
         )
-        sync = central_data.sync_state_for("cadastros")
-        try:
-            _catalog_empty = not bool(db.list_cb_catalog())
-        except Exception:
-            _catalog_empty = False
-
-        needs_sync = (
-            force
-            or _catalog_empty
-            or str(sync.get("version_token") or "") != token
-            or str(sync.get("status") or "").upper()
-            != "ATUALIZADO"
-        )
-
-        if needs_sync:
-            db.sync_cb_catalog(parsed["candidates"])
-            central_data.commit_source_sync(
-                "cadastros",
-                token,
-                meta.get("last_update_at"),
-                int(parsed.get("total_candidates") or 0),
-                status="ATUALIZADO",
+        # Checar a existência do catálogo apenas na primeira validação da versão,
+        # em vez de baixar a tabela inteira a cada rerun de filtros e widgets.
+        confirmed = st.session_state.get("_fm_cadastros_synced") == token
+        needs_sync = False
+        if force or not confirmed:
+            sync = central_data.sync_state_for("cadastros")
+            try:
+                _catalog_empty = not bool(db.list_cb_catalog())
+            except Exception:
+                _catalog_empty = False
+            needs_sync = (
+                force
+                or _catalog_empty
+                or str(sync.get("version_token") or "") != token
+                or str(sync.get("status") or "").upper() != "ATUALIZADO"
             )
+            if needs_sync:
+                db.sync_cb_catalog(parsed["candidates"])
+                central_data.commit_source_sync(
+                    "cadastros",
+                    token,
+                    meta.get("last_update_at"),
+                    int(parsed.get("total_candidates") or 0),
+                    status="ATUALIZADO",
+                )
+            st.session_state["_fm_cadastros_synced"] = token
 
         return {
             "available": True,
@@ -2219,8 +2241,9 @@ if _needs_inventory_core:
             }
         )
             summaries.extend(
-                build_preview_summaries(
+                _cached_preview_summaries(
                     live_competencia,
+                    str(central_context.get("token") or ""),
                     central_parsed["rows"],
                 )
             )
