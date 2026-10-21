@@ -5060,6 +5060,7 @@ elif page == "Conferência de baixas":
 
 
 elif page == "Análise de movimentações":
+    # KARDEX: versões persistentes por mês/armazém, com substituição e consulta das bases vigentes.
     from movement_analysis_ui import render_movement_analysis
 
     render_movement_analysis()
