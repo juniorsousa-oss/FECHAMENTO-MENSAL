@@ -4,13 +4,16 @@ from __future__ import annotations
 import hashlib
 import html
 import math
-from datetime import date
+import sys
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
 
 import movement_store as store
 import movements as mv
+import kardex_history as history
 
 AREAS = ["Visão geral", "Grupos e TES", "Por OP", "Movimentações", "Classificação", "Fontes e relatórios"]
 AREA_LABELS = {"Visão geral": "Resumo", "Por OP": "Consulta por OP", "Movimentações": "Registros"}
@@ -63,12 +66,17 @@ def _imports():
 @st.cache_resource(show_spinner=False, ttl=300, max_entries=2)
 def _model(tokens: tuple, version: str):
     del version
-    return mv.build_model([store.load_import(key) for key, updated in tokens])
+    entries = [{"chave": key, "atualizado_em": updated, "meta": meta} for key, updated, meta in tokens]
+    return mv.build_model(store.load_history(entries))
 
 
 def _reload():
     _imports.clear()
     _model.clear()
+    issue_ui = sys.modules.get("issue_check_ui")
+    if issue_ui:
+        for name in ("_imports", "_history", "_audit"):
+            getattr(issue_ui, name).clear()
 
 
 def _selected(key):
@@ -267,43 +275,107 @@ def _view_token(frame, extra=""):
     return digest.hexdigest()[:16]
 
 
-def _import_controls(imports):
-    with st.expander("IMPORTAR RELATÓRIOS E ACESSAR O HISTÓRICO", expanded=not imports):
-        st.caption("Importe os arquivos originais KARDEX (.xlsx/.xltx) ou a base histórica (.zip). O arquivo já importado é reconhecido pelo conteúdo.")
-        with st.form("fm_mov_import_form", clear_on_submit=True):
-            files = st.file_uploader("Relatórios de movimentação", type=["xlsx", "xltx", "zip"], accept_multiple_files=True, key="fm_mov_uploads")
-            submitted = st.form_submit_button("IMPORTAR RELATÓRIOS", type="primary")
-        if submitted:
-            if not files:
-                st.info("Selecione ao menos um relatório.")
-            else:
-                try:
-                    with st.spinner("Conferindo os relatórios e salvando o histórico..."):
-                        # Validate the complete selection before writing any of its files.
-                        parsed = [mv.parse_report(file.getvalue(), file.name) for file in files]
-                        known = list(imports); saved = unchanged = 0
-                        for item in parsed:
-                            result = store.save_import(item, known)
-                            saved += result["saved"]; unchanged += not result["saved"]
-                            known.append({"chave": result["key"]})
-                    _reload()
-                    st.session_state.fm_mov_flash = f"{saved} arquivo(s) salvo(s); {unchanged} já estavam no histórico."
-                    st.rerun()
-                except Exception as exc:
-                    _reload()  # a previous file may have committed before a later transfer failed
-                    st.error(f"A importação não foi concluída: {exc}. Reenviar arquivos já salvos não duplica movimentos.")
-        if imports:
-            history = pd.DataFrame([{"Arquivo": (i.get("meta") or {}).get("arquivo_nome"),
-                                     "De": (i.get("meta") or {}).get("periodo_inicio"),
-                                     "Até": (i.get("meta") or {}).get("periodo_fim"),
-                                     "Movimentos no arquivo": (i.get("meta") or {}).get("lancamentos"),
-                                     "Importado em": str(i.get("atualizado_em") or "")[:19].replace("T", " ")}
-                                    for i in imports])
-            st.dataframe(history, hide_index=True, width="stretch")
+@st.cache_data(show_spinner=False, max_entries=6)
+def _parse_import(raw: bytes, name: str):
+    return mv.parse_report(raw, name)
 
 
-def _context(frame, imports):
-    months = sorted(frame["competencia"].unique())
+def _import_controls(imports, model=None):
+    st.markdown("**01 · IMPORTAR OU ATUALIZAR KARDEX**")
+    st.caption("Envie o relatório completo desde o primeiro dia do mês, até a data da extração. A nova versão substitui todo o mês somente nos armazéns presentes no arquivo; os demais meses e armazéns são preservados.")
+    epoch = st.session_state.get("fm_mov_upload_epoch", 0)
+    files = st.file_uploader("Relatórios KARDEX", type=["xlsx", "xltx", "zip"], accept_multiple_files=True,
+                             key=f"fm_mov_uploads_{epoch}")
+    if files:
+        try:
+            parsed, preview, seen = [], [], set()
+            for file in files:
+                item = _parse_import(file.getvalue(), file.name)
+                meta = item["meta"]
+                if meta["sha256"] in seen:
+                    raise ValueError("O mesmo arquivo foi selecionado mais de uma vez. Mantenha apenas uma cópia.")
+                seen.add(meta["sha256"])
+                start = date.fromisoformat(meta["periodo_inicio"])
+                if not meta.get("periodo_informado") and not meta.get("coberturas_arquivo"):
+                    start = start.replace(day=1)
+                end = date.fromisoformat(meta["periodo_fim"])
+                with st.expander("CONFERIR PERÍODO · " + file.name):
+                    st.caption("Confirme o período extraído no sistema. Os armazéns são identificados nos próprios registros.")
+                    if meta.get("coberturas_arquivo"):
+                        st.caption("Base histórica: as coberturas por mês e armazém serão restauradas conforme o manifesto.")
+                    else:
+                        a, b = st.columns(2)
+                        with a:
+                            start = st.date_input("Início do relatório completo", value=start, format="DD/MM/YYYY", key="fm_mov_from_" + meta["sha256"])
+                        with b:
+                            end = st.date_input("Dados até", value=end, format="DD/MM/YYYY", key="fm_mov_until_" + meta["sha256"])
+                item = history.prepare_import(item, start.isoformat(), end.isoformat())
+                parsed.append(item)
+                scopes = {(s["competencia"], s["armazem"]) for s in item["meta"]["escopos"]}
+                replaced = 0
+                if model is not None and not model["frame"].empty:
+                    replaced = sum((r.data[:7], r.armazem) in scopes for r in model["frame"].itertuples())
+                preview.append({"Arquivo": file.name, "Armazéns": ", ".join(item["meta"]["armazens"]),
+                                "Meses substituídos": ", ".join(m[5:] + "/" + m[:4] for m in item["meta"]["competencias"]),
+                                "Dados até": end.strftime("%d/%m/%Y"), "Novos registros": len(item["rows"]),
+                                "Registros atuais no recorte": replaced})
+            history.validate_batch(parsed)
+        except Exception as exc:
+            st.error(f"Confira os arquivos antes de importar: {exc}")
+            return
+        st.markdown("**PRÉVIA DA SUBSTITUIÇÃO**")
+        st.dataframe(pd.DataFrame(preview), hide_index=True, width="stretch")
+        st.info("Cada mês e armazém da prévia passará a usar exclusivamente o novo KARDEX, inclusive quando um lançamento antigo não constar mais no arquivo. As versões anteriores ficam registradas no histórico.")
+        if st.button("IMPORTAR E SUBSTITUIR PERÍODOS", type="primary", key="fm_mov_commit_import"):
+            try:
+                with st.spinner("Gravando e conferindo os arquivos KARDEX..."):
+                    known = store.list_imports()
+                    saved = unchanged = 0
+                    for item in parsed:
+                        result = store.save_import(item, known)
+                        saved += result["saved"]; unchanged += not result["saved"]
+                        known = [k for k in known if k["chave"] != result["key"]]
+                        known.append({"chave": result["key"], "meta": result["meta"]})
+                _reload()
+                st.session_state.fm_mov_upload_epoch = epoch + 1
+                st.session_state.fm_mov_flash = f"{saved} arquivo(s) gravado(s) e ativado(s); {unchanged} já eram a versão vigente."
+                st.rerun()
+            except Exception as exc:
+                _reload()
+                st.error(f"Não foi possível concluir a importação: {exc}. Os arquivos que concluíram a gravação permanecem registrados. Reenvie a seleção para concluir os demais sem duplicação.")
+
+
+def _import_registry(model):
+    st.markdown("**02 · BASES VIGENTES POR MÊS E ARMAZÉM**")
+    grouped = {}
+    for meta in model.get("coverage_metas", []):
+        grouped.setdefault((meta["competencia"], meta["armazem"]), []).append(meta)
+    rows = []
+    for (month, warehouse), sources in sorted(grouped.items(), key=lambda pair: (-int(pair[0][0].replace("-", "")), pair[0][1])):
+        frame = model["frame"]
+        amount = int(((frame["competencia"] == month) & (frame["armazem"] == warehouse)).sum()) if not frame.empty else 0
+        periods = sorted({m["periodo_inicio"][8:] + "/" + m["periodo_inicio"][5:7] + " a " +
+                          m["periodo_fim"][8:] + "/" + m["periodo_fim"][5:7] for m in sources})
+        rows.append({"Competência": month[5:] + "/" + month[:4], "Armazém": warehouse,
+                     "Registros vigentes": amount, "Cobertura declarada": " · ".join(periods),
+                     "Arquivos em uso": " · ".join(dict.fromkeys(m["arquivo_nome"] for m in sources))})
+    if rows:
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    with st.expander("03 · HISTÓRICO DE IMPORTAÇÕES E VERSÕES SUBSTITUÍDAS"):
+        recorded = []
+        for item in reversed(model.get("import_registry", [])):
+            updated = item["importado_em"]
+            if updated:
+                updated = datetime.fromisoformat(updated.replace("Z", "+00:00")).astimezone(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M")
+            recorded.append({"Arquivo": item["arquivo"], "Situação": item["status"], "Armazéns": ", ".join(item["armazens"]),
+                             "Competências": ", ".join(m[5:] + "/" + m[:4] for m in item["competencias"]),
+                             "Registros no arquivo": item["lancamentos"], "Registros em uso": item["lancamentos_ativos"], "Importado em": updated})
+        st.dataframe(pd.DataFrame(recorded), hide_index=True, width="stretch")
+        st.caption("VIGENTE: arquivo em uso. PARCIALMENTE SUBSTITUÍDO: continua em uso em outros meses ou armazéns. SUBSTITUÍDO: registros fora da análise atual. Reimportar uma versão anterior a torna vigente novamente nos meses e armazéns da prévia.")
+
+
+def _context(frame, imports, coverage=None):
+    months = sorted(set(frame["competencia"].unique()) | {m["competencia"] for m in coverage or []})
     requested = str(st.query_params.get("mes") or "")
     if "fm_mov_month" not in st.session_state:
         st.session_state.fm_mov_month = requested if requested in months else months[-1]
@@ -323,7 +395,7 @@ def _context(frame, imports):
         with second:
             mode = st.selectbox("Período da análise", list(modes), key="fm_mov_period")
         with third:
-            warehouses = sorted(frame["armazem"].unique())
+            warehouses = sorted(set(frame["armazem"].unique()) | {m["armazem"] for m in coverage or []})
             if len(warehouses) > 1:
                 chosen = _multiselect("Armazéns", warehouses, "fm_mov_warehouses")
             else:
@@ -342,6 +414,15 @@ def _context(frame, imports):
     if chosen:
         view = view.loc[view["armazem"].isin(chosen)]
     coverage_end = max((str((i.get("meta") or {}).get("periodo_fim") or "") for i in imports), default="")
+    if coverage is not None:
+        covered = [m for m in coverage if mode == "TODO O HISTÓRICO" or
+                   (m["competencia"] == month if mode == "MÊS SELECIONADO" else month[:4] + "-01" <= m["competencia"] <= month)]
+        selected = chosen or warehouses
+        ends = {warehouse: max((m["periodo_fim"] for m in covered if m["armazem"] == warehouse), default="") for warehouse in selected}
+        coverage_end = min(ends.values(), default="")
+        if len(ends) > 1 or any(not end for end in ends.values()):
+            st.caption("COBERTURA KARDEX · " + " · ".join(warehouse + ": " +
+                       ("até " + date.fromisoformat(end).strftime("%d/%m/%Y") if end else "sem arquivo no período") for warehouse, end in ends.items()))
     if coverage_end and coverage_end[:7] == month:
         if selected_date.month == 12:
             next_month = date(selected_date.year+1, 1, 1)
@@ -528,7 +609,7 @@ def _exports(frame, model, token, *, include_history=True):
         if include_history:
             with columns[1]:
                 st.markdown("**BASE HISTÓRICA COMPLETA**")
-                st.caption("Todos os arquivos e períodos importados, para backup ou reimportação.")
+                st.caption("Base consolidada vigente, com os períodos e armazéns em uso, para backup ou reimportação.")
                 if st.button("PREPARAR BASE HISTÓRICA COMPLETA", key="fm_mov_prepare_history"):
                     with st.spinner("Preparando a base histórica completa..."):
                         st.session_state.fm_mov_history = (model["token"], mv.export_history(model))
@@ -540,7 +621,7 @@ def _exports(frame, model, token, *, include_history=True):
 
 
 def render_results(model, imports):
-    scope = _context(model["frame"], imports)
+    scope = _context(model["frame"], imports, model.get("coverage_metas"))
     st.markdown('''<style>
     .st-key-fm_mov_navigation{margin:.1rem 0 .6rem}
     .st-key-fm_mov_navigation button{min-height:44px!important;border-radius:10px!important;font-weight:700!important}
@@ -567,7 +648,8 @@ def render_results(model, imports):
     }
     band(*headers[area])
     if area == "Fontes e relatórios":
-        _import_controls(imports)
+        _import_controls(imports, model)
+        _import_registry(model)
         _exports(scope, model, _view_token(scope))
         if model["duplicates"]:
             st.caption(f"Importações sobrepostas: {count(model['duplicates'])} repetições reconhecidas, sem soma em duplicidade.")
@@ -614,8 +696,8 @@ def render_movement_analysis():
         return
     try:
         with st.spinner("Carregando o histórico de movimentações..."):
-            tokens = tuple((i["chave"], i.get("atualizado_em", "")) for i in imports)
-            model = _model(tokens, mv.rules()["versao"])
+            tokens = tuple((i["chave"], i.get("atualizado_em", ""), i.get("meta") or {}) for i in imports)
+            model = _model(tokens, mv.rules()["versao"] + history.VERSION)
     except Exception as exc:
         st.error(f"Não foi possível conferir os registros do histórico: {exc}")
         st.button("RECARREGAR HISTÓRICO", key="fm_mov_model_retry", on_click=_reload)
@@ -623,5 +705,7 @@ def render_movement_analysis():
     frame = model["frame"]
     if frame.empty:
         st.info("O histórico não possui movimentações.")
+        _import_controls(imports, model)
+        _import_registry(model)
         return
     render_results(model, imports)

@@ -29,7 +29,9 @@ rows = [
            qtd_entrada="4", valor_entrada="40"),
     record(tes="550", ae_original="OP00007654321", documento="OUTRA OP", armazem="S1", valor_saida="5"),
 ]
-model = mv.build_model([imported(rows)])
+pack = imported(rows)
+pack["meta"].update(periodo_inicio="2026-09-01", periodo_fim="2026-10-19")
+model = mv.build_model([pack])
 imports = [{"chave": "synthetic", "meta": {"arquivo_nome": "teste.xlsx", "periodo_inicio": "2026-09-01",
             "periodo_fim": "2026-10-19", "lancamentos": 5}, "atualizado_em": "2026-10-21T10:00:00Z"}]
 action = st.session_state.pop("_test_action", None)
@@ -132,7 +134,7 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.assertEqual(len(app.dataframe[0].value), 1)
         self.area(app, "Fontes e relatórios")
         self.assertEqual(len(app.file_uploader), 1)
-        self.assertEqual(len(app.dataframe[0].value), 1)
+        self.assertTrue(any("Situação" in frame.value.columns for frame in app.dataframe))
         self.assertTrue(any("4 registros" in x.value for x in app.caption))
 
     def test_period_and_warehouse_scope_apply_to_every_consultation(self):

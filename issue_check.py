@@ -10,7 +10,7 @@ import pandas as pd
 
 import movements as mv
 
-VERSION = "2026-10-21.1"
+VERSION = "2026-10-21.2"
 EPSILON = Decimal("0.000001")
 ZERO = Decimal(0)
 MISSING = "CONFERIDO SEM SALDO E SEM BAIXA SUFICIENTE"
@@ -186,7 +186,16 @@ def positive(value: Decimal) -> Decimal:
     return value if value > EPSILON else ZERO
 
 
-def coverage(metas: list[dict]) -> dict:
+def coverage(metas: list[dict], warehouses=None) -> dict:
+    if warehouses and any(m.get("armazem") for m in metas):
+        per_warehouse = {warehouse: coverage([m for m in metas if not m.get("armazem") or m["armazem"] == warehouse])
+                         for warehouse in warehouses}
+        common = next(iter(per_warehouse.values()))["intervalos"]
+        for period in list(per_warehouse.values())[1:]:
+            common = [[max(a, c), min(b, d)] for a, b in common for c, d in period["intervalos"]
+                      if max(a, c) <= min(b, d)]
+        return {"inicio": common[0][0] if common else "", "fim": common[-1][1] if common else "",
+                "intervalos": common, "por_armazem": per_warehouse}
     intervals = sorted((str(m.get("periodo_inicio") or ""), str(m.get("periodo_fim") or ""))
                        for m in metas if m.get("periodo_inicio") and m.get("periodo_fim"))
     joined = []
@@ -212,8 +221,8 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
     warehouses = tuple(warehouses)
     if not warehouses:
         raise ValueError("Selecione ao menos um armazém para a conferência.")
-    period = coverage(history_metas)
-    has_history = bool(history_metas)
+    period = coverage(history_metas, warehouses)
+    has_history = any(not meta.get("armazem") or meta["armazem"] in warehouses for meta in history_metas)
     pool, prod_pool = defaultdict(Decimal), defaultdict(Decimal)
     stock_rows = [r for r in stock if r["armazem"] in warehouses]
     for row in stock_rows:

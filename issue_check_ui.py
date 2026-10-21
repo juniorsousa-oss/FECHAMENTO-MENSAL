@@ -116,9 +116,10 @@ def _imports():
 
 @st.cache_resource(max_entries=1, show_spinner=False)
 def _history(tokens: tuple):
-    packs = [movement_store.load_import(key) for key, updated in tokens]
-    rows, duplicates = mv.merge_imports(packs)
-    return rows, [p["meta"] for p in packs], duplicates
+    entries = [{"chave": key, "atualizado_em": updated, "meta": meta} for key, updated, meta in tokens]
+    packs = movement_store.load_history(entries)
+    snapshot = mv.history_snapshot(packs)
+    return snapshot["rows"], snapshot["coverage"], snapshot["duplicates"]
 
 
 def _source_day(meta: dict) -> str:
@@ -284,8 +285,10 @@ def _sources(model):
                      "Registros usados": len(model["general"] if key == "relatorio_geral" else model["stock"])})
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
     if model["history_meta"]:
-        st.dataframe(pd.DataFrame([{"Arquivo KARDEX": m["arquivo_nome"], "De": day(m["periodo_inicio"]), "Até": day(m["periodo_fim"]),
-                                    "Registros no arquivo": m["lancamentos"]} for m in model["history_meta"]]), hide_index=True, width="stretch")
+        st.dataframe(pd.DataFrame([{"Arquivo KARDEX": m["arquivo_nome"], "Armazém": m.get("armazem", "—"),
+                                    "Competência": m.get("competencia", "—"), "De": day(m["periodo_inicio"]), "Até": day(m["periodo_fim"]),
+                                    "Registros nesta cobertura": m["lancamentos"]} for m in model["history_meta"]]), hide_index=True, width="stretch")
+        st.caption("A conferência utiliza somente as versões vigentes do KARDEX. A cobertura precisa atender a todos os armazéns selecionados.")
     st.markdown("**Critérios da conferência**")
     st.write("• Conferência identificada pela data de conferência do MES; a quantidade comparada é a atendida nessas linhas. Conferências parciais mantêm a necessária e a pendência visíveis.")
     st.write("• Estoque consultado por produto e lote nos armazéns selecionados. O saldo é a coluna Quantidade; o empenho aparece separado nas evidências.")
@@ -306,8 +309,10 @@ def render_results(model):
     frame = model["items"]
     period = model["coverage"]
     if not model["history_available"]:
-        st.warning("O KARDEX ainda não foi importado. A consulta de materiais e saldos está disponível, mas a conferência de baixas aguarda histórico.")
-    elif not period["fim"] or period["fim"] < model["as_of"]:
+        st.warning("Nenhum KARDEX foi localizado para os armazéns selecionados. A consulta de materiais e saldos está disponível, mas a conferência de baixas aguarda histórico.")
+    elif not period["fim"]:
+        st.warning("Os armazéns selecionados não possuem um período comum de cobertura do KARDEX. Confira as fontes antes de concluir os alertas.")
+    elif period["fim"] < model["as_of"]:
         st.warning(f"KARDEX disponível até {day(period['fim'])}; bases consultadas em {day(model['as_of'])}. Os alertas com histórico incompleto precisam de atualização do KARDEX antes da conclusão.")
     days = {_source_day(m) for m in model["source_meta"].values()}
     if len(days) > 1:
@@ -361,7 +366,7 @@ def render_issue_check():
             st.info("Selecione ao menos um armazém para conferir saldos e baixas.")
             return
         imports = _imports()
-        history_tokens = tuple((i["chave"], str(i.get("atualizado_em") or "")) for i in imports)
+        history_tokens = tuple((i["chave"], str(i.get("atualizado_em") or ""), i.get("meta") or {}) for i in imports)
         with st.spinner("Conferindo as OPs, os saldos por lote e as baixas registradas..."):
             model = _audit(tokens, history_tokens, tuple(sorted(chosen)), check.VERSION)
         render_results(model)

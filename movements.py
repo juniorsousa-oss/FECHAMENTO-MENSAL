@@ -16,6 +16,7 @@ from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 
 import pandas as pd
+import kardex_history as history
 
 RULES_FILE = Path(__file__).parent / "config" / "movement_rules.json"
 FORMAT = "SETTA_KARDEX_IMPORT_V1"
@@ -176,11 +177,12 @@ def parse_report(raw: bytes, file_name: str) -> dict:
             if manifest.get("formato") != HISTORY_FORMAT:
                 raise ValueError("O ZIP não corresponde a uma base histórica KARDEX.")
             rows = [clean_record(json.loads(line)) for line in archive.read("movimentacoes.jsonl").splitlines() if line.strip()]
-        if not rows:
+        if not rows and not manifest.get("coberturas"):
             raise ValueError("Base histórica sem movimentações.")
         meta = {"arquivo_nome": file_name, "sha256": digest, "lancamentos": len(rows),
                 "periodo_inicio": manifest.get("periodo_inicio") or min(r["data"] for r in rows),
                 "periodo_fim": manifest.get("periodo_fim") or max(r["data"] for r in rows),
+                "coberturas_arquivo": manifest.get("coberturas"),
                 "linhas_sem_movimentacao": 0}
         return {"meta": meta, "rows": rows}
     rows, errors, skipped = [], [], 0
@@ -212,18 +214,21 @@ def parse_report(raw: bytes, file_name: str) -> dict:
     start, end = min(r["data"] for r in rows), max(r["data"] for r in rows)
     # The ERP title has no period; a valid period in its export filename can include non-working days.
     dates = re.findall(r"(\d{2})[./](\d{2})(?:[./](\d{4}))?", file_name)
+    declared_period = False
     if len(dates) == 2:
         try:
             first = date(int(dates[0][2] or start[:4]), int(dates[0][1]), int(dates[0][0])).isoformat()
             last = date(int(dates[1][2] or end[:4]), int(dates[1][1]), int(dates[1][0])).isoformat()
             if first <= start <= end <= last:
                 start, end = first, last
+                declared_period = True
         except ValueError:
             pass
     for row in rows:
         row["periodo_arquivo_inicio"], row["periodo_arquivo_fim"] = start, end
     return {"meta": {"arquivo_nome": file_name, "sha256": digest, "lancamentos": len(rows),
-                     "periodo_inicio": start, "periodo_fim": end, "linhas_sem_movimentacao": skipped}, "rows": rows}
+                     "periodo_inicio": start, "periodo_fim": end, "linhas_sem_movimentacao": skipped,
+                     "periodo_informado": declared_period}, "rows": rows}
 
 
 def pack_import(parsed: dict) -> dict:
@@ -244,6 +249,17 @@ def unpack_import(pack: dict) -> dict:
 
 
 def merge_imports(imports: list[dict]) -> tuple[list[dict], int]:
+    snapshot = history_snapshot(imports)
+    return snapshot["rows"], snapshot["duplicates"]
+
+
+def history_snapshot(imports: list[dict]) -> dict:
+    snapshot = history.resolve(imports)
+    rows, duplicates = _merge_active(snapshot["imports"])
+    return {**snapshot, "rows": rows, "duplicates": duplicates}
+
+
+def _merge_active(imports: list[dict]) -> tuple[list[dict], int]:
     """Keep max multiplicity across reports, never collapse repeated rows inside one report."""
     merged, seen, duplicates = [], set(), 0
     for imported in imports:
@@ -363,7 +379,8 @@ def build_model(imports: list[dict], config: dict | None = None) -> dict:
     cfg = dict(config or rules())
     cfg["_closing_codes"] = {r["codigo"] for r in cfg["materiais_fechamento"]}
     cfg["_h001_codes"] = set(cfg["materiais_h001"])
-    originals, duplicates = merge_imports(imports)
+    snapshot = history_snapshot(imports)
+    originals, duplicates = snapshot["rows"], snapshot["duplicates"]
     records = [classify(r, cfg) for r in originals]
     address_pairs = match_addresses(records)
     frame = pd.DataFrame(records)
@@ -373,9 +390,10 @@ def build_model(imports: list[dict], config: dict | None = None) -> dict:
             frame[key] = frame[key].map(lambda v: float(decimal(v)))
         frame["liquido_valor"] = frame["valor_entrada"] - frame["valor_saida"]
         frame["_search"] = (frame["codigo"] + " " + frame["descricao"] + " " + frame["documento"] + " " + frame["ae_original"]).map(normalized)
-    token = hashlib.sha256((cfg["versao"] + "|" + "|".join(i["meta"]["sha256"] for i in imports)).encode()).hexdigest()
+    token = hashlib.sha256((cfg["versao"] + history.VERSION + json.dumps(snapshot["coverage"], sort_keys=True)).encode()).hexdigest()
     return {"frame": frame, "rows": records, "raw_rows": originals, "duplicates": duplicates,
-            "pares_enderecamento": address_pairs, "imports": [i["meta"] for i in imports], "versao": cfg["versao"], "token": token}
+            "pares_enderecamento": address_pairs, "imports": [i["meta"] for i in imports], "versao": cfg["versao"], "token": token,
+            "coverage_metas": snapshot["coverage"], "import_registry": snapshot["registry"]}
 
 
 def effective(frame: pd.DataFrame) -> pd.DataFrame:
@@ -509,8 +527,11 @@ def export_excel(frame: pd.DataFrame) -> bytes:
 
 def export_history(model: dict) -> bytes:
     rows = model["raw_rows"]
+    coverage = model.get("coverage_metas") or []
+    starts = [m["periodo_inicio"] for m in coverage] or [r["data"] for r in rows]
+    ends = [m["periodo_fim"] for m in coverage] or [r["data"] for r in rows]
     manifest = {"formato": HISTORY_FORMAT, "versao_regras": model["versao"], "lancamentos": len(rows),
-                "periodo_inicio": min(r["data"] for r in rows), "periodo_fim": max(r["data"] for r in rows),
+                "periodo_inicio": min(starts), "periodo_fim": max(ends), "coberturas": coverage,
                 "fontes": model["imports"]}
     output = io.BytesIO()
     with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:

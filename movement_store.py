@@ -1,4 +1,4 @@
-"""Append-only KARDEX imports in the application's existing Supabase store."""
+"""Persistent KARDEX revisions; monthly replacement is atomic within each saved file."""
 from __future__ import annotations
 
 import re
@@ -6,6 +6,7 @@ import re
 import requests
 
 import inventory_db as db
+import kardex_history as history
 from movements import pack_import, unpack_import
 
 PREFIX = "fm_movimentacoes_import_v1_"
@@ -38,25 +39,59 @@ def load_import(key: str) -> dict:
         raise ValueError("Chave de histórico inválida.")
     response = requests.get(
         f"{db.supabase_url()}/rest/v1/fm_configuracoes", headers=db._headers(),
-        params={"select": "valor", "chave": f"eq.{key}", "limit": "1"}, timeout=90,
+        params={"select": "valor,atualizado_em", "chave": f"eq.{key}", "limit": "1"}, timeout=90,
     )
     db._raise(response)
     rows = response.json() or []
     if not rows:
         raise RuntimeError("Importação histórica não encontrada.")
-    return unpack_import(rows[0]["valor"])
+    imported = unpack_import(rows[0]["valor"])
+    imported.update(_key=key, _imported_at=str(rows[0].get("atualizado_em") or ""))
+    return imported
+
+
+def load_history(entries: list[dict]) -> list[dict]:
+    """Read active payloads; superseded versions need only their saved metadata."""
+    ordered = sorted(entries, key=lambda item: str(item.get("atualizado_em") or ""))
+    owners = {}
+    for item in ordered:
+        meta = item.get("meta") or {}
+        if meta.get("politica") == history.POLICY:
+            for scope in history.validate_scopes(meta.get("escopos") or []):
+                owners[scope["competencia"], scope["armazem"]] = item["chave"]
+    packs = []
+    for item in ordered:
+        meta = item.get("meta") or {}
+        inactive = meta.get("politica") == history.POLICY and all(
+            owners[scope["competencia"], scope["armazem"]] != item["chave"] for scope in meta["escopos"])
+        imported = {"meta": meta, "rows": []} if inactive else load_import(item["chave"])
+        imported.update(_key=item["chave"], _imported_at=str(item.get("atualizado_em") or ""))
+        packs.append(imported)
+    return packs
 
 
 def save_import(parsed: dict, known: list[dict] | None = None) -> dict:
     digest = parsed["meta"]["sha256"]
-    key = _key(digest)
+    key = _key(parsed["meta"].get("import_id") or digest)
     existing = known if known is not None else list_imports()
-    if any(item["chave"] == key for item in existing):
-        return {"saved": False, "key": key, "meta": parsed["meta"]}
+    if parsed["meta"].get("politica") == history.POLICY:
+        scopes = history.import_scopes(parsed)
+        owners = {}
+        for item in existing:
+            meta = item.get("meta") or {}
+            if meta.get("politica") == history.POLICY:
+                for scope in history.validate_scopes(meta.get("escopos") or []):
+                    owners[scope["competencia"], scope["armazem"]] = item["chave"]
+        already_active = all(owners.get((s["competencia"], s["armazem"])) == key for s in scopes)
+    else:
+        already_active = any(item["chave"] == key for item in existing)
+    if already_active:
+        return {"saved": False, "key": key, "meta": parsed["meta"], "reactivated": False}
+    reactivated = any(item["chave"] == key for item in existing)
     payload = pack_import(parsed)
     db.rpc("fm_salvar_configuracao", {"p_chave": key, "p_valor": payload}, timeout=120)
     # Verify the committed import before reporting success; exact file hashes make retries idempotent.
     stored = load_import(key)
-    if stored["meta"]["sha256"] != digest or len(stored["rows"]) != len(parsed["rows"]):
+    if stored["meta"] != payload["meta"] or pack_import(stored)["payload"] != payload["payload"]:
         raise RuntimeError("A importação foi enviada, mas a conferência dos registros não corresponde ao arquivo.")
-    return {"saved": True, "key": key, "meta": stored["meta"]}
+    return {"saved": True, "key": key, "meta": stored["meta"], "reactivated": reactivated}
