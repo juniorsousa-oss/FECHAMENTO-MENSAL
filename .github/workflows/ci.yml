@@ -65,8 +65,10 @@ jobs:
           db = Path("inventory_db.py").read_text(encoding="utf-8")
           assert "page_size = 1000" in db
           assert '"offset": str(offset)' in db
-          assert "CHAPAS · ATUAL" in app
-          assert "BARRAMENTOS · ATUAL" in app
+          assert "QUANTIDADE · KG" in app
+          assert "SALDO ATUAL" in app
+          assert "QUANTIDADE · MT" in app
+          assert "FECHAMENTO · {_closing_label}" in app
           assert "FINALIZAR E REGISTRAR AJUSTES" in app
           assert "HISTÓRICO DE AJUSTES · MÊS A MÊS" in app
           assert '"Códigos consolidados"' in app
@@ -108,7 +110,11 @@ jobs:
           assert 'class="sidebar-status-section"' in app
           assert not Path("db.py").exists()
           assert "_saldo_codes = set(final_analysis_codes)" in app
-          assert '"01 · ALIMENTAÇÃO FÍSICA"' in app
+          assert '"GERENCIAR FONTES E CONTAGENS"' in app
+          assert 'def cb_stage_header(' in app
+          assert 'class="cb-balance-grid"' in app
+          assert 'class="cb-overview-grid"' in app
+          assert app.count('cb_stage_header(') == 5
           assert 'expanded=False' in app
           assert "Identidade visual" not in app
           print("ESTRUTURA_OK")
