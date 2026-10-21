@@ -187,8 +187,15 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
         op_info[op] = {"status": stage, "possui_consumo": has_issue,
                        "exige_baixa": stage in FINAL_STAGES or has_issue}
 
+    # Calcular em listas e atribuir colunas uma vez é muito mais rápido do que
+    # escrever ~8 células por produto via DataFrame.at em milhares de linhas.
+    computed = {key: [] for key in (
+        "enderecos_alternativos", "outros_enderecos", "tipo_material",
+        "qtd_necessaria_baixa", "qtd_faltante_operacional", "status_op",
+        "op_possui_baixa", "status", "alertas", "divergente",
+    )}
     # Define o resultado para cada produto SEM usar alertas do reconciliador antigo.
-    for idx, item in products.iterrows():
+    for item in products.to_dict("records"):
         group = op_info[item["op"]]
         separated, confirmed = decimal(item.get("separada")), decimal(item.get("conferida"))
         net = max(decimal(item.get("baixada")), ZERO)
@@ -212,16 +219,16 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
                 abs(r["saldo"] - faltante_endereco),
                 -r["saldo"], r["armazem"], r["endereco"], r["lote"],
             ))
-        products.at[idx, "enderecos_alternativos"] = alternatives
-        products.at[idx, "outros_enderecos"] = " | ".join(
+        computed["enderecos_alternativos"].append(alternatives)
+        computed["outros_enderecos"].append(" | ".join(
             f"{entry['armazem']}/{entry['endereco']} · lote {entry['lote']}: {entry['saldo']}"
             for entry in alternatives
-        )
-        products.at[idx, "tipo_material"] = tipo or "NI"
-        products.at[idx, "qtd_necessaria_baixa"] = expected
-        products.at[idx, "qtd_faltante_operacional"] = outstanding
-        products.at[idx, "status_op"] = group["status"]
-        products.at[idx, "op_possui_baixa"] = group["possui_consumo"]
+        ))
+        computed["tipo_material"].append(tipo or "NI")
+        computed["qtd_necessaria_baixa"].append(expected)
+        computed["qtd_faltante_operacional"].append(outstanding)
+        computed["status_op"].append(group["status"])
+        computed["op_possui_baixa"].append(group["possui_consumo"])
 
         # Tipo II nunca gera alerta: seu processo de consumo não depende
         # da separação nas listas. Baixa de item com necessidade zero
@@ -262,9 +269,12 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
                 status = NAO_CONSUMIDO_SEM
             alert = True
 
-        products.at[idx, "status"] = status
-        products.at[idx, "alertas"] = [status] if alert else []
-        products.at[idx, "divergente"] = alert
+        computed["status"].append(status)
+        computed["alertas"].append([status] if alert else [])
+        computed["divergente"].append(alert)
+
+    for key, values in computed.items():
+        products[key] = values
 
     counted = products.groupby("op", sort=False)
     ops["status_op"] = ops["op"].map(lambda op: op_info[op]["status"])
