@@ -59,6 +59,8 @@ def export_complete_report(model: dict) -> bytes:
     ]
     if model.get("master_plan_meta"):
         sources.append({"fonte": "FOR001 PLANO MESTRE", **model["master_plan_meta"]})
+    if model.get("catalog_meta"):
+        sources.append({"fonte": "CADASTROS / TIPOS DE MATERIAL", **model["catalog_meta"]})
     coverage = model.get("coverage") or {}
     summary = pd.DataFrame([
         {"indicador": "Referência da conferência", "valor": model.get("as_of")},
