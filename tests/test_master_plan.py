@@ -52,6 +52,12 @@ class MasterPlanTests(unittest.TestCase):
         self.assertEqual(records["26000301001"]["nota_fiscal"], "123")
         self.assertEqual(records["26000301001"]["dias_patio"], "445")
 
+    def test_dias_patio_can_signal_delivered_without_numeric_days(self):
+        frame = pd.DataFrame([row("26000401001", "CLIENTE", "FINALIZADO",
+                                  None, None, "FINALIZADO E ENTREGUE")])
+        parsed = plan.parse_frame(frame)
+        self.assertEqual(parsed["26000401001"]["dias_patio"], "FINALIZADO E ENTREGUE")
+
     def test_enrichment_retains_all_orders_and_missing_values_as_NI(self):
         ops = pd.DataFrame([{"op": "26000101001", "itens": 5}, {"op": "26009901001", "itens": 1}])
         records = {"26000101001": {"cliente": "TESTE", "condicao": "EM PRODUÇÃO"}}
