@@ -11,7 +11,7 @@ import re
 
 import pandas as pd
 
-VERSION = "2026-10-21.4"
+VERSION = "2026-10-21.5"
 EPS = Decimal("0.000001")
 ZERO = Decimal(0)
 
@@ -32,11 +32,14 @@ SEPARADO_SEM_CONFERENCIA = "PRODUTO SEPARADO AGUARDANDO CONFERÊNCIA"
 AGUARDANDO_SEPARACAO = "PRODUTO AGUARDANDO SEPARAÇÃO"
 CONFERIDO_AGUARDANDO_REPORTE = "PRODUTO CONFERIDO AGUARDANDO REPORTE"
 AGUARDANDO_KARDEX = "AGUARDANDO KARDEX"
+BAIXA_ACIMA_NECESSIDADE = "PRODUTO COM BAIXA MAIOR QUE A NECESSIDADE"
+MATERIAL_CONSUMO = "MATERIAL DE CONSUMO"
 
 FINAL_STAGES = frozenset({FINALIZADO_PATIO, FINALIZADO_ENTREGUE, NF_EMITIDA, FINALIZADO, REPORTADO})
 ALERT_RESULTS = frozenset({
     NAO_CONSUMIDO_G9, NAO_CONSUMIDO_OUTRO, NAO_CONSUMIDO_SEM,
     SEPARADO_SEM_CONFERENCIA, AGUARDANDO_SEPARACAO,
+    BAIXA_ACIMA_NECESSIDADE,
 })
 
 
@@ -123,7 +126,8 @@ def _item_lots(model: dict):
     return lots
 
 
-def apply(model: dict, master_records: dict[str, dict] | None = None) -> dict:
+def apply(model: dict, master_records: dict[str, dict] | None = None,
+          catalog_types: dict[str, str] | None = None) -> dict:
     """Modelo final independente do cache: recalcula OPs, produtos e alertas.
 
     Chamar após reconciliar MES/KARDEX e obter os dados complementares FOR001.
@@ -131,6 +135,7 @@ def apply(model: dict, master_records: dict[str, dict] | None = None) -> dict:
     """
     import master_plan
     records = master_records or {}
+    types = catalog_types or {}
     result = dict(model)
     ops = master_plan.enrich_ops(model["ops"], records)
     products = model["items"].copy(deep=True)
@@ -188,14 +193,22 @@ def apply(model: dict, master_records: dict[str, dict] | None = None) -> dict:
         net = max(decimal(item.get("baixada")), ZERO)
         expected = max(separated, confirmed)
         outstanding = max(expected - net, ZERO)
+        tipo = _normalized(types.get(_text(item.get("codigo")), "NI"))
         item_lots = lots.get(item["item_id"], set())
+        # Endereços alternativos só aparecem quando o G9-PROD não consegue
+        # atender toda a quantidade SEPARADA, nunca apenas por saldo positivo.
+        lot_prod = sum(
+            (g9_by_lot[(item.get("codigo"), lot)] for lot in item_lots), ZERO
+        )
+        faltante_endereco = max(separated - max(lot_prod, ZERO), ZERO)
         alternatives = []
-        if confirmed > EPS and outstanding > EPS and group["exige_baixa"]:
+        if (separated > EPS and confirmed > EPS and outstanding > EPS
+                and faltante_endereco > EPS and group["exige_baixa"]):
             for lot in item_lots:
                 alternatives.extend(addresses_by_lot.get((item.get("codigo"), lot), ()))
             alternatives.sort(key=lambda r: (
-                r["saldo"] + EPS < outstanding,
-                abs(r["saldo"] - outstanding),
+                r["saldo"] + EPS < faltante_endereco,
+                abs(r["saldo"] - faltante_endereco),
                 -r["saldo"], r["armazem"], r["endereco"], r["lote"],
             ))
         products.at[idx, "enderecos_alternativos"] = alternatives
@@ -203,12 +216,19 @@ def apply(model: dict, master_records: dict[str, dict] | None = None) -> dict:
             f"{entry['armazem']}/{entry['endereco']} · lote {entry['lote']}: {entry['saldo']}"
             for entry in alternatives
         )
+        products.at[idx, "tipo_material"] = tipo or "NI"
         products.at[idx, "qtd_necessaria_baixa"] = expected
         products.at[idx, "qtd_faltante_operacional"] = outstanding
         products.at[idx, "status_op"] = group["status"]
         products.at[idx, "op_possui_baixa"] = group["possui_consumo"]
 
-        if not group["exige_baixa"]:
+        # Baixa acima da necessidade é divergência de consumo mesmo quando
+        # o item não deveria passar por separação (tipo II).
+        if net - decimal(item.get("necessaria")) > EPS:
+            status, alert = BAIXA_ACIMA_NECESSIDADE, True
+        elif tipo == "II" and separated <= EPS:
+            status, alert = MATERIAL_CONSUMO, False
+        elif not group["exige_baixa"]:
             if confirmed > EPS:
                 status = CONFERIDO_AGUARDANDO_REPORTE
             elif separated > EPS:
@@ -227,9 +247,6 @@ def apply(model: dict, master_records: dict[str, dict] | None = None) -> dict:
         else:
             # Positivo no G9-PROD identifica material em produção mesmo quando
             # o saldo não cobre toda a quantidade faltante.
-            lot_prod = sum(
-                (g9_by_lot[(item.get("codigo"), lot)] for lot in item_lots), ZERO
-            )
             if lot_prod > EPS:
                 status = NAO_CONSUMIDO_G9
             elif any(entry["saldo"] + EPS >= outstanding for entry in alternatives):
