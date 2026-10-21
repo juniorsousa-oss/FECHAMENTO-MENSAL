@@ -184,7 +184,9 @@ def _catalog_type_records(version: int, updated: str) -> tuple[dict[str, str], d
     actual_version = meta.get("source_version", meta.get("version"))
     if actual_version is not None and int(actual_version) != version:
         raise RuntimeError("CADASTROS alterado durante o carregamento.")
-    return types, {key: value for key, value in meta.items() if key not in ("signed_url", "url")}
+    safe_meta = {key: value for key, value in meta.items() if key not in ("signed_url", "url")}
+    safe_meta["version"] = version
+    return types, safe_meta
 
 
 def _optional_catalog_types() -> tuple[dict[str, str], dict]:
