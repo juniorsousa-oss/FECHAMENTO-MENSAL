@@ -593,6 +593,24 @@ def _toggle_issue_op(number: str):
     st.session_state.fm_issue_open_op = None if current == number else number
 
 
+def _op_metadata(context: dict) -> str:
+    """Resumo de faturamento por OP; seguro para renderização em HTML."""
+    fields = [
+        ("Cliente", context.get("cliente") or "NI"),
+        ("Condição", context.get("condicao") or "NI"),
+        ("Nota fiscal", context.get("nota_fiscal") or "NI"),
+        ("Faturamento", context.get("data_faturamento") or "NI"),
+        ("Pátio", context.get("dias_patio") or "NI"),
+        ("Status da OP", context.get("status_op") or "NI"),
+    ]
+    return '<div class="fm-issue-meta">' + "".join(
+        '<div class="fm-issue-meta-item"><b>' + html.escape(label)
+        + '</b><span' + (' class="fm-issue-status"' if label == "Status da OP" else "")
+        + '>' + html.escape(str(value)) + '</span></div>'
+        for label, value in fields
+    ) + "</div>"
+
+
 def _ops(model, view, token):
     rank = view.groupby("op")["divergente"].sum().sort_values(ascending=False, kind="stable")
     numbers = rank.index.tolist()
@@ -615,11 +633,9 @@ def _ops(model, view, token):
             issues = int(context["divergencias"])
             summary = "ORDEM COM ALERTA" if issues else "ORDEM OK"
             title = (
-                f"OP {number} | {total} ITENS | {separated} SEPARADOS | "
+                f"OP {number} | {total} PRODUTOS | {separated} SEPARADOS | "
                 f"{confirmed} CONFERIDOS | {discharged} BAIXADOS | "
-                f"{issues} COM ALERTA — {summary} | "
-                + master_plan.label_fields(context)
-                + f" | STATUS: {context['status_op']}"
+                f"{issues} ALERTAS — {summary}"
             )
             css_key = "fm_issue_op_alert_" if issues else "fm_issue_op_ok_"
             is_open = st.session_state.get("fm_issue_open_op") == number
@@ -629,6 +645,7 @@ def _ops(model, view, token):
                     key="fm_issue_select_" + number, use_container_width=True,
                     on_click=_toggle_issue_op, args=(number,),
                 )
+                st.markdown(_op_metadata(context), unsafe_allow_html=True)
             if is_open:
                 with st.container(key="fm_issue_op_detail_" + number):
                     st.caption(f"P.A.: {context['pa'] or '—'} · {context['descricao_pa'] or 'Descrição não informada'}")
@@ -642,6 +659,10 @@ def _ops(model, view, token):
                         )
                     if not bool(group.iloc[0]["op_possui_baixa"]):
                         st.caption("Não há consumo líquido identificado no histórico desta OP até a data de referência.")
+                    st.markdown(
+                        '<div class="fm-issue-mobile-hint">Deslize a tabela horizontalmente para consultar todas as colunas.</div>',
+                        unsafe_allow_html=True,
+                    )
                     _table(group, ["codigo", "descricao", "lotes", "necessaria", "separada",
                                    "conferida", "baixada", "pendente", "saldo", "saldo_g9_prod",
                                    "outros_enderecos", "status"])
