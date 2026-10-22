@@ -282,7 +282,8 @@ def _parse_import(raw: bytes, name: str):
 
 def _import_controls(imports, model=None):
     st.markdown("**01 · IMPORTAR OU ATUALIZAR KARDEX**")
-    st.caption("Envie o relatório completo desde o primeiro dia do mês, até a data da extração. A nova versão substitui todo o mês somente nos armazéns presentes no arquivo; os demais meses e armazéns são preservados.")
+    st.caption("Importe arquivos XLSX/XLTX ou uma base histórica ZIP consolidada. Cada atualização afeta somente os meses e armazéns informados no próprio arquivo: o histórico S2 e outros armazéns ficam preservados quando não fizerem parte da importação.")
+    st.info("Para acrescentar EP, 20 e E2 de janeiro a outubro, envie a base histórica consolidada ZIP. O sistema identificará os três armazéns e suas competências automaticamente. Verifique a prévia e confirme a importação uma única vez.")
     epoch = st.session_state.get("fm_mov_upload_epoch", 0)
     files = st.file_uploader("Relatórios KARDEX", type=["xlsx", "xltx", "zip"], accept_multiple_files=True,
                              key=f"fm_mov_uploads_{epoch}")
@@ -302,7 +303,7 @@ def _import_controls(imports, model=None):
                 with st.expander("CONFERIR PERÍODO · " + file.name):
                     st.caption("Confirme o período extraído no sistema. Os armazéns são identificados nos próprios registros.")
                     if meta.get("coberturas_arquivo"):
-                        st.caption("Base histórica: as coberturas por mês e armazém serão restauradas conforme o manifesto.")
+                        st.caption("Base consolidada com competências declaradas no manifesto. Meses sem lançamentos são preservados como cobertura com 0 registros. O período de cada armazém não será inferido a partir da data do último movimento.")
                     else:
                         a, b = st.columns(2)
                         with a:
@@ -320,6 +321,10 @@ def _import_controls(imports, model=None):
                                 "Dados até": end.strftime("%d/%m/%Y"), "Novos registros": len(item["rows"]),
                                 "Registros atuais no recorte": replaced})
             history.validate_batch(parsed)
+            active_warehouses = sorted({warehouse for item in parsed for warehouse in item["meta"]["armazens"]})
+            st.caption("Armazéns identificados nos novos arquivos: " + ", ".join(active_warehouses))
+            if "S2" not in active_warehouses:
+                st.caption("Preservação confirmada: o armazém S2 não faz parte desta substituição.")
         except Exception as exc:
             st.error(f"Confira os arquivos antes de importar: {exc}")
             return
@@ -345,8 +350,37 @@ def _import_controls(imports, model=None):
                 st.error(f"Não foi possível concluir a importação: {exc}. Os arquivos que concluíram a gravação permanecem registrados. Reenvie a seleção para concluir os demais sem duplicação.")
 
 
+def _warehouse_registry_overview(model) -> pd.DataFrame:
+    """Resumo de armazéns ativos e pendentes, sem confundir cobertura com movimento."""
+    frame = model.get("frame", pd.DataFrame())
+    coverage = model.get("coverage_metas") or []
+    current = {str(item["armazem"]) for item in coverage}
+    current.update(str(value) for value in frame["armazem"].unique() if value) if not frame.empty else None
+    expected = {"S2", "EP", "20", "E2"}
+    order = {"S2": 0, "EP": 1, "20": 2, "E2": 3}
+    result = []
+    for warehouse in sorted(current | expected, key=lambda w: (order.get(w, 100), w)):
+        months = {item["competencia"] for item in coverage if str(item["armazem"]) == warehouse}
+        periods = [item for item in coverage if str(item["armazem"]) == warehouse]
+        relevant = frame.loc[frame["armazem"] == warehouse] if not frame.empty else frame
+        total = len(relevant)
+        latest = relevant["data"].max() if total else None
+        result.append({
+            "Armazém": warehouse,
+            "Situação": "ATIVO" if months else "PENDENTE DE IMPORTAÇÃO",
+            "Competências registradas": len(months),
+            "Cobertura até": date.fromisoformat(max(p["periodo_fim"] for p in periods)).strftime("%d/%m/%Y") if periods else "NI",
+            "Última movimentação": date.fromisoformat(str(latest)).strftime("%d/%m/%Y") if latest is not None else "SEM MOVIMENTAÇÕES",
+            "Registros vigentes": total,
+        })
+    return pd.DataFrame(result)
+
+
 def _import_registry(model):
-    st.markdown("**02 · BASES VIGENTES POR MÊS E ARMAZÉM**")
+    st.markdown("**02 · SITUAÇÃO DOS ARMAZÉNS**")
+    st.caption("A cobertura representa o período declarado no relatório; a última movimentação pode ser anterior sem indicar erro. Armazéns pendentes não são contados como saldo ou baixa zero.")
+    st.dataframe(_warehouse_registry_overview(model), hide_index=True, width="stretch")
+    st.markdown("**03 · BASES VIGENTES POR MÊS E ARMAZÉM**")
     grouped = {}
     for meta in model.get("coverage_metas", []):
         grouped.setdefault((meta["competencia"], meta["armazem"]), []).append(meta)
@@ -361,7 +395,7 @@ def _import_registry(model):
                      "Arquivos em uso": " · ".join(dict.fromkeys(m["arquivo_nome"] for m in sources))})
     if rows:
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-    with st.expander("03 · HISTÓRICO DE IMPORTAÇÕES E VERSÕES SUBSTITUÍDAS"):
+    with st.expander("04 · HISTÓRICO DE IMPORTAÇÕES E VERSÕES SUBSTITUÍDAS"):
         recorded = []
         for item in reversed(model.get("import_registry", [])):
             updated = item["importado_em"]
