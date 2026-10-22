@@ -628,41 +628,109 @@ def _ledger(frame, token):
 
 
 def _catalog(frame):
-    """Cadastro de referência independente do recorte; nenhuma regra gerencial."""
+    """Cadastros persistidos: grupos e TES, condições futuras, catálogo original."""
     catalog = mv.rules()["tes"]
-    counts = frame.groupby("tes", sort=False).size().to_dict()
-    rows = [
-        {
-            "TES": code,
-            "Descrição TES": fields["descricao"],
-            "Movimentos no recorte": int(counts.get(code, 0)),
-        }
-        for code, fields in catalog.items()
-    ]
-    unknown = sorted(set(counts) - set(catalog))
-    rows.extend({
-        "TES": code,
-        "Descrição TES": "NI - TES não localizada no cadastro",
-        "Movimentos no recorte": int(counts[code]),
-    } for code in unknown)
-    st.caption(
-        f"{count(len(catalog))} TES no cadastro de referência · "
-        f"{count(len(mv.tes_overrides()))} descrições prioritárias definidas · "
-        f"{count(len(unknown))} códigos movimentados sem correspondência."
-    )
-    st.dataframe(
-        pd.DataFrame(rows).sort_values("TES", kind="stable"),
-        hide_index=True, width="stretch", height=600,
-        column_config={
-            "TES": st.column_config.TextColumn(width="small"),
-            "Descrição TES": st.column_config.TextColumn(width="large"),
-        },
-    )
-    st.caption(
-        "Esta etapa usa apenas o cadastro TES. Não há regras por material, "
-        "CC, OP, centro de custo ou classificação gerencial."
-    )
+    available = set(catalog) | set(str(code) for code in frame["tes"].unique())
+    try:
+        config = _groups_read()
+        config = groups.validated(config, available)
+    except Exception as exc:
+        st.error(f"Não foi possível acessar as configurações dos grupos: {exc}. Nenhuma alteração foi realizada.")
+        return
 
+    st.markdown("**01 · CADASTRAR GRUPO DE TES**")
+    st.caption("Cada TES pertence a um único grupo; a mesma movimentação nunca é somada em dois grupos.")
+    with st.form("fm_mov_group_create", clear_on_submit=True):
+        name = st.text_input("Nome do novo grupo", placeholder="Ex.: Produção, devoluções, compras")
+        if st.form_submit_button("CRIAR GRUPO", type="primary"):
+            try:
+                _groups_commit(groups.create_group(config, name, known_tes=available), available)
+                st.success("Grupo criado e salvo.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Não foi possível criar o grupo: {exc}")
+
+    st.markdown("**02 · GRUPOS CADASTRADOS E VINCULAÇÃO DE TES**")
+    if not config["grupos"]:
+        st.info("Nenhum grupo cadastrado. Crie o primeiro grupo e selecione as TES que o compõem.")
+    owner = {code: group["id"] for group in config["grupos"] for code in group["tes"]}
+    for group in config["grupos"]:
+        group_id = group["id"]
+        expanded_label = f"{group['nome']} · {len(group['tes'])} TES"
+        with st.expander(expanded_label):
+            others = {code for code, assigned in owner.items() if assigned != group_id}
+            options = sorted(available - others)
+            with st.form("fm_mov_group_edit_" + group_id):
+                rename = st.text_input("Nome do grupo", value=group["nome"], key="fm_mov_group_name_" + group_id)
+                selected = st.multiselect(
+                    "TES vinculadas", options, default=group["tes"],
+                    format_func=lambda code: code + " | " + catalog.get(code, {}).get("descricao", "NI"),
+                    key="fm_mov_group_tes_" + group_id,
+                )
+                if st.form_submit_button("SALVAR GRUPO", type="primary"):
+                    try:
+                        updated = groups.assign_group(config, group_id, selected,
+                                                       name=rename, known_tes=available)
+                        _groups_commit(updated, available)
+                        st.success("Grupo e TES salvos.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Não foi possível salvar o grupo: {exc}")
+            st.caption("Para excluir, confirme abaixo. As TES serão liberadas para outro grupo e nenhum registro será removido.")
+            confirm = st.checkbox("Confirmar exclusão do grupo", key="fm_mov_group_confirm_" + group_id)
+            if st.button("EXCLUIR GRUPO", disabled=not confirm,
+                         key="fm_mov_group_delete_" + group_id):
+                try:
+                    updated = groups.delete_group(config, group_id, known_tes=available)
+                    _groups_commit(updated, available)
+                    st.success("Grupo excluído. As TES permanecem no KARDEX.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Não foi possível excluir o grupo: {exc}")
+
+    st.markdown("**03 · CONDIÇÕES E EXCEÇÕES**")
+    st.caption("Registre ou exclua condições para configuração futura. "
+               "Enquanto não definirmos seus critérios, elas NÃO alteram valores ou grupos.")
+    with st.form("fm_mov_condition_create", clear_on_submit=True):
+        condition_name = st.text_input("Nova condição", placeholder="Nome para identificar a condição")
+        if st.form_submit_button("ADICIONAR CONDIÇÃO"):
+            try:
+                updated = groups.create_condition(config, condition_name, known_tes=available)
+                _groups_commit(updated, available)
+                st.success("Condição cadastrada.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Não foi possível cadastrar a condição: {exc}")
+    for condition in config["condicoes"]:
+        a, b = st.columns([4, 1], gap="small")
+        with a:
+            st.write(condition["nome"])
+        with b:
+            confirm = st.checkbox("Confirmar", key="fm_mov_condition_confirm_" + condition["id"])
+            if st.button("EXCLUIR", disabled=not confirm,
+                         key="fm_mov_condition_delete_" + condition["id"]):
+                try:
+                    updated = groups.delete_condition(config, condition["id"], known_tes=available)
+                    _groups_commit(updated, available)
+                    st.success("Condição excluída.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Não foi possível excluir a condição: {exc}")
+
+    with st.expander("04 · CONSULTAR CATÁLOGO TES"):
+        movements_by_code = frame.groupby("tes", sort=False).size().to_dict()
+        rows = [
+            {"TES": code, "Descrição TES": data["descricao"],
+             "Grupo": groups.group_owner(config).get(code, groups.UNASSIGNED),
+             "Movimentos": int(movements_by_code.get(code, 0))}
+            for code, data in catalog.items()
+        ]
+        for code in sorted(available - set(catalog)):
+            rows.append({"TES": code, "Descrição TES": "NI - TES não localizada no cadastro",
+                         "Grupo": groups.group_owner(config).get(code, groups.UNASSIGNED),
+                         "Movimentos": int(movements_by_code.get(code, 0))})
+        st.dataframe(pd.DataFrame(rows).sort_values("TES", kind="stable"),
+                     hide_index=True, width="stretch", height=550)
 
 def _exports(frame, model, token, *, include_history=True):
     title = "EXPORTAR RELATÓRIOS" if include_history else "EXPORTAR REGISTROS DESTA CONSULTA"
