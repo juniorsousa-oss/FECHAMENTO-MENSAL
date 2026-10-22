@@ -92,6 +92,24 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.assertIn("Grupo", ledger.columns)
         self.assertIn("Subgrupo", ledger.columns)
 
+    def test_all_registered_groups_display_even_without_movements(self):
+        from test_movement_analysis import imported, record
+        import movement_analysis_ui as ui
+        import kardex_group_config as cg
+        import kardex_conditions as cond
+        sample = mv.build_model([imported([record(tes="550")])])["frame"]
+        cfg = cg.create_group(cg.empty(), "COMPRAS", known_tes={"550","020"})
+        cfg = cg.create_group(cfg, "FLUXO DE ESTOQUE", known_tes={"550","020"})
+        cfg = cg.assign_group(cfg, cfg["grupos"][1]["id"], ["550"],
+                              known_tes={"550","020"})
+        classified = cond.classify(sample, cfg)
+        result = ui._overview_group_totals(classified, cfg)
+        self.assertEqual(result["Grupo"].tolist(), ["COMPRAS", "FLUXO DE ESTOQUE"])
+        self.assertEqual(result["Movimentos"].tolist() if "Movimentos" in result
+                         else result["lancamentos"].tolist(), [0, 1])
+        self.assertEqual(result["valor_entrada"].sum(), sample["valor_entrada"].sum())
+        self.assertEqual(result["valor_saida"].sum(), sample["valor_saida"].sum())
+
     def test_dynamic_table_height_avoids_phantom_rows(self):
         import movement_analysis_ui as ui
         self.assertEqual(ui._grid_height(1), 74)
