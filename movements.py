@@ -9,6 +9,7 @@ import json
 import re
 import unicodedata
 import xml.etree.ElementTree as ET
+from functools import lru_cache
 from collections import Counter, defaultdict, deque
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -49,8 +50,43 @@ IDENTITY_KEYS = ("data", "codigo", "armazem", "um", "tes", "cf", "documento", "q
 NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
 
+TES_CATALOG_FILE = Path(__file__).parent / "config" / "tes_cadastro_protheus_20261022.b64"
+TES_CATALOG_VERSION = "TES-PROTHEUS-20261022"
+SALES_TES_FROM_CATALOG = frozenset(("815", "823", "825", "836", "837"))
+
+
+@lru_cache(maxsize=1)
+def tes_reference() -> dict[str, str]:
+    """342 descrições oficiais do campo Txt Padrao, sem substituir regras aprovadas.
+
+    A representação gzip/base64 mantém pequeno o catálogo originalmente extraído
+    da planilha TES(1).xltx. Não modifica o banco nem lançamentos históricos.
+    """
+    lines = [
+        line.strip() for line in TES_CATALOG_FILE.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    catalog = json.loads(gzip.decompress(base64.b64decode("".join(lines), validate=True)))
+    if len(catalog) != 342:
+        raise ValueError("Catálogo TES inconsistente: deveriam existir 342 códigos.")
+    return catalog
+
+
 def rules() -> dict:
-    return json.loads(RULES_FILE.read_text(encoding="utf-8"))
+    config = json.loads(RULES_FILE.read_text(encoding="utf-8"))
+    for tes, description in tes_reference().items():
+        if tes not in config["tes"]:
+            is_sales = tes in SALES_TES_FROM_CATALOG
+            config["tes"][tes] = {
+                "descricao": description,
+                "grupo": "VENDAS" if is_sales else "TES A CLASSIFICAR",
+                # Apenas cinco TES de venda/entrega futura possuem grupo
+                # sustentado diretamente pela descrição. As demais terão
+                # descrição visível, sem inventar classificação gerencial.
+                "provisorio": not is_sales,
+            }
+    config["versao"] = config["versao"] + "+" + TES_CATALOG_VERSION
+    return config
 
 
 def normalized(value) -> str:
