@@ -526,6 +526,10 @@ def _detail(row):
         st.write("**TES:** " + row["tes"])
         st.write("**DESCRIÇÃO TES:** " + row["descricao_tes"])
         st.write("**TIPO DE TM:** " + row.get("tipo_tm", "NI"))
+        st.write(
+            "**ORIGEM DA DESCRIÇÃO:** " +
+            ("Tabela TM informada" if row["tes"] in mv.tes_confirmed() else "Cadastro TES Protheus")
+        )
         st.write("**DOCUMENTO:** " + row["documento"])
     with b:
         st.write("**ARMAZÉM:** " + row["armazem"])
@@ -583,6 +587,7 @@ def _catalog(frame):
             "TES": code,
             "Tipo de TM": fields.get("tipo_tm") or "NI",
             "Descrição TES": fields["descricao"],
+            "Origem": "Tabela TM informada" if code in mv.tes_confirmed() else "Cadastro TES Protheus",
             "Movimentos no recorte": int(counts.get(code, 0)),
         }
         for code, fields in catalog.items()
@@ -592,6 +597,7 @@ def _catalog(frame):
         "TES": code,
         "Tipo de TM": "NI",
         "Descrição TES": "NI - TES não localizada no cadastro",
+        "Origem": "Sem correspondência",
         "Movimentos no recorte": int(counts[code]),
     } for code in unknown)
     st.caption(
