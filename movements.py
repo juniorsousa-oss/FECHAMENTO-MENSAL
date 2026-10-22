@@ -648,13 +648,15 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None) -> bytes
                 ], style="child", level=1, date_cols=(10,), money_cols=(9,),
                     quantity_cols=(7,))
 
-    # 03 — A mesma seleção e sequência de colunas exibida em KARDEX > Registros.
-    ledger_headers = ["Data", "Código", "Produto", "Armazém", "TES",
+    # 03 — Colunas da tela KARDEX > Registros, acrescidas do grupo da TES.
+    # O vínculo com o cadastro é calculado somente na exportação; não muda
+    # o lançamento original nem os totais financeiros.
+    ledger_headers = ["Data", "Código", "Produto", "Armazém", "TES", "Grupo",
                       "Entrada (R$)", "Saída (R$)", "AE original",
                       "Descrição TES", "Tipo do material", "Documento"]
     ledger_sheet = start_sheet(
         "Movimentações", ledger_headers,
-        [17, 17, 80, 15, 12, 22, 22, 29, 53, 20, 29]
+        [17, 17, 80, 15, 12, 33, 22, 22, 29, 53, 20, 29]
     )
     if not active.empty:
         ordered = active.sort_values(
@@ -664,11 +666,13 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None) -> bytes
         for row in ordered.itertuples(index=False):
             write(ledger_sheet, [
                 row.data, str(row.codigo), str(row.descricao),
-                str(row.armazem), str(row.tes), float(row.valor_entrada),
-                float(row.valor_saida), str(row.ae_original), str(row.descricao_tes),
+                str(row.armazem), str(row.tes),
+                owner.get(str(row.tes), gc.UNASSIGNED),
+                float(row.valor_entrada), float(row.valor_saida),
+                str(row.ae_original), str(row.descricao_tes),
                 str(row.tipo), str(row.documento),
-            ], date_cols=(1,), money_cols=(6, 7))
-    ledger_sheet.auto_filter.ref = f"A1:K{max(counters['Movimentações'], 1)}"
+            ], date_cols=(1,), money_cols=(7, 8))
+    ledger_sheet.auto_filter.ref = f"A1:L{max(counters['Movimentações'], 1)}"
 
     buffer = io.BytesIO()
     wb.save(buffer)
