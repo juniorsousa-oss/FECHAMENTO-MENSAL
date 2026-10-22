@@ -93,8 +93,8 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.assertEqual([x.label for x in app.text_input], ["Buscar OP ou material"])
         op = app.dataframe[0].value
         self.assertIn("Primeiro movimento", op.columns)
-        self.assertTrue(op["Primeiro movimento"].str.match(r"^\\d{2}/\\d{2}/\\d{4}$").all())
-        self.assertTrue(op["Último movimento"].str.match(r"^\\d{2}/\\d{2}/\\d{4}$").all())
+        self.assertTrue(op["Primeiro movimento"].str.match(r"^\d{2}/\d{2}/\d{4}$").all())
+        self.assertTrue(op["Último movimento"].str.match(r"^\d{2}/\d{2}/\d{4}$").all())
 
     def test_group_totals_include_registered_groups_without_movement(self):
         from test_movement_analysis import imported, record
