@@ -227,6 +227,40 @@ def _band():
       color:#172338!important;
       font-size:.87rem!important;
     }
+    /* Texto centralizado verticalmente; alinhamento horizontal à esquerda. */
+    .st-key-fm_issue_filters [data-testid="stTextInput"] input,
+    .st-key-fm_issue_filters [data-testid="stDateInput"] input {
+      height:44px!important;line-height:22px!important;
+      text-align:left!important;vertical-align:middle!important;
+    }
+    .st-key-fm_issue_filters [data-testid="stTextInput"] [data-baseweb="input"],
+    .st-key-fm_issue_filters [data-testid="stDateInput"] [data-baseweb="input"],
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+      display:flex!important;align-items:center!important;
+    }
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] span,
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] input {
+      align-self:center!important;line-height:22px!important;
+    }
+    .st-key-fm_issue_search_submit button,
+    .st-key-fm_issue_search_submit button[kind="primary"] {
+      min-height:48px!important;border-radius:10px!important;
+      background:#14233a!important;border:1.5px solid #14233a!important;
+      color:#fff!important;font-size:.79rem!important;font-weight:850!important;
+      box-shadow:0 4px 11px rgba(15,32,55,.15)!important;
+    }
+    .st-key-fm_issue_search_submit button:hover{
+      background:#273b56!important;border-color:#273b56!important;
+    }
+    .st-key-fm_issue_clear_filters button{
+      margin-top:0!important;
+    }
+    @media(max-width:900px){
+      .st-key-fm_issue_search_submit button,
+      .st-key-fm_issue_clear_filters button{
+        margin-top:0!important;min-height:46px!important;
+      }
+    }
     /* Hover visível em todo o campo, inclusive no alvo do calendário. */
     .st-key-fm_issue_filters [data-testid="stTextInput"] [data-baseweb="input"]:hover,
     .st-key-fm_issue_filters [data-testid="stDateInput"] [data-baseweb="input"]:hover,
@@ -908,70 +942,85 @@ def render_results(model):
         st.markdown(
             '<div class="fm-issue-filter-heading">FILTROS DA CONFERÊNCIA</div>'
             '<div class="fm-issue-filter-subtitle">'
-            'Localize uma OP ou combine situação, alertas e faturamento.'
+            'Escolha os critérios e clique em PESQUISAR para consultar as OPs.'
             '</div>', unsafe_allow_html=True,
         )
-        lookup_col, classification_col = st.columns([1.15, 2], gap="medium")
-        with lookup_col:
-            with st.container(key="fm_issue_search_group"):
-                st.markdown(
-                    '<div class="fm-issue-group-label">01 · PESQUISA</div>',
-                    unsafe_allow_html=True,
-                )
-                query = st.text_input(
-                    "LOCALIZAR OP", key="fm_issue_search",
-                    placeholder="Digite o número da OP",
-                )
-        with classification_col:
-            with st.container(key="fm_issue_class_group"):
-                st.markdown(
-                    '<div class="fm-issue-group-label">02 · CLASSIFICAÇÃO</div>',
-                    unsafe_allow_html=True,
-                )
-                alert_col, status_col = st.columns(2, gap="medium")
-                with alert_col:
-                    choice = st.selectbox(
-                        "ALERTAS", list(FILTERS), key="fm_issue_filter"
+        # Inputs dentro do formulário não disparam cálculos enquanto são editados.
+        with st.form("fm_issue_filter_form", clear_on_submit=False, border=False):
+            lookup_col, classification_col = st.columns([1.15, 2], gap="medium")
+            with lookup_col:
+                with st.container(key="fm_issue_search_group"):
+                    st.markdown('<div class="fm-issue-group-label">01 · PESQUISA</div>',
+                                unsafe_allow_html=True)
+                    query_draft = st.text_input(
+                        "LOCALIZAR OP", key="fm_issue_search",
+                        placeholder="Digite o número da OP",
                     )
-                with status_col:
-                    statuses = ["Todos os status"] + [
-                        op_rules.FINALIZADO_PATIO, op_rules.FINALIZADO_ENTREGUE,
-                        op_rules.NF_EMITIDA, op_rules.FINALIZADO, op_rules.REPORTADO,
-                        op_rules.EM_CONFERENCIA, op_rules.EM_SEPARACAO,
-                        op_rules.AGUARDANDO_INICIO,
-                    ]
-                    selected_status = st.selectbox(
-                        "STATUS DA OP", statuses, key="fm_issue_op_status"
+            with classification_col:
+                with st.container(key="fm_issue_class_group"):
+                    st.markdown('<div class="fm-issue-group-label">02 · CLASSIFICAÇÃO</div>',
+                                unsafe_allow_html=True)
+                    alert_col, status_col = st.columns(2, gap="medium")
+                    with alert_col:
+                        choice_draft = st.selectbox(
+                            "ALERTAS", list(FILTERS), key="fm_issue_filter"
+                        )
+                    with status_col:
+                        statuses = ["Todos os status"] + [
+                            op_rules.FINALIZADO_PATIO, op_rules.FINALIZADO_ENTREGUE,
+                            op_rules.NF_EMITIDA, op_rules.FINALIZADO, op_rules.REPORTADO,
+                            op_rules.EM_CONFERENCIA, op_rules.EM_SEPARACAO,
+                            op_rules.AGUARDANDO_INICIO,
+                        ]
+                        status_draft = st.selectbox(
+                            "STATUS DA OP", statuses, key="fm_issue_op_status"
+                        )
+            with st.container(key="fm_issue_date_filters"):
+                st.markdown(
+                    '<div class="fm-issue-date-title">03 · PERÍODO DE FATURAMENTO</div>'
+                    '<div class="fm-issue-date-note">'
+                    'Datas opcionais: selecione no calendário para filtrar o faturamento.'
+                    '</div>', unsafe_allow_html=True,
+                )
+                date_from_col, date_to_col = st.columns(2, gap="medium")
+                with date_from_col:
+                    date_from_raw = st.date_input(
+                        "DATA INICIAL", value=None, format="DD/MM/YYYY",
+                        key="fm_issue_invoice_start",
                     )
-        with st.container(key="fm_issue_date_filters"):
-            st.markdown(
-                '<div class="fm-issue-date-title">03 · PERÍODO DE FATURAMENTO</div>'
-                '<div class="fm-issue-date-note">'
-                'Selecione uma data ou um intervalo. O período filtra somente o faturamento das OPs.'
-                '</div>', unsafe_allow_html=True,
-            )
-            c_from, c_to, c_clear = st.columns([1, 1, .85], gap="medium")
-            with c_from:
-                date_from_raw = st.date_input(
-                    "DATA INICIAL", value=None, format="DD/MM/YYYY",
-                    key="fm_issue_invoice_start",
-                    help="Toque no campo ou ícone de calendário para escolher a data inicial.",
+                with date_to_col:
+                    date_to_raw = st.date_input(
+                        "DATA FINAL", value=None, format="DD/MM/YYYY",
+                        key="fm_issue_invoice_end",
+                    )
+            action_space, action_search, action_clear = st.columns([2.4, 1, 1], gap="medium")
+            with action_search:
+                submitted = st.form_submit_button(
+                    "PESQUISAR", type="primary",
+                    key="fm_issue_search_submit", use_container_width=True,
                 )
-            with c_to:
-                date_to_raw = st.date_input(
-                    "DATA FINAL", value=None, format="DD/MM/YYYY",
-                    key="fm_issue_invoice_end",
-                    help="Toque no campo ou ícone de calendário para escolher a data final.",
-                )
-            with c_clear:
-                st.button(
+            with action_clear:
+                st.form_submit_button(
                     "LIMPAR FILTROS", on_click=_clear_filters,
                     key="fm_issue_clear_filters", use_container_width=True,
                 )
 
-    invoice_period, invoice_error = _invoice_bounds(date_from_raw, date_to_raw)
-    if invoice_error:
-        st.warning(invoice_error + " O período não foi aplicado.")
+    if submitted:
+        submitted_dates, validation_error = _invoice_bounds(date_from_raw, date_to_raw)
+        if validation_error:
+            st.warning(validation_error + " A pesquisa anterior foi mantida.")
+        else:
+            st.session_state.fm_issue_applied_filters = {
+                "op": query_draft, "alertas": choice_draft,
+                "status": status_draft, "datas": submitted_dates,
+            }
+            st.session_state.fm_issue_page = 1
+            st.session_state.fm_issue_open_op = None
+    applied = st.session_state.get("fm_issue_applied_filters") or _default_issue_filters()
+    query = applied["op"]
+    choice = applied["alertas"]
+    selected_status = applied["status"]
+    invoice_period = applied["datas"]
     view = _filter_op_status_invoice(
         _filter(frame, query, choice), model["ops"], selected_status, invoice_period
     )
