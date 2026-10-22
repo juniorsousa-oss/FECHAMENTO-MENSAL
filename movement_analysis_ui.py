@@ -14,9 +14,10 @@ import streamlit as st
 import movement_store as store
 import movements as mv
 import kardex_history as history
+import kardex_group_config as groups
 
-AREAS = ["Visão geral", "TES e descrições", "Por OP", "Movimentações", "Cadastro TES", "Fontes e relatórios"]
-AREA_LABELS = {"Visão geral": "Resumo", "Por OP": "Consulta por OP", "Movimentações": "Registros", "TES e descrições": "TES"}
+AREAS = ["Visão geral", "TES e descrições", "Por OP", "Movimentações", "Cadastros", "Fontes e relatórios"]
+AREA_LABELS = {"Visão geral": "Resumo", "Por OP": "Consulta por OP", "Movimentações": "Registros", "TES e descrições": "TES", "Cadastros": "Cadastros"}
 FILTER_AREAS = {"TES e descrições": "tes", "Por OP": "ops", "Movimentações": "ledger"}
 FILTER_FIELDS = {"tes": "TES", "search": "Busca", "op": "OP", "cc": "CC / CR", "categories": "Tipo"}
 MONEY_COLUMNS = {"valor_entrada": "Entrada (R$)", "valor_saida": "Saída (R$)", "liquido_valor": "Variação (R$)"}
@@ -61,6 +62,43 @@ def cards(items):
 def _imports():
     return store.list_imports()
 
+@st.cache_data(show_spinner=False, ttl=30, max_entries=1)
+def _groups_read() -> dict:
+    return groups.load()
+
+
+def _groups_commit(updated: dict, catalog: set[str]) -> None:
+    groups.save(updated, known_tes=catalog)
+    _groups_read.clear()
+
+
+def _br_date(value) -> str:
+    """Saída para o usuário: DD/MM/AAAA; datas persistidas continuam ISO."""
+    if value is None or str(value) in ("", "NaT", "None"):
+        return "NI"
+    if isinstance(value, (date, datetime)):
+        return value.strftime("%d/%m/%Y")
+    raw = str(value).strip()
+    try:
+        return date.fromisoformat(raw[:10]).strftime("%d/%m/%Y")
+    except ValueError:
+        return raw
+
+
+def _br_month(value) -> str:
+    raw = str(value or "").strip()
+    return raw[5:7] + "/" + raw[:4] if len(raw) == 7 and raw[4] == "-" else raw
+
+
+def _display_dates(data: pd.DataFrame) -> pd.DataFrame:
+    out = data.copy()
+    for label in ("Primeiro movimento", "Último movimento", "Data"):
+        if label in out:
+            out[label] = out[label].map(_br_date)
+    if "Competência" in out:
+        out["Competência"] = out["Competência"].map(_br_month)
+    return out
+
 
 @st.cache_resource(show_spinner=False, ttl=600, max_entries=2)
 def _model(tokens: tuple, version: str):
@@ -72,6 +110,7 @@ def _model(tokens: tuple, version: str):
 def _reload():
     _imports.clear()
     _model.clear()
+    _groups_read.clear()
     issue_ui = sys.modules.get("issue_check_ui")
     if issue_ui:
         for name in ("_imports", "_history", "_audit"):
@@ -233,7 +272,7 @@ def _consultation_filters(frame, area):
 
 
 def _table(data: pd.DataFrame, key=None, on_select=None, height=600):
-    shown = data.rename(columns=NAMES)
+    shown = _display_dates(data.rename(columns=NAMES))
     fmt = {label: cash for label in MONEY_COLUMNS.values() if label in shown.columns}
     styled = shown.style.format(fmt, na_rep="—") if fmt else shown
     args = {"key": key} if key else {}
@@ -365,8 +404,7 @@ def _import_registry(model):
     for (month, warehouse), sources in sorted(grouped.items(), key=lambda pair: (-int(pair[0][0].replace("-", "")), pair[0][1])):
         frame = model["frame"]
         amount = int(((frame["competencia"] == month) & (frame["armazem"] == warehouse)).sum()) if not frame.empty else 0
-        periods = sorted({m["periodo_inicio"][8:] + "/" + m["periodo_inicio"][5:7] + " a " +
-                          m["periodo_fim"][8:] + "/" + m["periodo_fim"][5:7] for m in sources})
+        periods = sorted({_br_date(m["periodo_inicio"]) + " a " + _br_date(m["periodo_fim"]) for m in sources})
         rows.append({"Competência": month[5:] + "/" + month[:4], "Armazém": warehouse,
                      "Registros vigentes": amount, "Cobertura declarada": " · ".join(periods),
                      "Arquivos em uso": " · ".join(dict.fromkeys(m["arquivo_nome"] for m in sources))})
@@ -485,8 +523,29 @@ def _overview(frame, token):
     if unknown:
         st.warning(f"{count(unknown)} movimentações possuem TES sem descrição no cadastro de referência.")
     st.markdown("**MOVIMENTAÇÕES AGRUPADAS POR TES**")
-    st.caption("Os registros são agrupados exclusivamente por código TES e sua descrição vigente.")
-    _tes_table(frame, token + "_overview")
+    st.caption("Cada TES pertence a um único grupo configurado em Cadastros. As não vinculadas aparecem em SEM GRUPO.")
+    try:
+        config = _groups_read()
+    except Exception as exc:
+        st.warning(f"Não foi possível consultar o cadastro de grupos: {exc}. Os registros por TES permanecem disponíveis.")
+        _tes_table(frame, token + "_overview")
+    else:
+        summary = groups.summarize(frame, config)
+        if not summary.empty:
+            summary = summary.rename(columns={"grupo_usuario":"Grupo"})
+            _table(summary[["Grupo", "tes_distintas", "lancamentos", "produtos",
+                            "valor_entrada", "valor_saida", "liquido_valor"]],
+                   height=600)
+            st.caption("Entradas e saídas são somadas sem duplicidade. Cadastre grupos e associe suas TES em Cadastros.")
+        with st.expander("CONSULTAR TES DO GRUPO"):
+            labels = summary["Grupo"].tolist() if not summary.empty else []
+            if labels:
+                label = st.selectbox("Grupo", labels, key="fm_mov_group_drill")
+                owners = groups.group_owner(config)
+                selected_codes = sorted(code for code in frame["tes"].unique()
+                                        if owners.get(code, groups.UNASSIGNED) == label)
+                detail = frame.loc[frame["tes"].isin(selected_codes)]
+                _tes_table(detail, token + "_drill_" + label)
     with st.expander("EVOLUÇÃO MENSAL DO PERÍODO"):
         monthly = mv.summarize(frame, ["competencia"]).sort_values("competencia")
         _table(monthly[["competencia", "lancamentos", "valor_entrada", "valor_saida", "liquido_valor"]])
@@ -643,7 +702,7 @@ def render_results(model, imports):
     </style>''', unsafe_allow_html=True)
     area = st.session_state.get("fm_mov_area")
     # Usuários que ainda têm a navegação antiga em sessão chegam à aba equivalente.
-    area = {"Grupos e TES": "TES e descrições", "Classificação": "Cadastro TES"}.get(area, area)
+    area = {"Grupos e TES": "TES e descrições", "Classificação": "Cadastros", "Cadastro TES": "Cadastros"}.get(area, area)
     if area not in AREAS:
         area = AREAS[0]
     st.session_state.fm_mov_area = area
@@ -654,11 +713,11 @@ def render_results(model, imports):
                              format_func=lambda value: AREA_LABELS.get(value, value),
                              label_visibility="collapsed", width="stretch")
     headers = {
-        "Visão geral": ("01 · VISÃO GERAL", "RESULTADO DO KARDEX", "Entradas, saídas e variação por TES, com os valores originais do histórico."),
-        "TES e descrições": ("02 · TES", "MOVIMENTAÇÕES POR TES", "Uma linha por código e descrição do cadastro Protheus. Selecione para consultar os lançamentos."),
+        "Visão geral": ("01 · RESUMO", "RESULTADO POR GRUPOS TES", "Visão consolidada dos grupos cadastrados e das TES sem grupo."),
+        "TES e descrições": ("02 · TES", "MOVIMENTAÇÕES POR TES", "TES individuais e descrições vigentes, com rastreabilidade dos lançamentos."),
         "Por OP": ("03 · ORDENS DE PRODUÇÃO", "CONSULTA POR OP", "Localize OPs por sua identificação original e consulte os documentos vinculados."),
         "Movimentações": ("04 · REGISTROS", "MOVIMENTAÇÕES ORIGINAIS", "Consulte as informações do KARDEX sem classificação gerencial ou exclusões automáticas."),
-        "Cadastro TES": ("05 · CADASTRO", "CATÁLOGO DE TES", "Nove descrições prioritárias substituem o cadastro-base; demais TES mantidas."),
+        "Cadastros": ("05 · CADASTROS", "CONFIGURAÇÕES DE GRUPOS E TES", "Crie grupos, vincule TES e gerencie condições sem modificar o histórico."),
         "Fontes e relatórios": ("06 · FONTES E RELATÓRIOS", "HISTÓRICO, IMPORTAÇÃO E EXPORTAÇÃO", "Registros originais, histórico de importações e relatórios por TES."),
     }
     band(*headers[area])
@@ -674,7 +733,7 @@ def render_results(model, imports):
         origin = st.session_state.fm_mov_record_origin
         st.button("← VOLTAR PARA " + AREA_LABELS.get(origin, origin).upper(),
                   on_click=_go_to, args=(origin,), key="fm_mov_back")
-    if view.empty and area != "Cadastro TES":
+    if view.empty and area != "Cadastros":
         st.info("Nenhuma movimentação corresponde a esta consulta. Ajuste os filtros ou o período da análise.")
         return
     token = _view_token(view, area)
@@ -687,7 +746,7 @@ def render_results(model, imports):
     elif area == "Movimentações":
         _ledger(view, token)
         _exports(view, model, token, include_history=False)
-    elif area == "Cadastro TES":
+    elif area == "Cadastros":
         _catalog(view)
 
 
