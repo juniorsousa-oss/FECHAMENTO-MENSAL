@@ -389,20 +389,20 @@ def _band():
       padding-top:0!important;
       padding-bottom:0!important;
     }
-    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [role="combobox"] {
+    /* Nos controles BaseWeb, role=combobox pode pertencer a um input
+       invisível de acessibilidade; não alteramos sua geometria. */
+    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] > div > div:first-child {
       display:flex!important;
       align-items:center!important;
-      height:100%!important;
-      line-height:1.35!important;
-      padding-top:0!important;
-      padding-bottom:0!important;
-    }
-    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [role="combobox"] > div {
       align-self:center!important;
-      display:flex!important;
-      align-items:center!important;
+      height:100%!important;
       margin-top:0!important;
       margin-bottom:0!important;
+      line-height:1.35!important;
+    }
+    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] > div > div:first-child > div {
+      display:flex!important;
+      align-items:center!important;
       line-height:1.35!important;
     }
     .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] svg {
