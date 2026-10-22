@@ -16,6 +16,7 @@ import movement_store as store
 import movements as mv
 import kardex_history as history
 import kardex_group_config as groups
+import kardex_conditions as conditions
 
 AREAS = ["Visão geral", "TES e descrições", "Por OP", "Movimentações", "Cadastros", "Fontes e relatórios"]
 AREA_LABELS = {"Visão geral": "Resumo", "Por OP": "Consulta por OP", "Movimentações": "Registros", "TES e descrições": "TES", "Cadastros": "Cadastros"}
@@ -23,6 +24,7 @@ FILTER_AREAS = {"TES e descrições": "tes", "Por OP": "ops", "Movimentações":
 FILTER_FIELDS = {"tes": "TES", "search": "Busca", "op": "OP", "cc": "CC / CR", "categories": "Tipo"}
 MONEY_COLUMNS = {"valor_entrada": "Entrada (R$)", "valor_saida": "Saída (R$)", "liquido_valor": "Variação (R$)"}
 NAMES = {"tes": "TES", "descricao_tes": "Descrição TES",
+         "grupo_usuario": "Grupo", "subgrupo_usuario": "Subgrupo",
          "lancamentos": "Movimentos", "produtos": "Produtos", "tes_distintas": "TES distintas", "competencia": "Competência",
          "op_identificada": "OP", "documentos": "Documentos", "primeira_data": "Primeiro movimento", "ultima_data": "Último movimento",
          "enderecamentos": "Movimentos de endereço", **MONEY_COLUMNS}
