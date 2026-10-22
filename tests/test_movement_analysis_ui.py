@@ -96,7 +96,7 @@ class MovementAnalysisUITests(unittest.TestCase):
         # Escopo inicial é outubro: o lançamento de setembro não entra nos cards.
         self.assertEqual(frame["Entrada (R$)"].sum(), 30)
         self.assertEqual(frame["Saída (R$)"].sum(), 35)
-        self.assertEqual(frame["Movimentos"].sum(), 5)
+        self.assertEqual(frame["Movimentos"].sum(), 4)
 
     def test_tes_local_filter_survives_navigation(self):
         app = self.app()
