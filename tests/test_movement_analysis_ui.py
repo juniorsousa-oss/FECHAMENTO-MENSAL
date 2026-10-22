@@ -59,6 +59,22 @@ class MovementAnalysisUITests(unittest.TestCase):
         app.segmented_control[0].set_value(name).run()
         self.assertFalse(app.exception)
 
+    def test_warehouse_inventory_marks_existing_and_future_warehouses_correctly(self):
+        import movement_analysis_ui as ui
+        import movements as mv
+        from test_movement_analysis import imported, record
+        model = mv.build_model([imported([
+            record(armazem="S2", documento="S2"),
+            record(armazem="E2", data="2026-10-20", documento="E2"),
+        ])])
+        frame = ui._warehouse_registry_overview(model)
+        states = frame.set_index("Armazém")
+        self.assertEqual(states.loc["S2", "Situação"], "ATIVO")
+        self.assertEqual(states.loc["E2", "Situação"], "ATIVO")
+        self.assertEqual(states.loc["EP", "Situação"], "PENDENTE DE IMPORTAÇÃO")
+        self.assertEqual(states.loc["20", "Situação"], "PENDENTE DE IMPORTAÇÃO")
+        self.assertEqual(int(states.loc["E2", "Registros vigentes"]), 1)
+
     def test_summary_has_no_consultation_filters_and_keeps_the_period_totals(self):
         app = self.app()
         self.assertEqual(len(app.text_input), 0)
