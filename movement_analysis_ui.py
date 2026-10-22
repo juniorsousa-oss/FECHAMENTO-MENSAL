@@ -448,49 +448,54 @@ def _context(frame, imports, coverage=None):
     return view.copy()
 
 
-def _ordered_groups(frame):
-    grouped = mv.summarize(mv.effective(frame), ["grupo_analise"])
-    order = {name:i for i, name in enumerate(mv.rules()["ordem_grupos"])}
-    grouped["_order"] = grouped["grupo_analise"].map(order).fillna(999)
-    return grouped.sort_values(["_order", "grupo_analise"]).drop(columns="_order").reset_index(drop=True)
+def _tes_summary(frame) -> pd.DataFrame:
+    """Uma linha por TES e descrição, sem agrupamentos subjetivos."""
+    result = mv.summarize(frame, ["tes", "descricao_tes"])
+    return result.sort_values(["tes", "descricao_tes"], kind="stable").reset_index(drop=True)
 
 
-def _groups_table(frame, token):
-    summary = _ordered_groups(frame)
-    key = "fm_mov_group_table_" + token
-    names = summary["grupo_analise"].tolist()
-    _table(summary[["grupo_analise", "tes_distintas", "lancamentos", "valor_entrada", "valor_saida", "liquido_valor"]],
-           key=key, on_select=lambda:_group_selected(key, names))
+def _tes_table(frame, token):
+    summary = _tes_summary(frame)
+    if summary.empty:
+        st.info("Nenhuma TES com movimentações neste recorte.")
+        return
+    key = "fm_mov_tes_table_" + token
+    codes = summary["tes"].tolist()
+    _table(
+        summary[["tes", "descricao_tes", "lancamentos", "produtos",
+                 "valor_entrada", "valor_saida", "liquido_valor"]],
+        key=key, on_select=lambda: _tes_selected(key, codes),
+        height=700,
+    )
+    st.caption("Selecione uma TES para consultar os registros originais que compõem os valores.")
 
 
 def _overview(frame, token):
-    current = mv.effective(frame)
-    cards([("ENTRADAS EFETIVAS", cash(current["valor_entrada"].sum())), ("SAÍDAS EFETIVAS", cash(current["valor_saida"].sum())),
-           ("VARIAÇÃO DO PERÍODO", cash(current["liquido_valor"].sum()))])
-    st.caption(f"{count(len(frame))} registros · {count(frame.codigo.nunique())} produtos · {count(frame.tes.nunique())} TES distintas · "
-               f"{count(frame.loc[frame.op_identificada != '', 'op_identificada'].nunique())} OPs. Variação = entradas − saídas.")
-    st.markdown("**COMPOSIÇÃO POR GRUPO**")
-    st.caption("Selecione um grupo para avançar às TES e condições que compõem seus valores.")
-    _groups_table(frame, token + "_overview")
+    cards([
+        ("ENTRADAS DO KARDEX", cash(frame["valor_entrada"].sum())),
+        ("SAÍDAS DO KARDEX", cash(frame["valor_saida"].sum())),
+        ("VARIAÇÃO DO PERÍODO", cash(frame["liquido_valor"].sum())),
+    ])
+    unknown = int((frame["descricao_tes"] == "NI - TES não localizada no cadastro").sum())
+    st.caption(
+        f"{count(len(frame))} registros · {count(frame.codigo.nunique())} produtos · "
+        f"{count(frame.tes.nunique())} TES distintas · "
+        f"{count(frame.loc[frame.op_identificada != '', 'op_identificada'].nunique())} OPs. "
+        "Totais sem exclusão ou reclassificação gerencial."
+    )
+    if unknown:
+        st.warning(f"{count(unknown)} movimentações possuem TES sem descrição no cadastro de referência.")
+    st.markdown("**MOVIMENTAÇÕES AGRUPADAS POR TES**")
+    st.caption("Os grupos gerenciais anteriores estão desativados; o código e a descrição do cadastro são as únicas chaves.")
+    _tes_table(frame, token + "_overview")
     with st.expander("EVOLUÇÃO MENSAL DO PERÍODO"):
-        monthly = mv.summarize(current, ["competencia"]).sort_values("competencia")
+        monthly = mv.summarize(frame, ["competencia"]).sort_values("competencia")
         _table(monthly[["competencia", "lancamentos", "valor_entrada", "valor_saida", "liquido_valor"]])
 
 
-def _groups(frame, token):
-    active = mv.effective(frame)
-    if frame["grupo_analise"].nunique() != 1:
-        _groups_table(frame, token + "_groups")
-        st.caption("Selecione um grupo na tabela ou use o filtro Grupo de análise para abrir suas condições.")
-        return
-    st.button("TODOS OS GRUPOS", key="fm_mov_all_groups", on_click=_all_groups)
-    branches = mv.summarize(active, ["grupo_analise", "tes", "descricao_tes", "subgrupo_analise"])
-    branches = branches.sort_values(["tes", "subgrupo_analise"]).reset_index(drop=True)
-    key = "fm_mov_tes_table_" + token
-    values = list(branches[["grupo_analise", "tes", "subgrupo_analise"]].itertuples(index=False, name=None))
-    _table(branches[["tes", "descricao_tes", "subgrupo_analise", "lancamentos", "valor_entrada", "valor_saida", "liquido_valor"]],
-           key=key, on_select=lambda:_tes_selected(key, values))
-    st.caption("Selecione uma condição para consultar os movimentos que compõem seu valor.")
+def _tes(frame, token):
+    st.caption("Uma linha por TES. As descrições seguem exatamente o cadastro Protheus, sem regras por produto, OP ou CC.")
+    _tes_table(frame, token)
 
 
 def _ops(frame, token):
@@ -507,15 +512,17 @@ def _ops(frame, token):
 
 
 def _detail(row):
-    band("REGISTRO ORIGINAL", row["codigo"] + " · " + row["descricao"], "Informações do relatório e motivo da classificação aplicada.")
+    band("REGISTRO ORIGINAL", row["codigo"] + " · " + row["descricao"],
+         "Rastreabilidade das informações existentes no KARDEX, sem classificação gerencial.")
     a, b, c = st.columns(3)
     with a:
         st.write("**DATA:** " + date.fromisoformat(row["data"]).strftime("%d/%m/%Y"))
-        st.write("**TES:** " + row["tes"] + " · " + row["descricao_tes"])
+        st.write("**TES:** " + row["tes"])
+        st.write("**DESCRIÇÃO TES:** " + row["descricao_tes"])
         st.write("**DOCUMENTO:** " + row["documento"])
     with b:
         st.write("**ARMAZÉM:** " + row["armazem"])
-        st.write("**CATEGORIA:** " + row["tipo"])
+        st.write("**TIPO DO MATERIAL:** " + row["tipo"])
         st.write("**CC / CR:** " + (row["cc_identificado"] or "—"))
     with c:
         st.write("**AE ORIGINAL:**")
@@ -523,19 +530,12 @@ def _detail(row):
         st.write("**OP:** " + (row["op_identificada"] or "—"))
     st.write(f"**ENTRADA:** {quantity(row['qtd_entrada'])} {row['um']} · {cash(row['valor_entrada'])}")
     st.write(f"**SAÍDA:** {quantity(row['qtd_saida'])} {row['um']} · {cash(row['valor_saida'])}")
-    st.write("**GRUPO:** " + row["grupo_analise"])
-    st.write("**SUBGRUPO:** " + row["subgrupo_analise"])
-    st.info(row["motivo_classificacao"])
-    if row["enderecamento_compensado"]:
-        st.info("Movimentação de endereço compensada. O registro permanece visível e não compõe as entradas ou saídas efetivas.")
-    elif row["enderecamento_candidato"]:
-        st.warning("Possível par de endereçamento com diferença de quantidade. O valor permanece nos totais até a conferência.")
-    st.caption(f"Origem: {row['arquivo_origem']} · linha {int(row['linha_origem'])} · regra {row['versao_regra']}.")
+    st.caption(f"Arquivo: {row['arquivo_origem']} · linha {int(row['linha_origem'])}.")
 
 
 def _ledger(frame, token):
     st.caption(f"{count(len(frame))} registros encontrados. A exportação inclui todo o recorte, independentemente da página.")
-    st.caption("Endereçamento compensado = par de TES 499/999 com produto, armazém, documento, data, quantidade e valor coincidentes. O par continua no histórico, mas fica fora dos totais efetivos.")
+    st.caption("Sem abatimentos, agrupamentos gerenciais ou compensações automáticas. Todos os lançamentos da fonte permanecem incluídos.")
     if st.session_state.get("fm_mov_page_token") != token:
         st.session_state.fm_mov_page = 1
         st.session_state.fm_mov_page_token = token
@@ -551,8 +551,9 @@ def _ledger(frame, token):
     visible = ordered.iloc[(page-1)*size:page*size]
     shown = pd.DataFrame({"Data": pd.to_datetime(visible["data"]).dt.date, "Código": visible["codigo"], "Produto": visible["descricao"],
                           "Armazém": visible["armazem"], "TES": visible["tes"], "Entrada (R$)": visible["valor_entrada"],
-                          "Saída (R$)": visible["valor_saida"], "AE original": visible["ae_original"], "Grupo": visible["grupo_analise"],
-                          "Subgrupo": visible["subgrupo_analise"], "Endereçamento compensado": visible["enderecamento_compensado"].map({True: "SIM", False: "NÃO"})})
+                          "Saída (R$)": visible["valor_saida"], "AE original": visible["ae_original"],
+                          "Descrição TES": visible["descricao_tes"], "Tipo": visible["tipo"],
+                          "Documento": visible["documento"]})
     key = f"fm_mov_ledger_{token}_{page}_{size}"
     event = st.dataframe(shown, key=key, hide_index=True, width="stretch", height=600,
                          on_select="rerun", selection_mode="single-row",
