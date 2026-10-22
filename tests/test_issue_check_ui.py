@@ -44,18 +44,30 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertFalse(any("Histórico incompleto" in t.value.columns for t in app.dataframe))
         self.assertIn("Outros endereços", app.dataframe[0].value.columns)
 
-        detail = next(x for x in app.selectbox if x.label == "DETALHAR MATERIAL E EVIDÊNCIAS")
-        detail.set_value("26000101001:00001000").run()
-        self.assertFalse(app.exception)
-        self.assertTrue(any(t.label == "MOVIMENTOS KARDEX" for t in app.tabs))
-        self.assertTrue(any("PRODUTO NÃO CONSUMIDO COM SALDO NA PRODUÇÃO" in x.value for x in app.error))
+        # A tabela possui seleção nativa (checkbox) e já não oferece a
+        # busca duplicada por selectbox. Evidências só aparecem após seleção.
+        self.assertFalse(any(x.label == "DETALHAR MATERIAL E EVIDÊNCIAS" for x in app.selectbox))
+        self.assertEqual(len(app.tabs), 0)
+        import issue_check_ui as ui
+        frame = ui._filter(pd.DataFrame([{"op": "26000101001", "item_id": "a"},
+                                        {"op": "26000201001", "item_id": "b"}]),
+                           "", "Todos")
+        self.assertEqual(ui._material_at_position(frame, {"rows": [0]})["item_id"], "a")
+        self.assertEqual(ui._material_at_position(frame, {"rows": [1]})["item_id"], "b")
+        self.assertIsNone(ui._material_at_position(frame, {"rows": []}))
 
         next(x for x in app.selectbox if x.label == "ALERTAS").set_value("Com alertas").run()
+        self.assertFalse(app.exception)
+        # Mudar filtro não o aplica antes de PESQUISAR.
+        self.assertEqual(len([b for b in app.button if "OP 2600" in b.label]), 2)
+        next(b for b in app.button if b.label == "PESQUISAR").click().run()
         self.assertFalse(app.exception)
         self.assertEqual(len([b for b in app.button if "OP 2600" in b.label]), 1)
 
         next(x for x in app.selectbox if x.label == "ALERTAS").set_value("Todos").run()
         next(x for x in app.text_input if x.label == "LOCALIZAR OP").set_value("26000201001").run()
+        self.assertFalse(app.exception)
+        next(b for b in app.button if b.label == "PESQUISAR").click().run()
         self.assertFalse(app.exception)
         self.assertEqual(len([b for b in app.button if "OP 2600" in b.label]), 1)
         self.assertTrue(any("ORDEM OK" in b.label for b in app.button))
@@ -129,9 +141,24 @@ class IssueCheckUITests(unittest.TestCase):
             date(2026, 10, 31)
         ).run()
         self.assertFalse(app.exception)
+        next(x for x in app.button if x.label == "PESQUISAR").click().run()
+        self.assertFalse(app.exception)
         next(x for x in app.button if x.label == "LIMPAR FILTROS").click().run()
         self.assertFalse(app.exception)
         self.assertTrue(all(widget.value is None for widget in app.date_input))
+
+    def test_selected_row_lookup_preserves_original_dataframe_position(self):
+        import pandas as pd
+        import issue_check_ui as ui
+        group = pd.DataFrame([
+            {"item_id": "op:a", "codigo": "A"},
+            {"item_id": "op:b", "codigo": "B"},
+            {"item_id": "op:c", "codigo": "C"},
+        ], index=[99, 10, 25])
+        self.assertEqual(ui._material_at_position(group, {"rows": [1]})["item_id"], "op:b")
+        self.assertIsNone(ui._material_at_position(group, {"rows": []}))
+        self.assertIsNone(ui._material_at_position(group, {"rows": [6]}))
+        self.assertIsNone(ui._material_at_position(group, {"rows": [-1]}))
 
     def test_an_unavailable_source_is_not_presented_as_zero_stock_or_issues(self):
         program = '''
