@@ -1176,6 +1176,17 @@ def render_results(model):
         _sources(model)
 
 
+def _history_warehouses(imports: list[dict]) -> set[str]:
+    """Inclui armazéns cadastrados no manifesto de cada importação KARDEX."""
+    found = set()
+    for entry in imports:
+        meta = entry.get("meta") or {}
+        candidates = [meta.get("armazem")] + list(meta.get("armazens") or [])
+        candidates.extend(scope.get("armazem") for scope in meta.get("escopos") or [])
+        found.update(str(value).strip() for value in candidates if value and str(value).strip())
+    return found
+
+
 def render_issue_check():
     _band()
     try:
@@ -1189,11 +1200,7 @@ def render_issue_check():
         # silenciosamente a conferência ao antigo padrão S2.
         options = _warehouse_options(next(t for t in tokens if t[0] == "endereco"))
         imports = _imports()
-        import_warehouses = {
-            str((entry.get("meta") or {}).get("armazem") or "").strip()
-            for entry in imports
-            if (entry.get("meta") or {}).get("armazem")
-        }
+        import_warehouses = _history_warehouses(imports)
         chosen = tuple(sorted(set(options) | import_warehouses))
         if not chosen:
             st.warning("Ainda não existem armazéns disponíveis nas fontes ENDEREÇO ou KARDEX.")
