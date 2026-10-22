@@ -93,7 +93,8 @@ class MovementAnalysisUITests(unittest.TestCase):
         frame = app.dataframe[0].value
         self.assertIn("Grupo", frame.columns)
         self.assertEqual(frame["Grupo"].tolist(), ["SEM GRUPO"])
-        self.assertEqual(frame["Entrada (R$)"].sum(), 70)
+        # Escopo inicial é outubro: o lançamento de setembro não entra nos cards.
+        self.assertEqual(frame["Entrada (R$)"].sum(), 30)
         self.assertEqual(frame["Saída (R$)"].sum(), 35)
         self.assertEqual(frame["Movimentos"].sum(), 5)
 
