@@ -51,7 +51,8 @@ NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
 
 TES_CATALOG_FILE = Path(__file__).parent / "config" / "tes_cadastro_protheus_20261022.b64"
-TES_CATALOG_VERSION = "TES-PROTHEUS-20261022"
+TES_CATALOG_VERSION = "TES-PROTHEUS-20261022+TM-CONFIRMADAS-20261022"
+TES_CONFIRMED_FILE = Path(__file__).parent / "config" / "tes_tipos_confirmados_20261022.json"
 
 
 @lru_cache(maxsize=1)
@@ -71,13 +72,32 @@ def tes_reference() -> dict[str, str]:
     return catalog
 
 
+@lru_cache(maxsize=1)
+def tes_confirmed() -> dict[str, dict[str, str]]:
+    """Sete códigos/tipos fornecidos pelo usuário (Código TM / Tipo / Descrição)."""
+    payload = json.loads(TES_CONFIRMED_FILE.read_text(encoding="utf-8"))
+    tes = payload["tes"]
+    if set(tes) != {"010", "020", "030", "040", "520", "540", "550"}:
+        raise ValueError("Cadastro complementar TM/TES está inconsistente.")
+    return tes
+
+
 def rules() -> dict:
-    """Somente TES e descrição literal da referência; nenhuma regra gerencial."""
+    """Base de TES Protheus + sete registros informativos confirmados.
+
+    O tipo de TM não é um grupo gerencial e não cria regras de consumo.
+    """
     config = json.loads(RULES_FILE.read_text(encoding="utf-8"))
+    catalog = {key: {"descricao": description, "tipo_tm": ""} for key, description in tes_reference().items()}
+    for code, fields in tes_confirmed().items():
+        catalog.setdefault(code, {})
+        catalog[code].update({
+            "descricao": fields["descricao"], "tipo_tm": fields["tipo_tm"],
+        })
     return {
         "versao": config["versao"] + "+" + TES_CATALOG_VERSION,
         "modo": "CADASTRO_TES_SOMENTE",
-        "tes": {key: {"descricao": description} for key, description in tes_reference().items()},
+        "tes": catalog,
     }
 
 def normalized(value) -> str:
@@ -313,12 +333,14 @@ def classify(row: dict, config: dict) -> dict:
     """
     result = dict(row)
     code = row["tes"]
-    description = config["tes"].get(code, {}).get("descricao") or "NI - TES não localizada no cadastro"
+    tes_data = config["tes"].get(code, {})
+    description = tes_data.get("descricao") or "NI - TES não localizada no cadastro"
     ae = str(row.get("ae_original") or "").strip()
     op = re.fullmatch(r"OP\s*(\d+)", ae, re.I)
     cc = re.fullmatch(r"CC\s*(\d+)", ae, re.I)
     result.update({
         "descricao_tes": description,
+        "tipo_tm": tes_data.get("tipo_tm") or "NI",
         "grupo_analise": "", "subgrupo_analise": "",
         "grupo_provisorio": False, "regra_classificacao": "",
         "motivo_classificacao": "", "material_h001": False,
