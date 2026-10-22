@@ -43,6 +43,17 @@ if action == "tes":
 elif action == "op":
     st.session_state.test_selection = {"selection": {"rows": [0]}}
     ui._op_selected("test_selection", ["OP00001234567"])
+elif action in ("group_only", "drill"):
+    original_table = ui._table
+    def select_in_order(data, *args, **kwargs):
+        displayed = original_table(data, *args, **kwargs)
+        key = kwargs.get("key", "")
+        if "_overview_groups_" in key:
+            return {"selection": {"rows": [0]}}
+        if action == "drill" and ("_overview_subgroups_" in key or "_overview_tes_" in key):
+            return {"selection": {"rows": [0]}}
+        return displayed
+    ui._table = select_in_order
 ui.render_results(model, imports)
 """
 
@@ -74,6 +85,48 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.assertTrue(ledger["Data"].notna().all())
         self.assertIn("Grupo", ledger.columns)
         self.assertIn("Subgrupo", ledger.columns)
+
+    def test_dynamic_table_height_avoids_phantom_rows(self):
+        import movement_analysis_ui as ui
+        self.assertEqual(ui._grid_height(1), 74)
+        self.assertEqual(ui._grid_height(2), 109)
+        self.assertEqual(ui._grid_height(6), 249)
+        self.assertEqual(ui._grid_height(0), 72)
+        self.assertEqual(ui._grid_height(30, 550), 550)
+        self.assertIsNone(ui._picked_index({"selection": {"rows": []}}, 6))
+        self.assertIsNone(ui._picked_index({"selection": {"rows": [6]}}, 6))
+        self.assertEqual(ui._picked_index({"selection": {"rows": [2]}}, 6), 2)
+
+    def test_summary_loads_subgroups_only_after_group_checkbox(self):
+        app = self.app()
+        self.assertFalse(any("Subgrupo" in frame.value.columns for frame in app.dataframe))
+        app.session_state["_test_action"] = "group_only"
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(app.segmented_control[0].value, "Visão geral")
+        self.assertEqual(app.dataframe[0].value["Grupo"].tolist(), ["SEM GRUPO"])
+        self.assertIn("Subgrupo", app.dataframe[1].value.columns)
+        self.assertFalse(any("TES" in frame.value.columns for frame in app.dataframe[2:]))
+
+    def test_summary_drills_group_subgroup_tes_movements_without_navigation(self):
+        app = self.app()
+        app.session_state["_test_action"] = "drill"
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(app.segmented_control[0].value, "Visão geral")
+        self.assertGreaterEqual(len(app.dataframe), 4)
+        groups = app.dataframe[0].value
+        subgroups = app.dataframe[1].value
+        tes = app.dataframe[2].value
+        ledger = app.dataframe[3].value
+        self.assertEqual(groups["Grupo"].tolist(), ["SEM GRUPO"])
+        self.assertIn("Subgrupo", subgroups.columns)
+        self.assertIn("TES", tes.columns)
+        self.assertIn("Grupo", ledger.columns)
+        self.assertIn("Subgrupo", ledger.columns)
+        self.assertEqual(set(ledger["TES"]), {tes.iloc[0]["TES"]})
+        self.assertEqual(set(ledger["Subgrupo"]), {subgroups.iloc[0]["Subgrupo"]})
+        self.assertTrue(ledger["Data"].notna().all())
 
     def test_warehouse_registry_remains_accessible(self):
         from test_movement_analysis import imported, record
