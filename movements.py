@@ -1,4 +1,4 @@
-"""KARDEX: original records, repeat-aware imports and confirmed classifications."""
+"""KARDEX: histórico físico, importações idempotentes e agrupamento neutro por TES."""
 from __future__ import annotations
 
 import base64
@@ -52,7 +52,6 @@ NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
 TES_CATALOG_FILE = Path(__file__).parent / "config" / "tes_cadastro_protheus_20261022.b64"
 TES_CATALOG_VERSION = "TES-PROTHEUS-20261022"
-SALES_TES_FROM_CATALOG = frozenset(("815", "823", "825", "836", "837"))
 
 
 @lru_cache(maxsize=1)
@@ -73,21 +72,13 @@ def tes_reference() -> dict[str, str]:
 
 
 def rules() -> dict:
+    """Somente TES e descrição literal da referência; nenhuma regra gerencial."""
     config = json.loads(RULES_FILE.read_text(encoding="utf-8"))
-    for tes, description in tes_reference().items():
-        if tes not in config["tes"]:
-            is_sales = tes in SALES_TES_FROM_CATALOG
-            config["tes"][tes] = {
-                "descricao": description,
-                "grupo": "VENDAS" if is_sales else "TES A CLASSIFICAR",
-                # Apenas cinco TES de venda/entrega futura possuem grupo
-                # sustentado diretamente pela descrição. As demais terão
-                # descrição visível, sem inventar classificação gerencial.
-                "provisorio": not is_sales,
-            }
-    config["versao"] = config["versao"] + "+" + TES_CATALOG_VERSION
-    return config
-
+    return {
+        "versao": config["versao"] + "+" + TES_CATALOG_VERSION,
+        "modo": "CADASTRO_TES_SOMENTE",
+        "tes": {key: {"descricao": description} for key, description in tes_reference().items()},
+    }
 
 def normalized(value) -> str:
     text = unicodedata.normalize("NFKD", str(value or "").upper())
@@ -315,54 +306,29 @@ def _merge_active(imports: list[dict]) -> tuple[list[dict], int]:
 
 
 def classify(row: dict, config: dict) -> dict:
+    """Enriquece o registro sem inferir grupo, condição, consumo ou tipo.
+
+    A TES e a descrição vêm diretamente do cadastro Protheus. Não converter
+    descrição em uma classificação de negócio nem usar regras antigas.
+    """
     result = dict(row)
-    code, ae = row["tes"], row["ae_original"].strip()
-    entry = config["tes"].get(code, {})
-    description = entry.get("descricao") or f"TES {code} sem descrição cadastrada"
-    base = entry.get("grupo") or description
-    configured_subgroup = entry.get("subgrupo")
-    group, subgroup, rule = (base, configured_subgroup or base,
-                             f"{code}_SUBGRUPO_CONFIRMADO" if configured_subgroup else "CADASTRO_TES")
+    code = row["tes"]
+    description = config["tes"].get(code, {}).get("descricao") or "NI - TES não localizada no cadastro"
+    ae = str(row.get("ae_original") or "").strip()
     op = re.fullmatch(r"OP\s*(\d+)", ae, re.I)
     cc = re.fullmatch(r"CC\s*(\d+)", ae, re.I)
-    cc_number = cc.group(1) if cc else ""
-    material = row["codigo"] in config["_closing_codes"] or normalized(row["descricao"]).startswith(("BARRA DE COBRE ", "CHAPA "))
-    reason = (f"TES {code} classificada em {base} / {subgroup}, conforme cadastro confirmado."
-              if configured_subgroup else f"TES {code} vinculada a {base} no cadastro confirmado.")
-    provisional = bool(entry.get("provisorio", not bool(entry.get("grupo"))))
-    if code in ("020", "520") and material:
-        group, subgroup, rule = FLOW, CLOSING, CLOSING_RULE
-        reason = f"TES {code} com chapa ou barra de cobre: ajuste de fechamento de chapas e barras."
-    elif code == "520":
-        if op:
-            group, subgroup, rule = FLOW, "BAIXA DE OP MANUAL", "520_OP_MANUAL"
-            reason = "TES 520 com OP identificada na AE original: baixa manual de OP."
-        elif cc_number and cc_number != "600307":
-            group, subgroup, rule = FLOW, "ACERTO GERENCIAL", "520_CC_GERENCIAL"
-            reason = f"TES 520 com CC {cc_number}, diferente de 600307: acerto gerencial."
-        elif cc_number == "600307" and (row["tipo"] in ("II", "MC") or row["codigo"] in config["_h001_codes"]):
-            group, subgroup, rule = FLOW, "MATERIAIS DE CONSUMO", "520_CC_CONSUMO"
-            reason = "TES 520 no CC 600307 com categoria II/MC ou material da lista H0001 de TC/TP."
-        else:
-            group, subgroup, rule = ADJUSTMENT, "AJUSTE DE ESTOQUE A VALIDAR", "520_BASE_A_VALIDAR"
-            reason = "TES 520 sem enquadramento nas condições de fluxo já confirmadas."
-    elif base == ADJUSTMENT:
-        subgroup, rule = "AJUSTE DE ESTOQUE A VALIDAR", f"{code}_BASE_A_VALIDAR"
-        reason = f"TES {code} no grupo de ajuste; aguarda refinamento das condições."
-    if code == "020" and group == ADJUSTMENT and row["tipo"] in ("PA", "PI"):
-        group, subgroup, rule = PRODUCTION, PRODUCTION, "AJUSTE_PA_PI_PRODUCAO_INTERNA"
-        reason = f"TES 020 que permanecia em Ajuste, com categoria {row['tipo']}: produção interna."
-    if provisional:
-        reason = f"TES {code} sem grupo confirmado: a descrição da TES é usada como grupo provisório."
-    result.update({"descricao_tes": description, "grupo_analise": group, "subgrupo_analise": subgroup,
-                   "grupo_provisorio": provisional, "regra_classificacao": rule, "motivo_classificacao": reason,
-                   "op_identificada": "OP" + op.group(1) if op else "", "cc_identificado": cc_number,
-                   "tipo_vinculo_ae": "OP" if op else "CC" if ae.upper().startswith("CC") else "OUTRO",
-                   "material_h001": row["codigo"] in config["_h001_codes"],
-                   "enderecamento_compensado": False, "par_enderecamento": "", "enderecamento_candidato": False,
-                   "versao_regra": config["versao"]})
+    result.update({
+        "descricao_tes": description,
+        "grupo_analise": "", "subgrupo_analise": "",
+        "grupo_provisorio": False, "regra_classificacao": "",
+        "motivo_classificacao": "", "material_h001": False,
+        "op_identificada": "OP" + op.group(1) if op else "",
+        "cc_identificado": cc.group(1) if cc else "",
+        "tipo_vinculo_ae": "OP" if op else "CC" if ae.upper().startswith("CC") else "OUTRO",
+        "enderecamento_compensado": False, "par_enderecamento": "",
+        "enderecamento_candidato": False, "versao_regra": config["versao"],
+    })
     return result
-
 
 def _direction(row):
     incoming = decimal(row.get("qtd_entrada")) != 0 or decimal(row.get("valor_entrada")) != 0
@@ -416,12 +382,12 @@ def match_addresses(records: list[dict]) -> list[dict]:
 
 def build_model(imports: list[dict], config: dict | None = None) -> dict:
     cfg = dict(config or rules())
-    cfg["_closing_codes"] = {r["codigo"] for r in cfg["materiais_fechamento"]}
-    cfg["_h001_codes"] = set(cfg["materiais_h001"])
     snapshot = history_snapshot(imports)
     originals, duplicates = snapshot["rows"], snapshot["duplicates"]
     records = [classify(r, cfg) for r in originals]
-    address_pairs = match_addresses(records)
+    # Nenhum pareamento ou exclusão automática por suposta transferência:
+    # nesta fase, cada lançamento do KARDEX permanece nos totais originais.
+    address_pairs = []
     frame = pd.DataFrame(records)
     if not frame.empty:
         frame["competencia"] = frame["data"].str[:7]
@@ -436,7 +402,8 @@ def build_model(imports: list[dict], config: dict | None = None) -> dict:
 
 
 def effective(frame: pd.DataFrame) -> pd.DataFrame:
-    return frame.loc[~frame["enderecamento_compensado"]] if not frame.empty else frame
+    """Etapa neutra: todos os lançamentos compõem os totais, sem ajustes automáticos."""
+    return frame
 
 
 def summarize(frame: pd.DataFrame, by: list[str]) -> pd.DataFrame:
@@ -455,8 +422,8 @@ def summarize_ops(frame: pd.DataFrame) -> pd.DataFrame:
     linked = frame.loc[frame["op_identificada"] != ""].copy()
     if linked.empty:
         return pd.DataFrame()
-    linked["entrada_efetiva"] = linked["valor_entrada"].where(~linked["enderecamento_compensado"], 0)
-    linked["saida_efetiva"] = linked["valor_saida"].where(~linked["enderecamento_compensado"], 0)
+    linked["entrada_efetiva"] = linked["valor_entrada"]
+    linked["saida_efetiva"] = linked["valor_saida"]
     return linked.groupby("op_identificada").agg(
         lancamentos=("id_registro", "size"), produtos=("codigo", "nunique"), documentos=("documento", "nunique"),
         primeira_data=("data", "min"), ultima_data=("data", "max"), enderecamentos=("enderecamento_compensado", "sum"),
