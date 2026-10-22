@@ -31,6 +31,44 @@ class KardexHistoryTests(unittest.TestCase):
         self.assertEqual(snapshot["registry"][0]["status"], "PARCIALMENTE SUBSTITUÍDO")
         self.assertEqual(snapshot["registry"][1]["status"], "VIGENTE")
 
+    def test_consolidated_ep_20_e2_zip_preserves_s2_and_empty_20_months(self):
+        import io
+        import json
+        from zipfile import ZipFile, ZIP_DEFLATED
+
+        scopes = []
+        for wh in ("EP", "20", "E2"):
+            for month, first, last in (
+                ("2026-01", "2026-01-01", "2026-01-31"),
+                ("2026-10", "2026-10-01", "2026-10-21"),
+            ):
+                scopes.append({"competencia": month, "armazem": wh,
+                               "periodo_inicio": first, "periodo_fim": last})
+        rows = [
+            record(armazem="EP", data="2026-01-08", documento="EP JAN"),
+            record(armazem="20", data="2026-01-29", documento="20 JAN"),
+            record(armazem="E2", data="2026-10-21", documento="E2 OUT"),
+        ]
+        manifest = {"formato": mv.HISTORY_FORMAT, "periodo_inicio": "2026-01-01",
+                    "periodo_fim": "2026-10-21", "coberturas": scopes}
+        stream = io.BytesIO()
+        with ZipFile(stream, "w", ZIP_DEFLATED) as archive:
+            archive.writestr("manifesto.json", json.dumps(manifest))
+            archive.writestr("movimentacoes.jsonl", "\\n".join(json.dumps(row) for row in rows) + "\\n")
+        parsed = mv.parse_report(stream.getvalue(), "KARDEX_EP_20_E2.zip")
+        self.assertEqual(len(parsed["rows"]), 3)
+        self.assertEqual(len(parsed["meta"]["coberturas_arquivo"]), 6)
+        prepared = history.prepare_import(parsed)
+        self.assertEqual(prepared["meta"]["armazens"], ["20", "E2", "EP"])
+        existing_s2 = pack([record(documento="S2 VIGENTE")], "s2",
+                           start="2026-10-01", replace=True)
+        snapshot = mv.history_snapshot([existing_s2, prepared])
+        self.assertEqual({r["armazem"] for r in snapshot["rows"]},
+                         {"S2", "EP", "20", "E2"})
+        self.assertTrue(any(meta["armazem"] == "20" and meta["competencia"] == "2026-10"
+                            and meta["lancamentos"] == 0 for meta in snapshot["coverage"]))
+        self.assertTrue(any(r["documento"] == "S2 VIGENTE" for r in snapshot["rows"]))
+
     def test_a_second_warehouse_is_added_and_does_not_remove_the_first(self):
         s2 = pack([record(documento="S2")], start="2026-10-01", replace=True)
         s1 = pack([record(documento="S1", armazem="S1")], "b", start="2026-10-01", replace=True)
