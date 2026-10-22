@@ -67,8 +67,8 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.area(app, "Por OP")
         op = app.dataframe[0].value
         self.assertIn("Primeiro movimento", op.columns)
-        self.assertTrue(op["Primeiro movimento"].str.match(r"^\\d{2}/\\d{2}/\\d{4}$").all())
-        self.assertTrue(op["Último movimento"].str.match(r"^\\d{2}/\\d{2}/\\d{4}$").all())
+        self.assertTrue(op["Primeiro movimento"].str.match(r"^\d{2}/\d{2}/\d{4}$").all())
+        self.assertTrue(op["Último movimento"].str.match(r"^\d{2}/\d{2}/\d{4}$").all())
         self.area(app, "Movimentações")
         ledger = app.dataframe[0].value
         self.assertTrue(ledger["Data"].notna().all())
