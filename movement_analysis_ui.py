@@ -364,7 +364,8 @@ def _import_controls(imports, model=None):
             st.error(f"Confira os arquivos antes de importar: {exc}")
             return
         st.markdown("**PRÉVIA DA SUBSTITUIÇÃO**")
-        st.dataframe(pd.DataFrame(preview), hide_index=True, width="stretch")
+        st.dataframe(pd.DataFrame(preview), hide_index=True, width="stretch",
+                     height=_grid_height(len(preview), 550))
         st.info("Cada mês e armazém da prévia passará a usar exclusivamente o novo KARDEX, inclusive quando um lançamento antigo não constar mais no arquivo. As versões anteriores ficam registradas no histórico.")
         if st.button("IMPORTAR E SUBSTITUIR PERÍODOS", type="primary", key="fm_mov_commit_import"):
             try:
@@ -415,7 +416,9 @@ def _warehouse_registry_overview(model) -> pd.DataFrame:
 def _import_registry(model):
     st.markdown("**02 · SITUAÇÃO DOS ARMAZÉNS**")
     st.caption("A cobertura representa o período declarado no relatório; a última movimentação pode ser anterior sem indicar erro. Armazéns pendentes não são contados como saldo ou baixa zero.")
-    st.dataframe(_warehouse_registry_overview(model), hide_index=True, width="stretch")
+    warehouses = _warehouse_registry_overview(model)
+    st.dataframe(warehouses, hide_index=True, width="stretch",
+                 height=_grid_height(len(warehouses), 550))
     st.markdown("**03 · BASES VIGENTES POR MÊS E ARMAZÉM**")
     grouped = {}
     for meta in model.get("coverage_metas", []):
@@ -429,7 +432,8 @@ def _import_registry(model):
                      "Registros vigentes": amount, "Cobertura declarada": " · ".join(periods),
                      "Arquivos em uso": " · ".join(dict.fromkeys(m["arquivo_nome"] for m in sources))})
     if rows:
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch",
+                     height=_grid_height(len(rows), 550))
     with st.expander("04 · HISTÓRICO DE IMPORTAÇÕES E VERSÕES SUBSTITUÍDAS"):
         recorded = []
         for item in reversed(model.get("import_registry", [])):
@@ -439,7 +443,11 @@ def _import_registry(model):
             recorded.append({"Arquivo": item["arquivo"], "Situação": item["status"], "Armazéns": ", ".join(item["armazens"]),
                              "Competências": ", ".join(m[5:] + "/" + m[:4] for m in item["competencias"]),
                              "Registros no arquivo": item["lancamentos"], "Registros em uso": item["lancamentos_ativos"], "Importado em": updated})
-        st.dataframe(pd.DataFrame(recorded), hide_index=True, width="stretch")
+        if recorded:
+            st.dataframe(pd.DataFrame(recorded), hide_index=True, width="stretch",
+                         height=_grid_height(len(recorded), 550))
+        else:
+            st.caption("Não há versões anteriores importadas.")
         st.caption("VIGENTE: arquivo em uso. PARCIALMENTE SUBSTITUÍDO: continua em uso em outros meses ou armazéns. SUBSTITUÍDO: registros fora da análise atual. Reimportar uma versão anterior a torna vigente novamente nos meses e armazéns da prévia.")
 
 
