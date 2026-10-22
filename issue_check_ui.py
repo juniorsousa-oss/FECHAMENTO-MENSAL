@@ -521,18 +521,36 @@ def _reload():
 
 
 def _clear_filters():
+    """Limpa os critérios editáveis e os resultados da pesquisa anterior."""
     st.session_state.fm_issue_search = ""
     st.session_state.fm_issue_filter = "Todos"
     st.session_state.fm_issue_op_status = "Todos os status"
     st.session_state.fm_issue_invoice_start = None
     st.session_state.fm_issue_invoice_end = None
+    st.session_state.fm_issue_applied_filters = _default_issue_filters()
     st.session_state.fm_issue_page = 1
+    st.session_state.fm_issue_open_op = None
 
 
-def _table(frame: pd.DataFrame, columns=None, *, key=None):
+def _default_issue_filters() -> dict:
+    return {"op": "", "alertas": "Todos", "status": "Todos os status",
+            "datas": (None, None)}
+
+
+def _material_at_position(group: pd.DataFrame, selection):
+    """Recebe a posição ORIGINAL selecionada pela grade interativa."""
+    if selection is None:
+        return None
+    rows = selection.get("rows", []) if isinstance(selection, dict) else selection.rows
+    if not rows or not isinstance(rows[0], int) or rows[0] < 0 or rows[0] >= len(group):
+        return None
+    return group.iloc[rows[0]].to_dict()
+
+
+def _table(frame: pd.DataFrame, columns=None, *, key=None, selectable=False):
     if frame.empty:
         st.info("Nenhum registro neste recorte.")
-        return
+        return None
     source = frame.loc[:, [c for c in columns if c in frame]] if columns else frame
     shown = source.copy()
     for col in QUANTITIES.intersection(shown.columns):
@@ -551,11 +569,23 @@ def _table(frame: pd.DataFrame, columns=None, *, key=None):
                   else "background-color:#fef2f2;color:#991b1b" if bool(r.get("divergente")) else ""
                   for r in frame.to_dict("records")]
         styled = styled.apply(lambda _: colors, axis=0, subset=["Resultado"])
-    st.dataframe(styled, hide_index=True, width="stretch", key=key,
-                 height=min(620, max(120, 77 + 35 * min(len(shown), 100))),
-                 column_config={"Descrição": st.column_config.TextColumn(width="large"),
-                                "Outros endereços": st.column_config.TextColumn(width="large"),
-                                "Resultado": st.column_config.TextColumn(width="large")})
+    opts = {
+        "hide_index": True, "width": "stretch", "key": key,
+        "height": min(620, max(120, 77 + 35 * min(len(shown), 100))),
+        "column_config": {
+            "Descrição": st.column_config.TextColumn(width="large"),
+            "Outros endereços": st.column_config.TextColumn(width="large"),
+            "Resultado": st.column_config.TextColumn(width="large"),
+        },
+    }
+    if selectable:
+        # Controle nativo de seleção: a tabela ganha coluna de checkbox.
+        # Só uma linha pode ficar selecionada, e apenas ela carrega evidências.
+        event = st.dataframe(styled, on_select="rerun",
+                             selection_mode="single-row", **opts)
+        return event.selection
+    st.dataframe(styled, **opts)
+    return None
 
 
 def _filter(frame: pd.DataFrame, query: str, choice: str) -> pd.DataFrame:
@@ -747,25 +777,26 @@ def _ops(model, view, token):
                         )
                     if not bool(group.iloc[0]["op_possui_baixa"]):
                         st.caption("Não há consumo líquido identificado no histórico desta OP até a data de referência.")
+                    st.caption(
+                        "Marque o checkbox à esquerda do material para consultar "
+                        "suas evidências. Selecione outra linha para trocar o produto."
+                    )
                     st.markdown(
                         '<div class="fm-issue-mobile-hint">Deslize a tabela horizontalmente para consultar todas as colunas.</div>',
                         unsafe_allow_html=True,
                     )
-                    _table(group, ["codigo", "descricao", "lotes", "necessaria", "separada",
-                                   "conferida", "baixada", "pendente", "saldo", "saldo_g9_prod",
-                                   "outros_enderecos", "status"])
-                    index = group.set_index("item_id").to_dict("index")
-                    selected = st.selectbox(
-                        "DETALHAR MATERIAL E EVIDÊNCIAS",
-                        group["item_id"].tolist(), index=None,
-                        format_func=lambda value, rows=index: (
-                            (rows[value]["codigo"] or "SEM CÓDIGO") + " · " + rows[value]["descricao"]),
-                        placeholder="Selecione o material",
-                        key=f"fm_issue_detail_{number}_{token}",
+                    selection = _table(
+                        group, ["codigo", "descricao", "lotes", "necessaria", "separada",
+                                "conferida", "baixada", "pendente", "saldo", "saldo_g9_prod",
+                                "outros_enderecos", "status"],
+                        key=f"fm_issue_material_row_{number}_{token}",
+                        selectable=True,
                     )
-                    if selected:
-                        item = group.loc[group["item_id"] == selected].iloc[0].to_dict()
-                        _details(model, item)
+                    item = _material_at_position(group, selection)
+                    if item is not None:
+                        with st.container(key="fm_issue_evidence_" + number):
+                            st.markdown("**EVIDÊNCIAS DO MATERIAL SELECIONADO**")
+                            _details(model, item)
     if pages > 1:
         previous, counter, following = st.columns([1, 2, 1])
         with previous:
