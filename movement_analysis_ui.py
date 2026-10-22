@@ -477,14 +477,15 @@ def _overview_group_totals(classified: pd.DataFrame, config: dict) -> pd.DataFra
     return summary
 
 
-def _overview_movements(selected: pd.DataFrame, token: str) -> None:
-    """Quarta etapa da consulta: só os movimentos da TES e subgrupo selecionados."""
+def _overview_movements(selected: pd.DataFrame, token: str, *,
+                        heading: str = "MOVIMENTAÇÕES DA TES") -> None:
+    """Detalhamento reutilizável na consulta hierárquica ou por OP."""
     ordered = selected.sort_values(
         ["data", "codigo", "linha_origem", "id_registro"],
         ascending=[False, True, True, True], kind="stable",
     )
-    st.markdown("**04 · MOVIMENTAÇÕES DA TES**")
-    st.caption(f"{count(len(ordered))} movimentações da TES selecionada neste subgrupo. "
+    st.markdown("**" + heading + "**")
+    st.caption(f"{count(len(ordered))} movimentações encontradas. "
                "Selecione um registro para consultar suas evidências.")
     size = 100
     pages = max(1, math.ceil(len(ordered) / size))
@@ -613,19 +614,35 @@ def _overview(frame, token):
 
 
 def _ops(frame, token):
+    """Todas as OPs identificadas, com as movimentações abertas na mesma aba."""
     summary = mv.summarize_ops(frame)
     linked = frame.loc[frame["op_identificada"] != ""]
-    cards([("OPS IDENTIFICADAS", count(len(summary))), ("MOVIMENTOS COM OP", count(len(linked))),
+    cards([("OPS IDENTIFICADAS", count(len(summary))),
+           ("MOVIMENTOS COM OP", count(len(linked))),
            ("SAÍDAS KARDEX COM OP", cash(linked["valor_saida"].sum()))])
     if summary.empty:
         st.info("Nenhuma movimentação com OP no recorte selecionado.")
         return
     key = "fm_mov_op_table_" + token
-    values = summary["op_identificada"].tolist()
-    _table(summary[[
+    selected = _table(summary[[
         "op_identificada", "lancamentos", "produtos", "documentos",
         "primeira_data", "ultima_data", "valor_entrada", "valor_saida",
-    ]], key=key, on_select=lambda:_op_selected(key, values))
+    ]], key=key, on_select="rerun", height=650)
+    index = _picked_index(selected, len(summary))
+    if index is None:
+        st.caption("Selecione uma OP na tabela para visualizar suas movimentações e baixas.")
+        return
+    chosen_op = str(summary.iloc[index]["op_identificada"])
+    subset = linked.loc[linked["op_identificada"] == chosen_op]
+    try:
+        classified = conditions.classify(subset, _groups_read())
+    except Exception as exc:
+        st.error(f"Não foi possível classificar os registros da OP: {exc}")
+        return
+    _overview_movements(
+        classified, token + "_" + hashlib.sha256(chosen_op.encode("utf-8")).hexdigest()[:10],
+        heading="MOVIMENTAÇÕES DA OP " + chosen_op,
+    )
 
 
 def _detail(row):
@@ -855,7 +872,7 @@ def _exports(frame, model, token, *, include_history=True):
                 if prepared and prepared[0] == model["token"]:
                     st.download_button("BAIXAR BASE HISTÓRICA", prepared[1], file_name="Base_Historica_KARDEX.zip",
                                        mime="application/zip", key="fm_mov_download_history")
-            st.caption("O Excel usa o período e o armazém da base da análise. Para um recorte por produto, OP ou TES, exporte pela área Registros.")
+            st.caption("O Excel contém os detalhes de todas as TES, OPs e movimentações do período e armazéns selecionados.")
 
 
 def render_results(model, imports):
@@ -867,8 +884,14 @@ def render_results(model, imports):
     .st-key-fm_mov_navigation button[aria-checked="true"] p{color:#fff!important}
     </style>''', unsafe_allow_html=True)
     area = st.session_state.get("fm_mov_area")
-    # Usuários que ainda têm a navegação antiga em sessão chegam à aba equivalente.
-    area = {"Grupos e TES": "TES e descrições", "Classificação": "Cadastros", "Cadastro TES": "Cadastros"}.get(area, area)
+    # Reaproveita sessões antigas sem reabrir os menus descontinuados.
+    area = {
+        "Grupos e TES": "Visão geral",
+        "TES e descrições": "Visão geral",
+        "Movimentações": "Visão geral",
+        "Classificação": "Cadastros",
+        "Cadastro TES": "Cadastros",
+    }.get(area, area)
     if area not in AREAS:
         area = AREAS[0]
     st.session_state.fm_mov_area = area
@@ -879,12 +902,15 @@ def render_results(model, imports):
                              format_func=lambda value: AREA_LABELS.get(value, value),
                              label_visibility="collapsed", width="stretch")
     headers = {
-        "Visão geral": ("01 · RESUMO", "RESULTADO POR GRUPOS TES", "Visão consolidada dos grupos cadastrados e das TES sem grupo."),
-        "TES e descrições": ("02 · TES", "MOVIMENTAÇÕES POR TES", "TES individuais e descrições vigentes, com rastreabilidade dos lançamentos."),
-        "Por OP": ("03 · ORDENS DE PRODUÇÃO", "CONSULTA POR OP", "Localize OPs por sua identificação original e consulte os documentos vinculados."),
-        "Movimentações": ("04 · REGISTROS", "MOVIMENTAÇÕES ORIGINAIS", "Consulte as informações do KARDEX sem classificação gerencial ou exclusões automáticas."),
-        "Cadastros": ("05 · CADASTROS", "GRUPOS, TES E SUBGRUPOS", "Gerencie as TES e a fila de condições que define os subgrupos."),
-        "Fontes e relatórios": ("06 · FONTES E RELATÓRIOS", "HISTÓRICO, IMPORTAÇÃO E EXPORTAÇÃO", "Registros originais, histórico de importações e relatórios por TES."),
+        "Visão geral": ("01 · RESUMO", "RESULTADO POR GRUPOS TES",
+                       "Grupos, subgrupos, TES e movimentações em uma única consulta."),
+        "Por OP": ("02 · ORDENS DE PRODUÇÃO", "CONSULTA POR OP",
+                   "Localize uma OP e consulte suas movimentações na própria tela."),
+        "Cadastros": ("03 · CADASTROS", "GRUPOS, TES E SUBGRUPOS",
+                      "Gerencie as TES e a fila de condições que define os subgrupos."),
+        "Fontes e relatórios": ("04 · FONTES E RELATÓRIOS",
+                               "HISTÓRICO, IMPORTAÇÃO E EXPORTAÇÃO",
+                               "Registros originais, histórico de importações e relatórios completos."),
     }
     band(*headers[area])
     if area == "Fontes e relatórios":
@@ -895,29 +921,20 @@ def render_results(model, imports):
             st.caption(f"Importações sobrepostas: {count(model['duplicates'])} repetições reconhecidas, sem soma em duplicidade.")
         return
     view = _consultation_filters(scope, area) if area in FILTER_AREAS else scope
-    if area == "Movimentações" and st.session_state.get("fm_mov_record_origin"):
-        origin = st.session_state.fm_mov_record_origin
-        st.button("← VOLTAR PARA " + AREA_LABELS.get(origin, origin).upper(),
-                  on_click=_go_to, args=(origin,), key="fm_mov_back")
     if view.empty and area != "Cadastros":
         st.info("Nenhuma movimentação corresponde a esta consulta. Ajuste os filtros ou o período da análise.")
         return
     token = _view_token(view, area)
     if area == "Visão geral":
         _overview(view, token)
-    elif area == "TES e descrições":
-        _tes(view, token)
     elif area == "Por OP":
         _ops(view, token)
-    elif area == "Movimentações":
-        _ledger(view, token)
-        _exports(view, model, token, include_history=False)
     elif area == "Cadastros":
         _catalog(view)
 
 
 def render_movement_analysis():
-    band("KARDEX", "MOVIMENTAÇÕES POR TES", "Entradas e saídas · grupo configurável por TES · subgrupo definido pela primeira condição da fila.")
+    band("KARDEX", "ANÁLISE DE MOVIMENTAÇÕES", "Resumo interativo · consulta por OP · cadastros e relatórios.")
     flash = st.session_state.pop("fm_mov_flash", None)
     if flash:
         st.success(flash)
