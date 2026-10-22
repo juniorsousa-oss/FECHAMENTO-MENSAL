@@ -57,6 +57,22 @@ class MovementAnalysisUITests(unittest.TestCase):
         app.segmented_control[0].set_value(name).run()
         self.assertFalse(app.exception)
 
+    def test_all_visible_kardex_dates_follow_ptbr(self):
+        from datetime import date
+        import movement_analysis_ui as ui
+        self.assertEqual(ui._br_date("2026-10-22"), "22/10/2026")
+        self.assertEqual(ui._br_date(date(2026, 1, 5)), "05/01/2026")
+        self.assertEqual(ui._br_month("2026-10"), "10/2026")
+        app = self.app()
+        self.area(app, "Por OP")
+        op = app.dataframe[0].value
+        self.assertIn("Primeiro movimento", op.columns)
+        self.assertTrue(op["Primeiro movimento"].str.match(r"^\\d{2}/\\d{2}/\\d{4}$").all())
+        self.assertTrue(op["Último movimento"].str.match(r"^\\d{2}/\\d{2}/\\d{4}$").all())
+        self.area(app, "Movimentações")
+        ledger = app.dataframe[0].value
+        self.assertTrue(ledger["Data"].notna().all())
+
     def test_warehouse_registry_remains_accessible(self):
         from test_movement_analysis import imported, record
         import movement_analysis_ui as ui
