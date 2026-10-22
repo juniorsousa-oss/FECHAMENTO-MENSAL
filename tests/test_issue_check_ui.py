@@ -58,16 +58,15 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertEqual(ui._material_at_position(frame, {"rows": [1]})["item_id"], "b")
         self.assertIsNone(ui._material_at_position(frame, {"rows": []}))
 
-        next(x for x in app.selectbox if x.label == "ALERTAS").set_value("Com alertas").run()
-        self.assertFalse(app.exception)
-        # Mudar filtro não o aplica antes de PESQUISAR.
+        next(x for x in app.selectbox if x.label == "ALERTAS").set_value("Com alertas")
+        # Formulários só enviam os valores rascunhados quando recebem submit.
         self.assertEqual(len([b for b in app.button if "OP 2600" in b.label]), 2)
         next(b for b in app.button if b.label == "PESQUISAR").click().run()
         self.assertFalse(app.exception)
         self.assertEqual(len([b for b in app.button if "OP 2600" in b.label]), 1)
 
-        next(x for x in app.selectbox if x.label == "ALERTAS").set_value("Todos").run()
-        next(x for x in app.text_input if x.label == "LOCALIZAR OP").set_value("26000201001").run()
+        next(x for x in app.selectbox if x.label == "ALERTAS").set_value("Todos")
+        next(x for x in app.text_input if x.label == "LOCALIZAR OP").set_value("26000201001")
         self.assertFalse(app.exception)
         next(b for b in app.button if b.label == "PESQUISAR").click().run()
         self.assertFalse(app.exception)
