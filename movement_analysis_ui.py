@@ -18,10 +18,11 @@ import kardex_history as history
 import kardex_group_config as groups
 import kardex_conditions as conditions
 
-AREAS = ["Visão geral", "TES e descrições", "Por OP", "Movimentações", "Cadastros", "Fontes e relatórios"]
-AREA_LABELS = {"Visão geral": "Resumo", "Por OP": "Consulta por OP", "Movimentações": "Registros", "TES e descrições": "TES", "Cadastros": "Cadastros"}
-FILTER_AREAS = {"TES e descrições": "tes", "Por OP": "ops", "Movimentações": "ledger"}
-FILTER_FIELDS = {"tes": "TES", "search": "Busca", "op": "OP", "cc": "CC / CR", "categories": "Tipo"}
+AREAS = ["Visão geral", "Por OP", "Cadastros", "Fontes e relatórios"]
+AREA_LABELS = {"Visão geral": "Resumo", "Por OP": "Consulta por OP",
+               "Cadastros": "Cadastros", "Fontes e relatórios": "Fontes e relatórios"}
+FILTER_AREAS = {"Por OP": "ops"}
+FILTER_FIELDS = {"search": "Busca"}
 MONEY_COLUMNS = {"valor_entrada": "Entrada (R$)", "valor_saida": "Saída (R$)", "liquido_valor": "Variação (R$)"}
 NAMES = {"tes": "TES", "descricao_tes": "Descrição TES",
          "grupo_usuario": "Grupo", "subgrupo_usuario": "Subgrupo",
@@ -120,28 +121,8 @@ def _reload():
             getattr(issue_ui, name).clear()
 
 
-def _selected(key):
-    state = st.session_state.get(key) or {}
-    selected = state.get("selection") or {}
-    rows = selected.get("rows") or []
-    return int(rows[0]) if rows else None
-
-
-def _tes_selected(key, values):
-    position = _selected(key)
-    if position is None or position >= len(values):
-        return
-    _open_records({"tes": [values[position]]}, "TES e descrições")
-
-def _op_selected(key, values):
-    position = _selected(key)
-    if position is None or position >= len(values):
-        return
-    _open_records({"op": values[position]}, "Por OP")
-
-
 def _defaults():
-    return {"tes": [], "categories": [], "search": "", "op": "", "cc": ""}
+    return {"search": ""}
 
 
 def _filter_key(area, field):
@@ -172,16 +153,6 @@ def _remember_filter(area, field, key):
     st.session_state.fm_mov_page = 1
 
 
-def _open_records(values, origin):
-    _set_filters("Movimentações", values)
-    st.session_state.fm_mov_record_origin = origin
-    st.session_state.fm_mov_area = "Movimentações"
-
-
-def _go_to(area):
-    st.session_state.fm_mov_area = area
-
-
 def _area_changed(key):
     selected = st.session_state.get(key)
     if selected in AREAS:
@@ -192,8 +163,6 @@ def _area_changed(key):
 
 def _clear_filters(area):
     _set_filters(area, {})
-    if area == "Movimentações":
-        st.session_state.pop("fm_mov_record_origin", None)
 
 
 def _multiselect(label, options, key, format_func=None):
@@ -224,53 +193,23 @@ def _local_input(area, field, label, *, options=None, placeholder=None):
 
 
 def _apply_filters(frame, values):
-    view = frame
-    for field, column in (("tes", "tes"), ("categories", "tipo")):
-        if values.get(field):
-            view = view.loc[view[column].isin(values[field])]
+    """A consulta por OP mantém apenas a busca, evitando filtros redundantes."""
     search = mv.normalized(values.get("search", ""))
-    if search:
-        view = view.loc[view["_search"].str.contains(search, regex=False)]
-    for field, column in (("op", "op_identificada"), ("cc", "cc_identificado")):
-        text = str(values.get(field) or "").strip().upper()
-        if text:
-            view = view.loc[view[column].str.contains(text, regex=False)]
-    return view.copy()
+    if not search:
+        return frame.copy()
+    return frame.loc[frame["_search"].str.contains(search, regex=False)].copy()
 
 
 def _consultation_filters(frame, area):
-    if area == "TES e descrições":
-        a, b = st.columns([1.25, 2])
-        with a:
-            _local_input(area, "tes", "Códigos TES", options=sorted(frame["tes"].unique()))
-        with b:
-            _local_input(area, "search", "Localizar movimentação",
-                         placeholder="Produto, documento, descrição ou OP")
-    elif area == "Por OP":
-        _local_input(area, "search", "Buscar OP ou material", placeholder="Número da OP, código ou descrição do produto")
-    else:
-        _local_input(area, "search", "Buscar nos registros", placeholder="Produto, documento ou vínculo AE")
-        active = sum(bool(v) for k, v in _values(area).items() if k != "search")
-        title = "REFINAR CONSULTA" + (f" · {active} filtro(s) ativo(s)" if active else "")
-        with st.expander(title):
-            a, b, c = st.columns(3)
-            with a:
-                _local_input(area, "tes", "Códigos TES", options=sorted(frame["tes"].unique()))
-            with b:
-                _local_input(area, "categories", "Tipo do material", options=sorted(frame["tipo"].unique()))
-            with c:
-                _local_input(area, "op", "OP", placeholder="OP ou número completo/parcial")
-                _local_input(area, "cc", "CC / CR", placeholder="Ex.: 600307")
+    _local_input(area, "search", "Buscar OP ou material",
+                 placeholder="Número da OP, código ou descrição do produto")
     values = _values(area)
-    # Read the current widget values as options can change when switching period or warehouse.
-    for field in values:
-        key = _filter_key(area, field)
-        if key in st.session_state:
-            values[field] = st.session_state[key]
-    active = [f"{FILTER_FIELDS[k]}: {', '.join(v) if isinstance(v, list) else v}" for k, v in values.items() if v]
-    if active:
-        st.caption("FILTROS DESTA CONSULTA · " + " · ".join(active))
-        st.button("LIMPAR CONSULTA", on_click=_clear_filters, args=(area,), key=f"fm_mov_clear_{FILTER_AREAS[area]}")
+    key = _filter_key(area, "search")
+    if key in st.session_state:
+        values["search"] = st.session_state[key]
+    if values["search"]:
+        st.button("LIMPAR CONSULTA", on_click=_clear_filters, args=(area,),
+                  key="fm_mov_clear_ops")
     return _apply_filters(frame, values)
 
 
@@ -513,30 +452,6 @@ def _context(frame, imports, coverage=None):
     return view.copy()
 
 
-def _tes_summary(frame, config=None) -> pd.DataFrame:
-    """TES agrupadas e segmentadas pelos subgrupos da fila."""
-    classified = conditions.classify(frame, config or groups.empty())
-    result = mv.summarize(classified, ["tes", "descricao_tes", "grupo_usuario", "subgrupo_usuario"])
-    return result.sort_values(
-        ["tes", "subgrupo_usuario", "descricao_tes"], kind="stable"
-    ).reset_index(drop=True)
-
-
-def _tes_table(frame, token, config=None):
-    summary = _tes_summary(frame, config)
-    if summary.empty:
-        st.info("Nenhuma TES com movimentações neste recorte.")
-        return
-    key = "fm_mov_tes_table_" + token
-    codes = summary["tes"].tolist()
-    _table(
-        summary[["tes", "descricao_tes", "grupo_usuario", "subgrupo_usuario",
-                 "lancamentos", "produtos", "valor_entrada", "valor_saida", "liquido_valor"]],
-        key=key, on_select=lambda: _tes_selected(key, codes), height=700,
-    )
-    st.caption("Cada movimentação pertence somente ao primeiro subgrupo atendido pela fila de condições.")
-
-
 def _overview_group_totals(classified: pd.DataFrame, config: dict) -> pd.DataFrame:
     """Exibe todos os grupos cadastrados, inclusive sem movimentos no período."""
     summary = mv.summarize(classified, ["grupo_usuario"]).rename(
@@ -697,16 +612,6 @@ def _overview(frame, token):
                         "valor_saida", "liquido_valor"]])
 
 
-def _tes(frame, token):
-    st.caption("TES separadas por grupo e subgrupo. A primeira condição correspondente define o subgrupo.")
-    try:
-        config = _groups_read()
-    except Exception as exc:
-        st.error(f"Não foi possível carregar os grupos e condições: {exc}")
-        return
-    _tes_table(frame, token, config)
-
-
 def _ops(frame, token):
     summary = mv.summarize_ops(frame)
     linked = frame.loc[frame["op_identificada"] != ""]
@@ -745,47 +650,6 @@ def _detail(row):
     st.write(f"**ENTRADA:** {quantity(row['qtd_entrada'])} {row['um']} · {cash(row['valor_entrada'])}")
     st.write(f"**SAÍDA:** {quantity(row['qtd_saida'])} {row['um']} · {cash(row['valor_saida'])}")
     st.caption(f"Arquivo: {row['arquivo_origem']} · linha {int(row['linha_origem'])}.")
-
-
-def _ledger(frame, token):
-    st.caption(f"{count(len(frame))} registros encontrados. A exportação inclui todo o recorte, independentemente da página.")
-    st.caption("Todos os lançamentos originais são preservados. Grupo e subgrupo são apenas classificações gerenciais.")
-    if st.session_state.get("fm_mov_page_token") != token:
-        st.session_state.fm_mov_page = 1
-        st.session_state.fm_mov_page_token = token
-    a, b = st.columns(2)
-    with a:
-        size = st.selectbox("Registros por página", [100, 250, 500], key="fm_mov_page_size")
-    pages = max(1, math.ceil(len(frame) / size))
-    if st.session_state.get("fm_mov_page", 1) > pages:
-        st.session_state.fm_mov_page = pages
-    with b:
-        page = st.number_input("Página", min_value=1, max_value=pages, step=1, key="fm_mov_page")
-    ordered = frame.sort_values(["data", "codigo", "linha_origem", "id_registro"], ascending=[False, True, True, True], kind="stable")
-    visible = ordered.iloc[(page-1)*size:page*size]
-    try:
-        visible = conditions.classify(visible, _groups_read())
-    except Exception as exc:
-        st.error(f"Não foi possível classificar os registros: {exc}")
-        return
-    shown = pd.DataFrame({"Data": pd.to_datetime(visible["data"]).dt.date, "Código": visible["codigo"], "Produto": visible["descricao"],
-                          "Armazém": visible["armazem"], "TES": visible["tes"],
-                          "Grupo": visible["grupo_usuario"], "Subgrupo": visible["subgrupo_usuario"],
-                          "Entrada (R$)": visible["valor_entrada"], "Saída (R$)": visible["valor_saida"],
-                          "AE original": visible["ae_original"],
-                          "Descrição TES": visible["descricao_tes"], "Tipo do material": visible["tipo"],
-                          "Documento": visible["documento"]})
-    key = f"fm_mov_ledger_{token}_{page}_{size}"
-    event = st.dataframe(shown, key=key, hide_index=True, width="stretch",
-                         height=_grid_height(len(visible), 600),
-                         on_select="rerun", selection_mode="single-row",
-                         column_config={"Data": st.column_config.DateColumn(format="DD/MM/YYYY"),
-                                        "Entrada (R$)": st.column_config.NumberColumn(format="%.2f"),
-                                        "Saída (R$)": st.column_config.NumberColumn(format="%.2f")})
-    selected = (event.get("selection") or {}).get("rows") or []
-    if selected and selected[0] < len(visible):
-        with st.expander("DETALHAMENTO DO REGISTRO", expanded=True):
-            _detail(visible.iloc[selected[0]])
 
 
 def _catalog(frame):
