@@ -537,6 +537,31 @@ def _tes_table(frame, token, config=None):
     st.caption("Cada movimentação pertence somente ao primeiro subgrupo atendido pela fila de condições.")
 
 
+def _overview_group_totals(classified: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Exibe todos os grupos cadastrados, inclusive sem movimentos no período."""
+    summary = mv.summarize(classified, ["grupo_usuario"]).rename(
+        columns={"grupo_usuario": "Grupo"}
+    )
+    active = set(summary["Grupo"].tolist())
+    missing = []
+    for group in config.get("grupos", []):
+        if group["nome"] not in active:
+            missing.append({
+                "Grupo": group["nome"], "tes_distintas": 0, "lancamentos": 0,
+                "produtos": 0, "valor_entrada": 0.0, "valor_saida": 0.0,
+                "liquido_valor": 0.0,
+            })
+    if missing:
+        summary = pd.concat([summary, pd.DataFrame(missing)], ignore_index=True)
+    order = {item["nome"]: index for index, item in enumerate(config.get("grupos", []))}
+    order[groups.UNASSIGNED] = len(order)
+    if not summary.empty:
+        summary = (summary.assign(_order=summary["Grupo"].map(order).fillna(len(order)))
+                   .sort_values(["_order", "Grupo"], kind="stable")
+                   .drop(columns="_order").reset_index(drop=True))
+    return summary
+
+
 def _overview_movements(selected: pd.DataFrame, token: str) -> None:
     """Quarta etapa da consulta: só os movimentos da TES e subgrupo selecionados."""
     ordered = selected.sort_values(
@@ -580,6 +605,45 @@ def _overview_movements(selected: pd.DataFrame, token: str) -> None:
             _detail(visible.iloc[position])
 
 
+def _overview_group_details(group_rows: pd.DataFrame, group_name: str,
+                            token: str, group_index: int) -> None:
+    st.markdown("**02 · SUBGRUPOS DE " + group_name + "**")
+    subgroups = mv.summarize(group_rows, ["subgrupo_usuario"]).rename(
+        columns={"subgrupo_usuario": "Subgrupo"}
+    )
+    sub_event = _table(
+        subgroups[["Subgrupo", "tes_distintas", "lancamentos", "produtos",
+                   "valor_entrada", "valor_saida", "liquido_valor"]],
+        key=f"fm_mov_overview_subgroups_{token}_{group_index}",
+        on_select="rerun", height=650,
+    )
+    sub_index = _picked_index(sub_event, len(subgroups))
+    if sub_index is None:
+        st.caption("Selecione um subgrupo para consultar suas TES.")
+        return
+    sub_name = str(subgroups.iloc[sub_index]["Subgrupo"])
+    sub_rows = group_rows.loc[group_rows["subgrupo_usuario"] == sub_name]
+    st.markdown("**03 · TES DO SUBGRUPO " + sub_name + "**")
+    tes_summary = mv.summarize(sub_rows, ["tes", "descricao_tes"]).sort_values(
+        ["tes", "descricao_tes"], kind="stable"
+    ).reset_index(drop=True)
+    tes_event = _table(
+        tes_summary[["tes", "descricao_tes", "lancamentos", "produtos",
+                     "valor_entrada", "valor_saida", "liquido_valor"]],
+        key=f"fm_mov_overview_tes_{token}_{group_index}_{sub_index}",
+        on_select="rerun", height=650,
+    )
+    tes_index = _picked_index(tes_event, len(tes_summary))
+    if tes_index is None:
+        st.caption("Selecione uma TES para carregar seus lançamentos.")
+        return
+    chosen_tes = str(tes_summary.iloc[tes_index]["tes"])
+    selected = sub_rows.loc[sub_rows["tes"] == chosen_tes]
+    _overview_movements(
+        selected, f"{token}_{group_index}_{sub_index}_{tes_index}"
+    )
+
+
 def _overview(frame, token):
     cards([
         ("ENTRADAS DO KARDEX", cash(frame["valor_entrada"].sum())),
@@ -603,7 +667,7 @@ def _overview(frame, token):
         st.error(f"Não foi possível carregar os grupos cadastrados: {exc}")
         return
     classified = conditions.classify(frame, config)
-    summary = mv.summarize(classified, ["grupo_usuario"]).rename(columns={"grupo_usuario": "Grupo"})
+    summary = _overview_group_totals(classified, config)
     if summary.empty:
         st.info("Nenhum grupo com movimentações neste período.")
         return
@@ -618,41 +682,10 @@ def _overview(frame, token):
     else:
         group_name = str(summary.iloc[group_index]["Grupo"])
         group_rows = classified.loc[classified["grupo_usuario"] == group_name]
-        st.markdown("**02 · SUBGRUPOS DE " + group_name + "**")
-        subgroups = mv.summarize(group_rows, ["subgrupo_usuario"]).rename(
-            columns={"subgrupo_usuario": "Subgrupo"}
-        )
-        sub_event = _table(
-            subgroups[["Subgrupo", "tes_distintas", "lancamentos", "produtos",
-                       "valor_entrada", "valor_saida", "liquido_valor"]],
-            key=f"fm_mov_overview_subgroups_{token}_{group_index}",
-            on_select="rerun", height=650,
-        )
-        sub_index = _picked_index(sub_event, len(subgroups))
-        if sub_index is None:
-            st.caption("Selecione um subgrupo para consultar suas TES.")
+        if group_rows.empty:
+            st.info("Este grupo não possui movimentações no período selecionado.")
         else:
-            sub_name = str(subgroups.iloc[sub_index]["Subgrupo"])
-            sub_rows = group_rows.loc[group_rows["subgrupo_usuario"] == sub_name]
-            st.markdown("**03 · TES DO SUBGRUPO " + sub_name + "**")
-            tes_summary = mv.summarize(sub_rows, ["tes", "descricao_tes"]).sort_values(
-                ["tes", "descricao_tes"], kind="stable"
-            ).reset_index(drop=True)
-            tes_event = _table(
-                tes_summary[["tes", "descricao_tes", "lancamentos", "produtos",
-                             "valor_entrada", "valor_saida", "liquido_valor"]],
-                key=f"fm_mov_overview_tes_{token}_{group_index}_{sub_index}",
-                on_select="rerun", height=650,
-            )
-            tes_index = _picked_index(tes_event, len(tes_summary))
-            if tes_index is None:
-                st.caption("Selecione uma TES para carregar seus lançamentos.")
-            else:
-                chosen_tes = str(tes_summary.iloc[tes_index]["tes"])
-                selected = sub_rows.loc[sub_rows["tes"] == chosen_tes]
-                _overview_movements(
-                    selected, f"{token}_{group_index}_{sub_index}_{tes_index}"
-                )
+            _overview_group_details(group_rows, group_name, token, group_index)
     with st.expander("EVOLUÇÃO MENSAL DO PERÍODO"):
         monthly = mv.summarize(frame, ["competencia"]).sort_values("competencia")
         _table(monthly[["competencia", "lancamentos", "valor_entrada",
