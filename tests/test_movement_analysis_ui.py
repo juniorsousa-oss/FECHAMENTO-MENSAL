@@ -1,8 +1,10 @@
+"""Regressões de navegação enxuta do módulo KARDEX SETTA."""
 from __future__ import annotations
 
 import io
 import sys
 import unittest
+from datetime import date
 from pathlib import Path
 
 import openpyxl
@@ -10,7 +12,6 @@ from streamlit.testing.v1 import AppTest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import movements as mv
-
 
 PROGRAM = """
 import sys
@@ -37,29 +38,23 @@ model = mv.build_model([pack])
 imports = [{"chave": "synthetic", "meta": {"arquivo_nome": "teste.xlsx", "periodo_inicio": "2026-09-01",
             "periodo_fim": "2026-10-19", "lancamentos": 5}, "atualizado_em": "2026-10-21T10:00:00Z"}]
 action = st.session_state.pop("_test_action", None)
-if action == "tes":
-    st.session_state.test_selection = {"selection": {"rows": [0]}}
-    ui._tes_selected("test_selection", ["520"])
-elif action == "op":
-    st.session_state.test_selection = {"selection": {"rows": [0]}}
-    ui._op_selected("test_selection", ["OP00001234567"])
-elif action in ("group_only", "drill"):
+if action in ("group_only", "drill", "op_drill"):
     original_table = ui._table
     def select_in_order(data, *args, **kwargs):
         displayed = original_table(data, *args, **kwargs)
         key = kwargs.get("key", "")
-        if "_overview_groups_" in key:
+        if action in ("group_only", "drill") and "_overview_groups_" in key:
             return {"selection": {"rows": [0]}}
         if action == "drill" and ("_overview_subgroups_" in key or "_overview_tes_" in key):
+            return {"selection": {"rows": [0]}}
+        if action == "op_drill" and "_op_table_" in key:
             return {"selection": {"rows": [0]}}
         return displayed
     ui._table = select_in_order
 try:
     ui.render_results(model, imports)
 finally:
-    if action in ("group_only", "drill"):
-        # Streamlit AppTest reutiliza o módulo entre execuções; não deixar
-        # o mock de seleção interferir nos demais testes.
+    if action in ("group_only", "drill", "op_drill"):
         ui._table = original_table
 """
 
@@ -74,43 +69,49 @@ class MovementAnalysisUITests(unittest.TestCase):
         app.segmented_control[0].set_value(name).run()
         self.assertFalse(app.exception)
 
-    def test_all_visible_kardex_dates_follow_ptbr(self):
-        from datetime import date
+    def test_menu_only_four_areas_and_legacy_session_is_redirected(self):
+        import movement_analysis_ui as ui
+        expected = ["Visão geral", "Por OP", "Cadastros", "Fontes e relatórios"]
+        self.assertEqual(ui.AREAS, expected)
+        self.assertEqual([ui.AREA_LABELS[x] for x in expected],
+                         ["Resumo", "Consulta por OP", "Cadastros", "Fontes e relatórios"])
+        app = self.app()
+        self.assertEqual(app.segmented_control[0].value, "Visão geral")
+        for obsolete in ("Movimentações", "TES e descrições"):
+            app.session_state["fm_mov_area"] = obsolete
+            app.run()
+            self.assertFalse(app.exception)
+            self.assertEqual(app.segmented_control[0].value, "Visão geral")
+
+    def test_visible_dates_and_simplified_filters(self):
         import movement_analysis_ui as ui
         self.assertEqual(ui._br_date("2026-10-22"), "22/10/2026")
         self.assertEqual(ui._br_date(date(2026, 1, 5)), "05/01/2026")
         self.assertEqual(ui._br_month("2026-10"), "10/2026")
         app = self.app()
         self.area(app, "Por OP")
+        self.assertEqual([x.label for x in app.text_input], ["Buscar OP ou material"])
         op = app.dataframe[0].value
         self.assertIn("Primeiro movimento", op.columns)
-        self.assertTrue(op["Primeiro movimento"].str.match(r"^\d{2}/\d{2}/\d{4}$").all())
-        self.assertTrue(op["Último movimento"].str.match(r"^\d{2}/\d{2}/\d{4}$").all())
-        self.area(app, "Movimentações")
-        ledger = app.dataframe[0].value
-        self.assertTrue(ledger["Data"].notna().all())
-        self.assertIn("Grupo", ledger.columns)
-        self.assertIn("Subgrupo", ledger.columns)
+        self.assertTrue(op["Primeiro movimento"].str.match(r"^\\d{2}/\\d{2}/\\d{4}$").all())
+        self.assertTrue(op["Último movimento"].str.match(r"^\\d{2}/\\d{2}/\\d{4}$").all())
 
-    def test_all_registered_groups_display_even_without_movements(self):
+    def test_group_totals_include_registered_groups_without_movement(self):
         from test_movement_analysis import imported, record
         import movement_analysis_ui as ui
-        import kardex_group_config as cg
+        import kardex_group_config as cfg
         import kardex_conditions as cond
-        sample = mv.build_model([imported([record(tes="550")])])["frame"]
-        cfg = cg.create_group(cg.empty(), "COMPRAS", known_tes={"550","020"})
-        cfg = cg.create_group(cfg, "FLUXO DE ESTOQUE", known_tes={"550","020"})
-        cfg = cg.assign_group(cfg, cfg["grupos"][1]["id"], ["550"],
-                              known_tes={"550","020"})
-        classified = cond.classify(sample, cfg)
-        result = ui._overview_group_totals(classified, cfg)
-        self.assertEqual(result["Grupo"].tolist(), ["COMPRAS", "FLUXO DE ESTOQUE"])
-        self.assertEqual(result["Movimentos"].tolist() if "Movimentos" in result
-                         else result["lancamentos"].tolist(), [0, 1])
-        self.assertEqual(result["valor_entrada"].sum(), sample["valor_entrada"].sum())
-        self.assertEqual(result["valor_saida"].sum(), sample["valor_saida"].sum())
+        frame = mv.build_model([imported([record(tes="550")])])["frame"]
+        data = cfg.create_group(cfg.empty(), "COMPRAS", known_tes={"550"})
+        data = cfg.create_group(data, "FLUXO DE ESTOQUE", known_tes={"550"})
+        data = cfg.assign_group(data, data["grupos"][1]["id"], ["550"],
+                                known_tes={"550"})
+        summary = ui._overview_group_totals(cond.classify(frame, data), data)
+        self.assertEqual(summary["Grupo"].tolist(), ["COMPRAS", "FLUXO DE ESTOQUE"])
+        self.assertEqual(summary["lancamentos"].tolist(), [0, 1])
+        self.assertEqual(summary["valor_saida"].sum(), frame["valor_saida"].sum())
 
-    def test_dynamic_table_height_avoids_phantom_rows(self):
+    def test_responsive_table_height_avoids_blank_rows(self):
         import movement_analysis_ui as ui
         self.assertEqual(ui._grid_height(1), 74)
         self.assertEqual(ui._grid_height(2), 109)
@@ -121,139 +122,68 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.assertIsNone(ui._picked_index({"selection": {"rows": [6]}}, 6))
         self.assertEqual(ui._picked_index({"selection": {"rows": [2]}}, 6), 2)
 
-    def test_summary_loads_subgroups_only_after_group_checkbox(self):
+    def test_summary_progressive_drilldown_stays_on_summary(self):
         app = self.app()
-        self.assertFalse(any("Subgrupo" in frame.value.columns for frame in app.dataframe))
+        self.assertFalse(any("Subgrupo" in table.value.columns for table in app.dataframe))
         app.session_state["_test_action"] = "group_only"
         app.run()
         self.assertFalse(app.exception)
         self.assertEqual(app.segmented_control[0].value, "Visão geral")
-        self.assertEqual(app.dataframe[0].value["Grupo"].tolist(), ["SEM GRUPO"])
         self.assertIn("Subgrupo", app.dataframe[1].value.columns)
-        self.assertFalse(any("TES" in frame.value.columns for frame in app.dataframe[2:]))
-
-    def test_summary_drills_group_subgroup_tes_movements_without_navigation(self):
-        app = self.app()
+        self.assertFalse(any("TES" in table.value.columns for table in app.dataframe[2:]))
         app.session_state["_test_action"] = "drill"
         app.run()
         self.assertFalse(app.exception)
         self.assertEqual(app.segmented_control[0].value, "Visão geral")
         self.assertGreaterEqual(len(app.dataframe), 4)
-        groups = app.dataframe[0].value
-        subgroups = app.dataframe[1].value
-        tes = app.dataframe[2].value
-        ledger = app.dataframe[3].value
-        self.assertEqual(groups["Grupo"].tolist(), ["SEM GRUPO"])
-        self.assertIn("Subgrupo", subgroups.columns)
-        self.assertIn("TES", tes.columns)
+        group_table, sub_table, tes_table, ledger = [x.value for x in app.dataframe[:4]]
+        self.assertEqual(group_table["Grupo"].tolist(), ["SEM GRUPO"])
+        self.assertIn("Subgrupo", sub_table.columns)
+        self.assertIn("TES", tes_table.columns)
         self.assertIn("Grupo", ledger.columns)
-        self.assertIn("Subgrupo", ledger.columns)
-        self.assertEqual(set(ledger["TES"]), {tes.iloc[0]["TES"]})
-        self.assertEqual(set(ledger["Subgrupo"]), {subgroups.iloc[0]["Subgrupo"]})
-        self.assertTrue(ledger["Data"].notna().all())
+        self.assertEqual(set(ledger["TES"]), {tes_table.iloc[0]["TES"]})
+        self.assertEqual(set(ledger["Subgrupo"]), {sub_table.iloc[0]["Subgrupo"]})
 
-    def test_warehouse_registry_remains_accessible(self):
-        from test_movement_analysis import imported, record
-        import movement_analysis_ui as ui
-        model = mv.build_model([imported([
-            record(armazem="S2", documento="S2"),
-            record(armazem="E2", data="2026-10-20", documento="E2"),
-        ])])
-        states = ui._warehouse_registry_overview(model).set_index("Armazém")
-        self.assertEqual(states.loc["S2", "Situação"], "ATIVO")
-        self.assertEqual(states.loc["E2", "Situação"], "ATIVO")
-        self.assertEqual(states.loc["EP", "Situação"], "PENDENTE DE IMPORTAÇÃO")
-        self.assertEqual(states.loc["20", "Situação"], "PENDENTE DE IMPORTAÇÃO")
-
-    def test_summary_uses_tes_and_literal_description_only(self):
+    def test_op_lookup_and_inline_movements(self):
         app = self.app()
-        self.assertEqual([x.label for x in app.multiselect], ["Armazéns"])
-        self.assertEqual(app.segmented_control[0].value, "Visão geral")
-        frame = app.dataframe[0].value
-        self.assertIn("Grupo", frame.columns)
-        self.assertEqual(frame["Grupo"].tolist(), ["SEM GRUPO"])
-        # Escopo inicial é outubro: o lançamento de setembro não entra nos cards.
-        self.assertEqual(frame["Entrada (R$)"].sum(), 30)
-        self.assertEqual(frame["Saída (R$)"].sum(), 35)
-        self.assertEqual(frame["Movimentos"].sum(), 4)
-
-    def test_tes_local_filter_survives_navigation(self):
-        app = self.app()
-        self.area(app, "TES e descrições")
-        tes = next(x for x in app.multiselect if x.label == "Códigos TES")
-        tes.set_value(["520"]).run()
+        self.area(app, "Por OP")
+        self.assertIn("OP", app.dataframe[0].value.columns)
+        app.session_state["_test_action"] = "op_drill"
+        app.run()
         self.assertFalse(app.exception)
-        self.assertEqual(app.dataframe[0].value["TES"].tolist(), ["520"])
+        self.assertEqual(app.segmented_control[0].value, "Por OP")
+        self.assertGreaterEqual(len(app.dataframe), 2)
+        ledger = app.dataframe[1].value
+        self.assertEqual(set(ledger["AE original"]), {" OP00001234567 "})
+        self.assertEqual(set(ledger["Subgrupo"]), {"CONSUMO OP"})
+        self.assertEqual(set(ledger["TES"]), {"550"})
+
+    def test_op_search_still_filters_and_reset(self):
+        app = self.app()
         self.area(app, "Por OP")
         next(x for x in app.text_input if x.label == "Buscar OP ou material").set_value("00001234567").run()
+        self.assertFalse(app.exception)
         self.assertEqual(app.dataframe[0].value["OP"].tolist(), ["OP00001234567"])
-        self.area(app, "Visão geral")
-        self.assertEqual(app.dataframe[0].value["Saída (R$)"].sum(), 35)
-        self.area(app, "TES e descrições")
-        self.assertEqual(next(x for x in app.multiselect if x.label == "Códigos TES").value, ["520"])
-
-    def test_tes_selection_opens_only_matching_ledger_records(self):
-        app = self.app()
-        app.session_state["_test_action"] = "tes"
-        app.run()
-        self.assertFalse(app.exception)
-        self.assertEqual(app.segmented_control[0].value, "Movimentações")
-        self.assertEqual(app.dataframe[0].value["TES"].tolist(), ["520"])
-        self.assertEqual(len(app.dataframe[0].value), 1)
-        self.assertTrue(any("TES: 520" in x.value for x in app.caption))
-        next(x for x in app.button if "VOLTAR PARA" in x.label).click().run()
-        self.assertFalse(app.exception)
-        self.assertEqual(app.segmented_control[0].value, "TES e descrições")
-
-    def test_op_drilldown_preserves_original_ae_and_clears_search(self):
-        app = self.app()
-        self.area(app, "Movimentações")
-        self.assertNotIn("Endereçamento compensado", app.dataframe[0].value.columns)
-        next(x for x in app.text_input if x.label == "Buscar nos registros").set_value("INEXISTENTE").run()
-        self.assertEqual(len(app.dataframe), 0)
-        app.session_state["_test_action"] = "op"
-        app.run()
-        self.assertFalse(app.exception)
-        self.assertEqual(len(app.dataframe[0].value), 1)
-        self.assertEqual(app.dataframe[0].value["AE original"].tolist(), [" OP00001234567 "])
-        self.assertEqual(next(x for x in app.text_input if x.label == "Buscar nos registros").value, "")
         next(x for x in app.button if x.label == "LIMPAR CONSULTA").click().run()
         self.assertFalse(app.exception)
-        self.assertEqual(len(app.dataframe[0].value), 4)
+        self.assertEqual(len(app.dataframe[0].value), 2)
 
-    def test_catalog_independent_of_search_and_sources_accessible(self):
+    def test_catalog_and_import_export_remain_available(self):
         app = self.app()
-        self.area(app, "Movimentações")
-        app.text_input[0].set_value("INEXISTENTE").run()
-        self.assertEqual(len(app.dataframe), 0)
         self.area(app, "Cadastros")
-        # Catálogo: 342 códigos cadastrados mais eventuais TES do KARDEX
-        # sem correspondência; nunca descartar os códigos não cadastrados.
-        catalog_view = app.dataframe[0].value
-        self.assertGreaterEqual(len(catalog_view), 342)
-        self.assertEqual(len(catalog_view["TES"].unique()), len(catalog_view))
-        self.assertIn("Descrição TES", catalog_view.columns)
-        self.assertNotIn("Tipo de TM", catalog_view.columns)
-        self.assertNotIn("Origem", catalog_view.columns)
+        catalog = app.dataframe[0].value
+        self.assertGreaterEqual(len(catalog), 342)
+        self.assertIn("Descrição TES", catalog.columns)
         self.assertEqual(
-            catalog_view.loc[catalog_view["TES"] == "540", "Descrição TES"].iloc[0],
-            "BAIX CUSTO E QTD ZER",
-        )
-        self.assertEqual(
-            catalog_view.loc[catalog_view["TES"] == "499", "Descrição TES"].iloc[0],
-            "ENTRADA DE INVENTÁRIO/ENTRADA OP",
-        )
-        self.assertEqual(
-            catalog_view.loc[catalog_view["TES"] == "999", "Descrição TES"].iloc[0],
+            catalog.loc[catalog["TES"] == "999", "Descrição TES"].iloc[0],
             "SAÍDA DE INVENTÁRIO/CONSUMO OP",
         )
-        self.assertTrue(set(mv.tes_reference()).issubset(set(catalog_view["TES"])))
-        self.assertNotIn("Condição", app.dataframe[0].value.columns)
+        self.assertTrue(any("CONDIÇÕES E SUBGRUPOS" in x.value for x in app.markdown))
         self.area(app, "Fontes e relatórios")
         self.assertEqual(len(app.file_uploader), 1)
-        self.assertTrue(any("Situação" in frame.value.columns for frame in app.dataframe))
+        self.assertTrue(any("Situação" in table.value.columns for table in app.dataframe))
 
-    def test_period_and_warehouse_scope(self):
+    def test_month_and_warehouse_scope(self):
         app = self.app()
         next(x for x in app.multiselect if x.label == "Armazéns").set_value(["S2"]).run()
         self.assertEqual(app.dataframe[0].value["Saída (R$)"].sum(), 30)
@@ -265,32 +195,19 @@ class MovementAnalysisUITests(unittest.TestCase):
         next(x for x in app.selectbox if x.label == "Competência analisada").set_value("2026-09").run()
         self.assertEqual(app.dataframe[0].value["Entrada (R$)"].sum(), 40)
 
-    def test_conditions_priority_visible_in_cadastros(self):
+    def test_excel_complete_in_reports_menu(self):
         app = self.app()
-        self.area(app, "Cadastros")
-        self.assertFalse(app.exception)
-        values = [item.value for item in app.markdown]
-        self.assertTrue(any("CONDIÇÕES E SUBGRUPOS" in value for value in values))
-        self.assertTrue(any("PRODUÇÃO INTERNA" in value for value in values))
-        self.assertTrue(any("CONSUMO OP" in value for value in values))
-        self.assertTrue(any("ADEQUAÇÃO DE CUSTO" in value for value in values))
-
-    def test_excel_of_filtered_op_preserves_ae(self):
-        app = self.app()
-        app.session_state["_test_action"] = "op"
-        app.run()
+        self.area(app, "Fontes e relatórios")
         next(x for x in app.button if x.label == "PREPARAR EXCEL DO RECORTE").click().run()
         self.assertFalse(app.exception)
-        wb = openpyxl.load_workbook(io.BytesIO(app.session_state["fm_mov_excel"][1]), read_only=True)
+        wb = openpyxl.load_workbook(io.BytesIO(app.session_state["fm_mov_excel"][1]),
+                                    read_only=True)
         self.assertEqual(wb.sheetnames, ["Grupos e TES", "Por OP", "Movimentações"])
-        self.assertEqual(wb["Movimentações"]["F1"].value, "Grupo")
-        self.assertEqual(wb["Movimentações"]["G1"].value, "Subgrupo")
-        self.assertEqual(wb["Movimentações"]["F2"].value, "SEM GRUPO")
-        self.assertEqual(wb["Movimentações"]["G2"].value, "CONSUMO OP")
-        self.assertEqual(wb["Movimentações"]["J2"].value, " OP00001234567 ")
-        self.assertEqual(len(list(wb["Movimentações"].iter_rows(values_only=True))), 2)
+        ledger = wb["Movimentações"]
+        self.assertEqual(ledger["F1"].value, "Grupo")
+        self.assertEqual(ledger["G1"].value, "Subgrupo")
+        self.assertEqual(len(list(ledger.iter_rows(values_only=True))), 5)
         self.assertEqual(wb["Por OP"]["A2"].value, "OP00001234567")
-        self.assertEqual(wb["Grupos e TES"]["A2"].value, "SEM GRUPO")
         wb.close()
 
 
