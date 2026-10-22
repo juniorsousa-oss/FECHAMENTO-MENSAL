@@ -157,18 +157,21 @@ class MovementAnalysisTests(unittest.TestCase):
         self.assertEqual(op["J3"].number_format, "dd/mm/yyyy")
 
         ledger = wb["Movimentações"]
-        self.assertEqual([ledger.cell(1, i).value for i in range(1, 12)], [
-            "Data", "Código", "Produto", "Armazém", "TES", "Entrada (R$)",
-            "Saída (R$)", "AE original", "Descrição TES", "Tipo do material", "Documento",
+        self.assertEqual([ledger.cell(1, i).value for i in range(1, 13)], [
+            "Data", "Código", "Produto", "Armazém", "TES", "Grupo",
+            "Entrada (R$)", "Saída (R$)", "AE original", "Descrição TES",
+            "Tipo do material", "Documento",
         ])
-        self.assertEqual(ledger["H2"].value, "OP00001234567")
+        self.assertEqual(ledger["F2"].value, "CONSUMO OP")
+        self.assertEqual(ledger["I2"].value, "OP00001234567")
         self.assertEqual(ledger["B2"].value, "00001000")
         self.assertEqual(ledger["C2"].data_type, "s")
         self.assertEqual(ledger["C2"].value, "=NÃO É FÓRMULA")
         self.assertEqual(ledger["A2"].number_format, "dd/mm/yyyy")
         self.assertEqual(ledger["A2"].value.date().isoformat(), "2026-10-01")
-        self.assertEqual(ledger["G2"].value, 10)
-        self.assertEqual(ledger.auto_filter.ref, "A1:K2")
+        self.assertEqual(ledger["H2"].value, 10)
+        self.assertEqual(ledger["H2"].number_format, '#,##0.00;[Red](#,##0.00)')
+        self.assertEqual(ledger.auto_filter.ref, "A1:L2")
         wb.close()
 
     def test_excel_groups_reconcile_and_op_only_expands_actual_exits(self):
@@ -215,7 +218,22 @@ class MovementAnalysisTests(unittest.TestCase):
         self.assertEqual(second_pos-first_pos, 3)  # summary plus two actual baixa records
         self.assertEqual(ops.cell(second_pos, 6).value, 0)
         self.assertEqual(ops.cell(second_pos + 1, 2).value, "SEM BAIXAS NO RECORTE")
-        self.assertEqual(len(list(wb["Movimentações"].values)), 6)
+        movements_sheet = wb["Movimentações"]
+        self.assertEqual(len(list(movements_sheet.values)), 6)
+        self.assertEqual(movements_sheet["F1"].value, "Grupo")
+        observed = {
+            movements_sheet.cell(r, 5).value: movements_sheet.cell(r, 6).value
+            for r in range(2, movements_sheet.max_row + 1)
+        }
+        self.assertEqual(observed["520"], "REQUISIÇÕES")
+        self.assertEqual(observed["999"], "REQUISIÇÕES")
+        self.assertEqual(observed["499"], "ENTRADAS")
+        self.assertEqual(observed["540"], "SEM GRUPO")
+        self.assertEqual(observed["010"], "SEM GRUPO")
+        self.assertEqual(
+            sum(movements_sheet.cell(r, 8).value or 0
+                for r in range(2, movements_sheet.max_row + 1)), 30
+        )
         wb.close()
 
     def test_exported_history_reimports_without_derived_classification(self):
