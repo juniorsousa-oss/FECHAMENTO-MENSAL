@@ -20,7 +20,7 @@ AREA_LABELS = {"Visão geral": "Resumo", "Por OP": "Consulta por OP", "Movimenta
 FILTER_AREAS = {"TES e descrições": "tes", "Por OP": "ops", "Movimentações": "ledger"}
 FILTER_FIELDS = {"tes": "TES", "search": "Busca", "op": "OP", "cc": "CC / CR", "categories": "Tipo"}
 MONEY_COLUMNS = {"valor_entrada": "Entrada (R$)", "valor_saida": "Saída (R$)", "liquido_valor": "Variação (R$)"}
-NAMES = {"tes": "TES", "descricao_tes": "Descrição TES", "tipo_tm": "Tipo de TM",
+NAMES = {"tes": "TES", "descricao_tes": "Descrição TES",
          "lancamentos": "Movimentos", "produtos": "Produtos", "tes_distintas": "TES distintas", "competencia": "Competência",
          "op_identificada": "OP", "documentos": "Documentos", "primeira_data": "Primeiro movimento", "ultima_data": "Último movimento",
          "enderecamentos": "Movimentos de endereço", **MONEY_COLUMNS}
@@ -450,10 +450,6 @@ def _context(frame, imports, coverage=None):
 def _tes_summary(frame) -> pd.DataFrame:
     """Uma linha por TES e descrição, sem agrupamentos subjetivos."""
     result = mv.summarize(frame, ["tes", "descricao_tes"])
-    confirmed = mv.rules()["tes"]
-    result["tipo_tm"] = result["tes"].map(
-        lambda code: confirmed.get(code, {}).get("tipo_tm") or "NI"
-    )
     return result.sort_values(["tes", "descricao_tes"], kind="stable").reset_index(drop=True)
 
 
@@ -465,7 +461,7 @@ def _tes_table(frame, token):
     key = "fm_mov_tes_table_" + token
     codes = summary["tes"].tolist()
     _table(
-        summary[["tes", "tipo_tm", "descricao_tes", "lancamentos", "produtos",
+        summary[["tes", "descricao_tes", "lancamentos", "produtos",
                  "valor_entrada", "valor_saida", "liquido_valor"]],
         key=key, on_select=lambda: _tes_selected(key, codes),
         height=700,
@@ -489,7 +485,7 @@ def _overview(frame, token):
     if unknown:
         st.warning(f"{count(unknown)} movimentações possuem TES sem descrição no cadastro de referência.")
     st.markdown("**MOVIMENTAÇÕES AGRUPADAS POR TES**")
-    st.caption("Os registros são agrupados por código TES e descrição. O tipo TM é apenas informativo.")
+    st.caption("Os registros são agrupados exclusivamente por código TES e sua descrição vigente.")
     _tes_table(frame, token + "_overview")
     with st.expander("EVOLUÇÃO MENSAL DO PERÍODO"):
         monthly = mv.summarize(frame, ["competencia"]).sort_values("competencia")
@@ -497,7 +493,7 @@ def _overview(frame, token):
 
 
 def _tes(frame, token):
-    st.caption("TES e descrição do cadastro de referência; os sete tipos TM informados são apenas metadados, sem regras por produto, OP ou CC.")
+    st.caption("Descrições prioritárias definidas para nove TES. As demais seguem o cadastro-base, sem classificação gerencial.")
     _tes_table(frame, token)
 
 
@@ -525,11 +521,6 @@ def _detail(row):
         st.write("**DATA:** " + date.fromisoformat(row["data"]).strftime("%d/%m/%Y"))
         st.write("**TES:** " + row["tes"])
         st.write("**DESCRIÇÃO TES:** " + row["descricao_tes"])
-        st.write("**TIPO DE TM:** " + row.get("tipo_tm", "NI"))
-        st.write(
-            "**ORIGEM DA DESCRIÇÃO:** " +
-            ("Tabela TM informada" if row["tes"] in mv.tes_confirmed() else "Cadastro TES Protheus")
-        )
         st.write("**DOCUMENTO:** " + row["documento"])
     with b:
         st.write("**ARMAZÉM:** " + row["armazem"])
@@ -563,8 +554,7 @@ def _ledger(frame, token):
     shown = pd.DataFrame({"Data": pd.to_datetime(visible["data"]).dt.date, "Código": visible["codigo"], "Produto": visible["descricao"],
                           "Armazém": visible["armazem"], "TES": visible["tes"], "Entrada (R$)": visible["valor_entrada"],
                           "Saída (R$)": visible["valor_saida"], "AE original": visible["ae_original"],
-                          "Descrição TES": visible["descricao_tes"], "Tipo de TM": visible["tipo_tm"],
-                          "Tipo do material": visible["tipo"],
+                          "Descrição TES": visible["descricao_tes"], "Tipo do material": visible["tipo"],
                           "Documento": visible["documento"]})
     key = f"fm_mov_ledger_{token}_{page}_{size}"
     event = st.dataframe(shown, key=key, hide_index=True, width="stretch", height=600,
@@ -585,9 +575,7 @@ def _catalog(frame):
     rows = [
         {
             "TES": code,
-            "Tipo de TM": fields.get("tipo_tm") or "NI",
             "Descrição TES": fields["descricao"],
-            "Origem": "Tabela TM informada" if code in mv.tes_confirmed() else "Cadastro TES Protheus",
             "Movimentos no recorte": int(counts.get(code, 0)),
         }
         for code, fields in catalog.items()
@@ -595,16 +583,13 @@ def _catalog(frame):
     unknown = sorted(set(counts) - set(catalog))
     rows.extend({
         "TES": code,
-        "Tipo de TM": "NI",
         "Descrição TES": "NI - TES não localizada no cadastro",
-        "Origem": "Sem correspondência",
         "Movimentos no recorte": int(counts[code]),
     } for code in unknown)
     st.caption(
         f"{count(len(catalog))} TES no cadastro de referência · "
-        f"{count(len(mv.tes_confirmed()))} códigos com tipo TM informado · "
-        f"{count(len(unknown))} códigos movimentados sem correspondência. "
-        "Tipo de TM é um atributo cadastral, não um grupo gerencial."
+        f"{count(len(mv.tes_overrides()))} descrições prioritárias definidas · "
+        f"{count(len(unknown))} códigos movimentados sem correspondência."
     )
     st.dataframe(
         pd.DataFrame(rows).sort_values("TES", kind="stable"),
@@ -673,7 +658,7 @@ def render_results(model, imports):
         "TES e descrições": ("02 · TES", "MOVIMENTAÇÕES POR TES", "Uma linha por código e descrição do cadastro Protheus. Selecione para consultar os lançamentos."),
         "Por OP": ("03 · ORDENS DE PRODUÇÃO", "CONSULTA POR OP", "Localize OPs por sua identificação original e consulte os documentos vinculados."),
         "Movimentações": ("04 · REGISTROS", "MOVIMENTAÇÕES ORIGINAIS", "Consulte as informações do KARDEX sem classificação gerencial ou exclusões automáticas."),
-        "Cadastro TES": ("05 · CADASTRO", "CATÁLOGO DE TES", "TES, descrições e tipos de movimentação confirmados, sem grupos gerenciais."),
+        "Cadastro TES": ("05 · CADASTRO", "CATÁLOGO DE TES", "Nove descrições prioritárias substituem o cadastro-base; demais TES mantidas."),
         "Fontes e relatórios": ("06 · FONTES E RELATÓRIOS", "HISTÓRICO, IMPORTAÇÃO E EXPORTAÇÃO", "Registros originais, histórico de importações e relatórios por TES."),
     }
     band(*headers[area])
