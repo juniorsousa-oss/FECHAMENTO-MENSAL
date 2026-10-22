@@ -442,9 +442,8 @@ def _context(frame, imports, coverage=None):
         from datetime import timedelta
         if coverage_end < (next_month - timedelta(days=1)).isoformat():
             st.caption(f"PERÍODO PARCIAL · histórico disponível até {date.fromisoformat(coverage_end).strftime('%d/%m/%Y')}.")
-    if not view.empty:
-        start, end = date.fromisoformat(view["data"].min()), date.fromisoformat(view["data"].max())
-        st.caption(f"BASE DA ANÁLISE · {start:%d/%m/%Y} a {end:%d/%m/%Y} · armazém: {', '.join(sorted(view['armazem'].unique()))}.")
+    # O período e os armazéns continuam aplicados ao recorte, mas o texto
+    # redundante de "BASE DA ANÁLISE" não é exibido no topo do KARDEX.
     return view.copy()
 
 
