@@ -1,0 +1,15 @@
+{
+  "versao": "2026-10-22.override.2",
+  "descricao": "Descrições prioritárias definidas pelo usuário; substituem integralmente as do relatório-base para esses códigos.",
+  "tes": {
+    "499": "ENTRADA DE INVENTÁRIO/ENTRADA OP",
+    "520": "BAIXA SA TOTVS",
+    "540": "BAIX CUSTO E QTD ZER",
+    "550": "BAIXA PRODUCAO MES",
+    "999": "SAÍDA DE INVENTÁRIO/CONSUMO OP",
+    "010": "MOV PRODUCAO MES PA",
+    "020": "DEVOLUCAO TOTVS",
+    "030": "ENTR CUSTO E QTD ZER",
+    "040": "DEVOLUCAO MES"
+  }
+}
