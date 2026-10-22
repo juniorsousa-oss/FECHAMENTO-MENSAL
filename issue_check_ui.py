@@ -97,6 +97,10 @@ def _band():
       color:#66758a;font-size:.73rem;line-height:1.4;
       margin:0 0 1rem;
     }
+    .fm-issue-group-label {
+      color:#68768b;letter-spacing:.09em;font-size:.64rem;
+      font-weight:850;margin:0 0 .65rem;
+    }
     .st-key-fm_issue_date_filters {
       margin-top:.85rem;padding:1rem 0 0;
       border-top:1px solid #e6eaf0;
@@ -148,55 +152,125 @@ def _band():
       padding:1rem 1.05rem;margin:0 0 .65rem;
     }
     .st-key-fm_issue_ops{margin-top:1.15rem}
-    /* SETTA | conferência: componentes de consulta visivelmente interativos */
+    /* SETTA / Filtros v3: estiliza a SUPERFÍCIE clicável, não só o placeholder.
+       BaseWeb e Streamlit possuem wrappers diferentes para texto, select e data. */
     .st-key-fm_issue_filters {
-      border:1px solid #d8dfe8!important;
-      border-top:4px solid #141d2c!important;
-      border-radius:18px!important;
-      background:linear-gradient(180deg,#fff 0%,#fcfdff 100%)!important;
-      padding:1.25rem 1.35rem 1.25rem!important;
-      box-shadow:0 9px 26px rgba(15,23,42,.06)!important;
+      border:1px solid #d5dde9!important;
+      border-top:4px solid #152137!important;
+      border-radius:17px!important;
+      background:#ffffff!important;
+      padding:1.3rem 1.4rem 1.2rem!important;
+      box-shadow:0 9px 23px rgba(14,25,44,.075)!important;
+    }
+    .st-key-fm_issue_search_group,
+    .st-key-fm_issue_class_group {
+      background:#f8fafc!important;
+      border:1px solid #e5eaf1!important;
+      border-radius:13px!important;
+      padding:.85rem .95rem .95rem!important;
+      height:100%;
+    }
+    .st-key-fm_issue_filters [data-testid="stTextInput"],
+    .st-key-fm_issue_filters [data-testid="stSelectbox"],
+    .st-key-fm_issue_filters [data-testid="stDateInput"] {
+      min-width:0!important;
+      margin:0!important;
     }
     .st-key-fm_issue_filters [data-testid="stTextInput"] [data-baseweb="input"],
     .st-key-fm_issue_filters [data-testid="stDateInput"] [data-baseweb="input"],
-    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div {
-      background:#f8fafc!important;
-      border:1.5px solid #c4cfdd!important;
-      border-radius:11px!important;
-      box-shadow:0 1px 3px rgba(15,23,42,.05)!important;
-      min-height:46px!important;transition:border-color .14s,box-shadow .14s!important;
+    .st-key-fm_issue_filters [data-testid="stTextInput"] [data-baseweb="base-input"],
+    .st-key-fm_issue_filters [data-testid="stDateInput"] [data-baseweb="base-input"],
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div,
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [role="combobox"],
+    .st-key-fm_issue_filters [data-testid="stDateInput"] > div > div {
+      box-sizing:border-box!important;
+      background-color:#fff!important;
+      border:2px solid #9dabbf!important;
+      border-radius:10px!important;
+      min-height:48px!important;
+      box-shadow:0 2px 6px rgba(12,25,45,.085)!important;
+      transition:border-color .16s ease,box-shadow .16s ease!important;
+    }
+    /* Fallback para versões do Streamlit que não utilizam o wrapper BaseWeb. */
+    .st-key-fm_issue_filters [data-testid="stTextInput"] input,
+    .st-key-fm_issue_filters [data-testid="stDateInput"] input {
+      box-sizing:border-box!important;
+      color:#152237!important;
+      font-size:.92rem!important;
+      font-weight:550!important;
+      background:#fff!important;
+      caret-color:#152137!important;
+      min-height:44px!important;
+      padding:.55rem .8rem!important;
+      border-radius:9px!important;
+      border:1px solid #b1bdce!important;
+      outline:0!important;
+    }
+    .st-key-fm_issue_filters [data-testid="stTextInput"] input::placeholder,
+    .st-key-fm_issue_filters [data-testid="stDateInput"] input::placeholder {
+      color:#72829a!important;
+      opacity:1!important;
+      font-weight:450!important;
+    }
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] {
+      border-radius:10px!important;
+    }
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div *,
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [role="combobox"] * {
+      color:#172338!important;
+      font-size:.87rem!important;
+    }
+    /* Hover visível em todo o campo, inclusive no alvo do calendário. */
+    .st-key-fm_issue_filters [data-testid="stTextInput"] [data-baseweb="input"]:hover,
+    .st-key-fm_issue_filters [data-testid="stDateInput"] [data-baseweb="input"]:hover,
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div:hover {
+      border-color:#637792!important;
+      box-shadow:0 3px 10px rgba(16,37,63,.13)!important;
     }
     .st-key-fm_issue_filters [data-testid="stTextInput"] [data-baseweb="input"]:focus-within,
     .st-key-fm_issue_filters [data-testid="stDateInput"] [data-baseweb="input"]:focus-within,
-    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div:focus-within {
-      background:#fff!important;border-color:#273955!important;
-      box-shadow:0 0 0 3px rgba(39,57,85,.12)!important;
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div:focus-within,
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [role="combobox"]:focus {
+      border-color:#18314f!important;
+      outline:0!important;
+      box-shadow:0 0 0 3px rgba(24,49,79,.16),0 2px 8px rgba(24,49,79,.10)!important;
     }
-    .st-key-fm_issue_filters [data-testid="stTextInput"] input,
-    .st-key-fm_issue_filters [data-testid="stDateInput"] input {
-      color:#101827!important;min-height:42px!important;padding:0 .9rem!important;
-      background:transparent!important;font-size:.87rem!important;
-      font-weight:550!important;caret-color:#111827!important;
+    .st-key-fm_issue_filters [data-testid="stTextInput"] input:focus-visible,
+    .st-key-fm_issue_filters [data-testid="stDateInput"] input:focus-visible {
+      border-color:#18314f!important;
+      outline:2px solid rgba(24,49,79,.35)!important;
+      outline-offset:0!important;
     }
-    .st-key-fm_issue_filters [data-testid="stTextInput"] input::placeholder {
-      color:#8793a3!important;opacity:1!important;font-weight:450!important;
+    .st-key-fm_issue_filters label {
+      font-size:.74rem!important;
+      font-weight:750!important;
+      color:#26364c!important;
+      margin-bottom:.2rem!important;
+      letter-spacing:.025em!important;
     }
-    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div {
-      color:#172133!important;font-size:.87rem!important;
-    }
-    .st-key-fm_issue_filters label {font-size:.73rem!important;letter-spacing:.03em!important}
-    .st-key-fm_issue_filters .fm-issue-filter-subtitle{margin-bottom:1.15rem!important}
+    .st-key-fm_issue_filters .fm-issue-filter-subtitle {margin-bottom:1.15rem!important}
     .st-key-fm_issue_date_filters {
-      border-top:1px solid #e8edf3!important;margin-top:.65rem!important;
-      padding-top:1rem!important;
+      border:1px solid #e5eaf1!important;
+      border-top:2px solid #d9e1ec!important;
+      border-radius:13px!important;
+      margin-top:1rem!important;
+      padding:1rem .95rem .95rem!important;
+      background:#f8fafc!important;
     }
     .st-key-fm_issue_clear_filters button {
-      min-height:45px!important;background:#fff!important;color:#26364d!important;
-      border:1.5px solid #b8c4d3!important;border-radius:11px!important;
-      font-size:.77rem!important;font-weight:800!important;
+      min-height:48px!important;
+      margin-top:1.4rem!important;
+      border:1.5px solid #8e9fb6!important;
+      border-radius:10px!important;
+      background:#fff!important;
+      color:#17263a!important;
+      font-size:.77rem!important;
+      font-weight:800!important;
+      box-shadow:0 2px 7px rgba(12,25,45,.07)!important;
     }
     .st-key-fm_issue_clear_filters button:hover {
-      border-color:#162238!important;background:#f5f7fb!important;
+      background:#ecf1f6!important;
+      border-color:#18314f!important;
     }
     /* Painel de indicadores: compacto no celular, com 2 colunas em vez de 4 cartões gigantes */
     .st-key-fm_issue_summary .cb-kpi-grid{margin:.85rem 0 1.05rem!important;gap:.7rem!important}
@@ -799,31 +873,46 @@ def render_results(model):
             'Localize uma OP ou combine situação, alertas e faturamento.'
             '</div>', unsafe_allow_html=True,
         )
-        fop, falert, fstatus = st.columns([1.7, 1.2, 1.3], gap="medium")
-        with fop:
-            query = st.text_input(
-                "LOCALIZAR OP", key="fm_issue_search", placeholder="Número da OP"
-            )
-        with falert:
-            choice = st.selectbox("ALERTAS", list(FILTERS), key="fm_issue_filter")
-        with fstatus:
-            statuses = ["Todos os status"] + [
-                op_rules.FINALIZADO_PATIO, op_rules.FINALIZADO_ENTREGUE,
-                op_rules.NF_EMITIDA, op_rules.FINALIZADO, op_rules.REPORTADO,
-                op_rules.EM_CONFERENCIA, op_rules.EM_SEPARACAO,
-                op_rules.AGUARDANDO_INICIO,
-            ]
-            selected_status = st.selectbox(
-                "STATUS DA OP", statuses, key="fm_issue_op_status"
-            )
+        lookup_col, classification_col = st.columns([1.15, 2], gap="medium")
+        with lookup_col:
+            with st.container(key="fm_issue_search_group"):
+                st.markdown(
+                    '<div class="fm-issue-group-label">01 · PESQUISA</div>',
+                    unsafe_allow_html=True,
+                )
+                query = st.text_input(
+                    "LOCALIZAR OP", key="fm_issue_search",
+                    placeholder="Digite o número da OP",
+                )
+        with classification_col:
+            with st.container(key="fm_issue_class_group"):
+                st.markdown(
+                    '<div class="fm-issue-group-label">02 · CLASSIFICAÇÃO</div>',
+                    unsafe_allow_html=True,
+                )
+                alert_col, status_col = st.columns(2, gap="medium")
+                with alert_col:
+                    choice = st.selectbox(
+                        "ALERTAS", list(FILTERS), key="fm_issue_filter"
+                    )
+                with status_col:
+                    statuses = ["Todos os status"] + [
+                        op_rules.FINALIZADO_PATIO, op_rules.FINALIZADO_ENTREGUE,
+                        op_rules.NF_EMITIDA, op_rules.FINALIZADO, op_rules.REPORTADO,
+                        op_rules.EM_CONFERENCIA, op_rules.EM_SEPARACAO,
+                        op_rules.AGUARDANDO_INICIO,
+                    ]
+                    selected_status = st.selectbox(
+                        "STATUS DA OP", statuses, key="fm_issue_op_status"
+                    )
         with st.container(key="fm_issue_date_filters"):
             st.markdown(
-                '<div class="fm-issue-date-title">PERÍODO DE FATURAMENTO</div>'
+                '<div class="fm-issue-date-title">03 · PERÍODO DE FATURAMENTO</div>'
                 '<div class="fm-issue-date-note">'
-                'Selecione as datas no calendário. O período filtra somente o faturamento das OPs.'
+                'Selecione uma data ou um intervalo. O período filtra somente o faturamento das OPs.'
                 '</div>', unsafe_allow_html=True,
             )
-            c_from, c_to, c_clear = st.columns([1.25, 1.25, 2], gap="medium")
+            c_from, c_to, c_clear = st.columns([1, 1, .85], gap="medium")
             with c_from:
                 date_from_raw = st.date_input(
                     "DATA INICIAL", value=None, format="DD/MM/YYYY",
