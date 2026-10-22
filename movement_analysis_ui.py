@@ -486,26 +486,28 @@ def _context(frame, imports, coverage=None):
     return view.copy()
 
 
-def _tes_summary(frame) -> pd.DataFrame:
-    """Uma linha por TES e descrição, sem agrupamentos subjetivos."""
-    result = mv.summarize(frame, ["tes", "descricao_tes"])
-    return result.sort_values(["tes", "descricao_tes"], kind="stable").reset_index(drop=True)
+def _tes_summary(frame, config=None) -> pd.DataFrame:
+    """TES agrupadas e segmentadas pelos subgrupos da fila."""
+    classified = conditions.classify(frame, config or groups.empty())
+    result = mv.summarize(classified, ["tes", "descricao_tes", "grupo_usuario", "subgrupo_usuario"])
+    return result.sort_values(
+        ["tes", "subgrupo_usuario", "descricao_tes"], kind="stable"
+    ).reset_index(drop=True)
 
 
-def _tes_table(frame, token):
-    summary = _tes_summary(frame)
+def _tes_table(frame, token, config=None):
+    summary = _tes_summary(frame, config)
     if summary.empty:
         st.info("Nenhuma TES com movimentações neste recorte.")
         return
     key = "fm_mov_tes_table_" + token
     codes = summary["tes"].tolist()
     _table(
-        summary[["tes", "descricao_tes", "lancamentos", "produtos",
-                 "valor_entrada", "valor_saida", "liquido_valor"]],
-        key=key, on_select=lambda: _tes_selected(key, codes),
-        height=700,
+        summary[["tes", "descricao_tes", "grupo_usuario", "subgrupo_usuario",
+                 "lancamentos", "produtos", "valor_entrada", "valor_saida", "liquido_valor"]],
+        key=key, on_select=lambda: _tes_selected(key, codes), height=700,
     )
-    st.caption("Selecione uma TES para consultar os registros originais que compõem os valores.")
+    st.caption("Cada movimentação pertence somente ao primeiro subgrupo atendido pela fila de condições.")
 
 
 def _overview(frame, token):
@@ -519,42 +521,44 @@ def _overview(frame, token):
         f"{count(len(frame))} registros · {count(frame.codigo.nunique())} produtos · "
         f"{count(frame.tes.nunique())} TES distintas · "
         f"{count(frame.loc[frame.op_identificada != '', 'op_identificada'].nunique())} OPs. "
-        "Totais sem exclusão ou reclassificação gerencial."
+        "Valores brutos preservados; subgrupos classificados em fila."
     )
     if unknown:
         st.warning(f"{count(unknown)} movimentações possuem TES sem descrição no cadastro de referência.")
     st.markdown("**MOVIMENTAÇÕES POR GRUPO DE TES**")
-    st.caption("Cada TES pertence a um único grupo configurado em Cadastros. As não vinculadas aparecem em SEM GRUPO.")
     try:
         config = _groups_read()
     except Exception as exc:
         st.warning(f"Não foi possível consultar o cadastro de grupos: {exc}. Os registros por TES permanecem disponíveis.")
         _tes_table(frame, token + "_overview")
-    else:
-        summary = groups.summarize(frame, config)
-        if not summary.empty:
-            summary = summary.rename(columns={"grupo_usuario":"Grupo"})
-            _table(summary[["Grupo", "tes_distintas", "lancamentos", "produtos",
-                            "valor_entrada", "valor_saida", "liquido_valor"]],
-                   height=600)
-            st.caption("Entradas e saídas são somadas sem duplicidade. Cadastre grupos e associe suas TES em Cadastros.")
-        with st.expander("CONSULTAR TES DO GRUPO"):
-            labels = summary["Grupo"].tolist() if not summary.empty else []
-            if labels:
-                label = st.selectbox("Grupo", labels, key="fm_mov_group_drill")
-                owners = groups.group_owner(config)
-                selected_codes = sorted(code for code in frame["tes"].unique()
-                                        if owners.get(code, groups.UNASSIGNED) == label)
-                detail = frame.loc[frame["tes"].isin(selected_codes)]
-                _tes_table(detail, token + "_drill_" + label)
+        return
+    classified = conditions.classify(frame, config)
+    summary = mv.summarize(classified, ["grupo_usuario"]).rename(columns={"grupo_usuario": "Grupo"})
+    if not summary.empty:
+        _table(summary[["Grupo", "tes_distintas", "lancamentos", "produtos",
+                        "valor_entrada", "valor_saida", "liquido_valor"]], height=600)
+    with st.expander("SUBGRUPOS E TES DO GRUPO", expanded=False):
+        labels = summary["Grupo"].tolist() if not summary.empty else []
+        if labels:
+            label = st.selectbox("Grupo", labels, key="fm_mov_group_drill")
+            group_rows = classified.loc[classified["grupo_usuario"] == label]
+            subgroups = mv.summarize(group_rows, ["subgrupo_usuario"])
+            _table(subgroups[["subgrupo_usuario", "lancamentos", "produtos",
+                              "valor_entrada", "valor_saida", "liquido_valor"]])
+            _tes_table(group_rows, token + "_drill_" + label, config)
     with st.expander("EVOLUÇÃO MENSAL DO PERÍODO"):
         monthly = mv.summarize(frame, ["competencia"]).sort_values("competencia")
         _table(monthly[["competencia", "lancamentos", "valor_entrada", "valor_saida", "liquido_valor"]])
 
 
 def _tes(frame, token):
-    st.caption("Descrições prioritárias definidas para nove TES. As demais seguem o cadastro-base, sem classificação gerencial.")
-    _tes_table(frame, token)
+    st.caption("TES separadas por grupo e subgrupo. A primeira condição correspondente define o subgrupo.")
+    try:
+        config = _groups_read()
+    except Exception as exc:
+        st.error(f"Não foi possível carregar os grupos e condições: {exc}")
+        return
+    _tes_table(frame, token, config)
 
 
 def _ops(frame, token):
@@ -597,7 +601,7 @@ def _detail(row):
 
 def _ledger(frame, token):
     st.caption(f"{count(len(frame))} registros encontrados. A exportação inclui todo o recorte, independentemente da página.")
-    st.caption("Sem abatimentos, agrupamentos gerenciais ou compensações automáticas. Todos os lançamentos da fonte permanecem incluídos.")
+    st.caption("Todos os lançamentos originais são preservados. Grupo e subgrupo são apenas classificações gerenciais.")
     if st.session_state.get("fm_mov_page_token") != token:
         st.session_state.fm_mov_page = 1
         st.session_state.fm_mov_page_token = token
@@ -611,9 +615,16 @@ def _ledger(frame, token):
         page = st.number_input("Página", min_value=1, max_value=pages, step=1, key="fm_mov_page")
     ordered = frame.sort_values(["data", "codigo", "linha_origem", "id_registro"], ascending=[False, True, True, True], kind="stable")
     visible = ordered.iloc[(page-1)*size:page*size]
+    try:
+        visible = conditions.classify(visible, _groups_read())
+    except Exception as exc:
+        st.error(f"Não foi possível classificar os registros: {exc}")
+        return
     shown = pd.DataFrame({"Data": pd.to_datetime(visible["data"]).dt.date, "Código": visible["codigo"], "Produto": visible["descricao"],
-                          "Armazém": visible["armazem"], "TES": visible["tes"], "Entrada (R$)": visible["valor_entrada"],
-                          "Saída (R$)": visible["valor_saida"], "AE original": visible["ae_original"],
+                          "Armazém": visible["armazem"], "TES": visible["tes"],
+                          "Grupo": visible["grupo_usuario"], "Subgrupo": visible["subgrupo_usuario"],
+                          "Entrada (R$)": visible["valor_entrada"], "Saída (R$)": visible["valor_saida"],
+                          "AE original": visible["ae_original"],
                           "Descrição TES": visible["descricao_tes"], "Tipo do material": visible["tipo"],
                           "Documento": visible["documento"]})
     key = f"fm_mov_ledger_{token}_{page}_{size}"
