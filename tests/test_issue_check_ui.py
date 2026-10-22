@@ -144,7 +144,24 @@ class IssueCheckUITests(unittest.TestCase):
             '.st-key-fm_issue_filters .st-key-fm_issue_clear_filters button {',
             source,
         )
-        self.assertIn('height:48px!important;', source)
+        # A altura do cartão precisa comportar os selects, sem esticar seus
+        # nós internos (isso causava truncamento junto à borda inferior).
+        select_rules = source.split("/* Classificação: a caixa inteira", 1)[1].split(
+            "/* Faixa de ações única", 1
+        )[0]
+        self.assertIn('height:auto!important;', select_rules)
+        self.assertNotIn('height:100%!important;', select_rules)
+        self.assertIn('height:48px!important;', select_rules)
+        self.assertIn('overflow:visible!important;', select_rules)
+        self.assertIn('min-height:136px!important;', source)
+        # Os dois submits compartilham o mesmo contêiner de ações.
+        action_layout = source.split(
+            'with st.container(key="fm_issue_filter_actions"):', 1
+        )[1].split("if submitted:", 1)[0]
+        self.assertIn('action_search, action_clear = st.columns([1, 1], gap="small")', action_layout)
+        self.assertIn('"PESQUISAR"', action_layout)
+        self.assertIn('"LIMPAR FILTROS"', action_layout)
+        self.assertIn('height:46px!important;', source)
         self.assertIn('margin:0!important;', source)
         self.assertIn('with st.form("fm_issue_filter_form"', source)
         app = AppTest.from_string(PROGRAM, default_timeout=20).run()
