@@ -1,4 +1,4 @@
-"""Regressão do cadastro TES Protheus — descrições sem alterar regras operacionais."""
+"""Regressão do reset: TES e descrição literal, sem classificação gerencial."""
 from __future__ import annotations
 
 import sys
@@ -10,67 +10,46 @@ import movements as mv
 
 
 class TESReferenceTests(unittest.TestCase):
-    def test_catalog_completeness_and_missing_sales_tes_descriptions(self):
-        reference = mv.tes_reference()
-        self.assertEqual(len(reference), 342)
-        expected = {
-            "815": "REMESSA DE VENDA DE ENTREGA FUTURA SEM ST 5.116 - CONTRIBUIN",
-            "823": "VENDA PRODUCAO DO ESTABELECIMENTO - NAO CONTRIBUINTE",
-            "825": "REMESSA DE VENDA DE ENTREGA FUTURA SEM ST 5.116 - NAO CONTRI",
-            "836": "VENDA PRODUCAO DO ESTABELECIMENTO CONTRIBUINTE REIDI/RECAP",
-            "837": "REMESSA DE VENDA DE ENTREGA FUTURA SEM ST 5.116 - CONTRIBUIN",
-        }
-        rules = mv.rules()
-        for tes, description in expected.items():
-            with self.subTest(tes=tes):
-                self.assertEqual(reference[tes], description)
-                self.assertEqual(rules["tes"][tes]["descricao"], description)
-                self.assertEqual(rules["tes"][tes]["grupo"], "VENDAS")
-                self.assertFalse(rules["tes"][tes]["provisorio"])
-
-    def test_confirmed_descriptions_and_groups_are_not_overwritten(self):
-        rules = mv.rules()["tes"]
-        for code, group, description in (
-            ("040", mv.FLOW, "DEVOLUCAO MES"),
-            ("520", mv.ADJUSTMENT, "BAIXA SA TOTVS"),
-            ("550", mv.FLOW, "BAIXA PRODUCAO MES"),
-            ("999", mv.FLOW, "ORDEM DE PRODUÇÃO"),
-        ):
+    def test_catalog_complete_and_covers_previously_missing_tes(self):
+        catalog = mv.tes_reference()
+        self.assertEqual(len(catalog), 342)
+        configuration = mv.rules()
+        self.assertEqual(configuration["modo"], "CADASTRO_TES_SOMENTE")
+        for code in ("815", "823", "825", "836", "837", "040", "520", "550", "999"):
             with self.subTest(code=code):
-                self.assertEqual(rules[code]["grupo"], group)
-                self.assertEqual(rules[code]["descricao"], description)
-        self.assertNotEqual(mv.tes_reference()["520"], rules["520"]["descricao"])
+                self.assertEqual(configuration["tes"][code], {"descricao": catalog[code]})
+                self.assertTrue(catalog[code])
+        self.assertTrue(all(set(value) == {"descricao"} for value in configuration["tes"].values()))
 
-    def test_other_new_tes_have_real_description_but_provisional_classification(self):
-        rules = mv.rules()["tes"]
-        self.assertEqual(rules["001"]["descricao"], "COMPRA ENERGIA ELETRICA IND")
-        self.assertEqual(rules["001"]["grupo"], "TES A CLASSIFICAR")
-        self.assertTrue(rules["001"]["provisorio"])
+    def test_previous_business_rules_not_loaded_into_active_configuration(self):
+        config = mv.rules()
+        for obsolete in ("materiais_h001", "materiais_fechamento", "ordem_grupos",
+                         "grupos_confirmados", "regras_confirmadas"):
+            self.assertNotIn(obsolete, config)
+        self.assertEqual(config["tes"]["520"]["descricao"], mv.tes_reference()["520"])
 
-    def test_sales_tes_grouping_preserves_movement_count_and_values(self):
-        rows = []
-        for i, tes in enumerate(("815", "823", "825", "836", "837")):
-            rows.append(mv.clean_record({
-                "codigo": "00001000", "descricao": "PRODUTO DE TESTE",
-                "armazem": "EP", "tes": tes, "data": "2026-10-21",
-                "documento": f"NF{i}", "um": "UN", "qtd_saida": "2",
-                "valor_saida": "100.00", "ae_original": "OP123456789",
-            }))
-        imported = {
-            "meta": {"sha256": "f" * 64, "arquivo_nome": "tes.xlsx",
-                     "lancamentos": len(rows), "periodo_inicio": "2026-10-01",
-                     "periodo_fim": "2026-10-21"},
-            "rows": rows,
-        }
-        result = mv.build_model([imported])
-        frame = result["frame"]
+    def test_source_values_and_descriptions_remain_unchanged_without_sales_group(self):
+        from test_movement_analysis import record, imported
+        rows = [
+            record(tes=code, armazem="EP", documento=f"DOC-{code}",
+                   valor_saida="100", qtd_saida="2")
+            for code in ("815", "823", "825", "836", "837")
+        ]
+        frame = mv.build_model([imported(rows)])["frame"]
         self.assertEqual(len(frame), 5)
-        self.assertEqual(set(frame["grupo_analise"]), {"VENDAS"})
-        self.assertEqual(set(frame["descricao_tes"]),
-                         {mv.rules()["tes"][tes]["descricao"] for tes in ("815", "823", "825", "836", "837")})
+        self.assertEqual(frame["tes"].tolist(), ["815", "823", "825", "836", "837"])
+        self.assertEqual(frame["descricao_tes"].tolist(),
+                         [mv.tes_reference()[code] for code in frame["tes"]])
+        self.assertTrue((frame["grupo_analise"] == "").all())
+        self.assertTrue((frame["subgrupo_analise"] == "").all())
         self.assertEqual(float(frame["valor_saida"].sum()), 500.0)
         self.assertEqual(float(frame["qtd_saida"].sum()), 10.0)
-        self.assertEqual(result["duplicates"], 0)
+
+    def test_missing_tes_is_explicitly_unavailable_not_guessed(self):
+        from test_movement_analysis import record, imported
+        frame = mv.build_model([imported([record(tes="998")])])["frame"]
+        if "998" not in mv.tes_reference():
+            self.assertEqual(frame.iloc[0]["descricao_tes"], "NI - TES não localizada no cadastro")
 
 
 if __name__ == "__main__":
