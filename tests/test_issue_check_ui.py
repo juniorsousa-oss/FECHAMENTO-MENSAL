@@ -131,17 +131,20 @@ class IssueCheckUITests(unittest.TestCase):
         dates = {widget.label: widget for widget in app.date_input}
         self.assertEqual(set(dates), {"DATA INICIAL", "DATA FINAL"})
         self.assertTrue(all(widget.value is None for widget in dates.values()))
-        dates["DATA INICIAL"].set_value(date(2026, 10, 1)).run()
+        # Como ambos os calendários pertencem ao mesmo formulário, os
+        # rascunhos só chegam ao servidor quando PESQUISAR é pressionado.
+        dates["DATA INICIAL"].set_value(date(2026, 10, 1))
+        dates["DATA FINAL"].set_value(date(2026, 10, 31))
+        next(x for x in app.button if x.label == "PESQUISAR").click().run()
         self.assertFalse(app.exception)
         self.assertEqual(
             next(x for x in app.date_input if x.label == "DATA INICIAL").value,
             date(2026, 10, 1)
         )
-        next(x for x in app.date_input if x.label == "DATA FINAL").set_value(
+        self.assertEqual(
+            next(x for x in app.date_input if x.label == "DATA FINAL").value,
             date(2026, 10, 31)
-        ).run()
-        self.assertFalse(app.exception)
-        next(x for x in app.button if x.label == "PESQUISAR").click().run()
+        )
         self.assertFalse(app.exception)
         next(x for x in app.button if x.label == "LIMPAR FILTROS").click().run()
         self.assertFalse(app.exception)
