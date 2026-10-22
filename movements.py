@@ -56,7 +56,7 @@ TES_CATALOG_VERSION = "TES-PROTHEUS-20261022"
 
 @lru_cache(maxsize=1)
 def tes_reference() -> dict[str, str]:
-    """342 descrições oficiais do campo Txt Padrao, sem substituir regras aprovadas.
+    """342 descrições do campo Txt Padrao do cadastro TES Protheus.
 
     A representação gzip/base64 mantém pequeno o catálogo originalmente extraído
     da planilha TES(1).xltx. Não modifica o banco nem lançamentos históricos.
@@ -394,7 +394,7 @@ def build_model(imports: list[dict], config: dict | None = None) -> dict:
         for key in NUMERIC:
             frame[key] = frame[key].map(lambda v: float(decimal(v)))
         frame["liquido_valor"] = frame["valor_entrada"] - frame["valor_saida"]
-        frame["_search"] = (frame["codigo"] + " " + frame["descricao"] + " " + frame["documento"] + " " + frame["ae_original"]).map(normalized)
+        frame["_search"] = (frame["codigo"] + " " + frame["descricao"] + " " + frame["descricao_tes"] + " " + frame["tes"] + " " + frame["documento"] + " " + frame["ae_original"]).map(normalized)
     token = hashlib.sha256((cfg["versao"] + history.VERSION + json.dumps(snapshot["coverage"], sort_keys=True)).encode()).hexdigest()
     return {"frame": frame, "rows": records, "raw_rows": originals, "duplicates": duplicates,
             "pares_enderecamento": address_pairs, "imports": [i["meta"] for i in imports], "versao": cfg["versao"], "token": token,
