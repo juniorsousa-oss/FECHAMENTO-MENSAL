@@ -487,6 +487,11 @@ def export_excel(frame: pd.DataFrame) -> bytes:
             op_summary[key] = pd.to_datetime(op_summary[key]).dt.date
     detail = summarize(active, ["tes", "descricao_tes"])
     detail = detail.drop(columns="tes_distintas")
+    monthly = summarize(active, ["competencia"])
+    if not monthly.empty:
+        monthly["competencia"] = monthly["competencia"].map(
+            lambda month: month[5:7] + "/" + month[:4]
+        )
     names = {"tes": "TES", "descricao_tes": "Descrição TES",
              "lancamentos": "Movimentos", "produtos": "Produtos", "tes_distintas": "TES distintas", "competencia": "Competência",
              "valor_entrada": "Entrada (R$)", "valor_saida": "Saída (R$)", "liquido_valor": "Variação (R$)",
@@ -494,7 +499,7 @@ def export_excel(frame: pd.DataFrame) -> bytes:
              "enderecamentos": "Movimentos de endereço", "regra_classificacao": "Regra"}
     sections = [
         ("Por TES", detail),
-        ("Mensal", summarize(active, ["competencia"])),
+        ("Mensal", monthly),
         ("Por OP", op_summary),
         ("Movimentações", ledger_export(frame)),
     ]
