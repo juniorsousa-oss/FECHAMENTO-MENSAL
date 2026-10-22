@@ -413,6 +413,25 @@ def _band():
       margin-top:.95rem!important;
       padding-top:.85rem!important;
     }
+    /* A barra de ações inteira fica unida à direita (até 450 px).
+       Preserve duas colunas na versão mobile em vez de empilhá-las. */
+    .st-key-fm_issue_filter_actions > div [data-testid="stHorizontalBlock"] {
+      display:flex!important;
+      flex-direction:row!important;
+      flex-wrap:nowrap!important;
+      gap:.7rem!important;
+      max-width:450px!important;
+      margin-left:auto!important;
+      margin-right:0!important;
+      align-items:stretch!important;
+    }
+    .st-key-fm_issue_filter_actions > div [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+      box-sizing:border-box!important;
+      flex:1 1 0!important;
+      width:calc(50% - .35rem)!important;
+      min-width:0!important;
+      align-self:stretch!important;
+    }
     .st-key-fm_issue_filters .st-key-fm_issue_search_submit,
     .st-key-fm_issue_filters .st-key-fm_issue_clear_filters {
       box-sizing:border-box!important;
@@ -1071,19 +1090,17 @@ def render_results(model):
                         key="fm_issue_invoice_end",
                     )
             with st.container(key="fm_issue_filter_actions"):
-                _, actions = st.columns([2.6, 1.4], gap="small")
-                with actions:
-                    action_search, action_clear = st.columns([1, 1], gap="small")
-                    with action_search:
-                        submitted = st.form_submit_button(
-                            "PESQUISAR", type="primary",
-                            key="fm_issue_search_submit", use_container_width=True,
-                        )
-                    with action_clear:
-                        st.form_submit_button(
-                            "LIMPAR FILTROS", on_click=_clear_filters,
-                            key="fm_issue_clear_filters", use_container_width=True,
-                        )
+                action_search, action_clear = st.columns([1, 1], gap="small")
+                with action_search:
+                    submitted = st.form_submit_button(
+                        "PESQUISAR", type="primary",
+                        key="fm_issue_search_submit", use_container_width=True,
+                    )
+                with action_clear:
+                    st.form_submit_button(
+                        "LIMPAR FILTROS", on_click=_clear_filters,
+                        key="fm_issue_clear_filters", use_container_width=True,
+                    )
 
     if submitted:
         submitted_dates, validation_error = _invoice_bounds(date_from_raw, date_to_raw)
