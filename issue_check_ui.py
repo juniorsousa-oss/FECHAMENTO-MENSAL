@@ -368,6 +368,78 @@ def _band():
     [class*="st-key-fm_issue_op_ok_"] [data-testid="stButton"] button p {
       font-size:.78rem!important;font-weight:800!important;line-height:1.45!important;
     }
+    /* Ajuste fino SETTA | select BaseWeb: remover desnível do texto em
+       ALERTAS e STATUS, mantendo seta e valor na mesma linha vertical. */
+    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+      display:flex!important;
+      flex-direction:row!important;
+      align-items:center!important;
+      justify-content:space-between!important;
+      height:48px!important;
+      min-height:48px!important;
+      padding-top:0!important;
+      padding-bottom:0!important;
+      overflow:hidden!important;
+    }
+    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] > div > div {
+      display:flex!important;
+      align-items:center!important;
+      min-height:0!important;
+      height:100%!important;
+      padding-top:0!important;
+      padding-bottom:0!important;
+    }
+    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [role="combobox"] {
+      display:flex!important;
+      align-items:center!important;
+      height:100%!important;
+      line-height:1.35!important;
+      padding-top:0!important;
+      padding-bottom:0!important;
+    }
+    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [role="combobox"] > div {
+      align-self:center!important;
+      display:flex!important;
+      align-items:center!important;
+      margin-top:0!important;
+      margin-bottom:0!important;
+      line-height:1.35!important;
+    }
+    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] svg {
+      display:block!important;
+      flex-shrink:0!important;
+      align-self:center!important;
+    }
+    /* Ambos os submits pertencem à mesma linha: altura, largura e
+       alinhamento independentes dos estilos antigos do botão Limpar. */
+    .st-key-fm_issue_filters .st-key-fm_issue_search_submit,
+    .st-key-fm_issue_filters .st-key-fm_issue_clear_filters {
+      display:flex!important;
+      align-items:stretch!important;
+      margin:0!important;
+      padding:0!important;
+    }
+    .st-key-fm_issue_filters .st-key-fm_issue_search_submit [data-testid="stFormSubmitButton"],
+    .st-key-fm_issue_filters .st-key-fm_issue_clear_filters [data-testid="stFormSubmitButton"] {
+      width:100%!important;
+      margin:0!important;
+      padding:0!important;
+      align-self:stretch!important;
+    }
+    .st-key-fm_issue_filters .st-key-fm_issue_search_submit button,
+    .st-key-fm_issue_filters .st-key-fm_issue_clear_filters button {
+      box-sizing:border-box!important;
+      height:48px!important;
+      min-height:48px!important;
+      max-height:48px!important;
+      width:100%!important;
+      margin:0!important;
+      padding:.65rem 1rem!important;
+      display:flex!important;
+      justify-content:center!important;
+      align-items:center!important;
+      line-height:1.2!important;
+    }
     .fm-issue-mobile-hint{display:none}
     @media(max-width:900px){
       /* Cabeçalho institucional mais enxuto apenas nesta tela */
