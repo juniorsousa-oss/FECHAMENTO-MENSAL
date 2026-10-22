@@ -478,15 +478,13 @@ def _overview_group_totals(classified: pd.DataFrame, config: dict) -> pd.DataFra
 
 
 def _overview_movements(selected: pd.DataFrame, token: str, *,
-                        heading: str = "MOVIMENTAÇÕES DA TES") -> None:
+                        heading: str = "04 · MOVIMENTAÇÕES DA TES") -> pd.DataFrame:
     """Detalhamento reutilizável na consulta hierárquica ou por OP."""
     ordered = selected.sort_values(
         ["data", "codigo", "linha_origem", "id_registro"],
         ascending=[False, True, True, True], kind="stable",
     )
     st.markdown("**" + heading + "**")
-    st.caption(f"{count(len(ordered))} movimentações encontradas. "
-               "Selecione um registro para consultar suas evidências.")
     size = 100
     pages = max(1, math.ceil(len(ordered) / size))
     if pages > 1:
@@ -519,10 +517,12 @@ def _overview_movements(selected: pd.DataFrame, token: str, *,
     if position is not None:
         with st.expander("DETALHAMENTO DO REGISTRO", expanded=True):
             _detail(visible.iloc[position])
+        return visible.iloc[[position]].copy()
+    return selected
 
 
 def _overview_group_details(group_rows: pd.DataFrame, group_name: str,
-                            token: str, group_index: int) -> None:
+                            token: str, group_index: int) -> tuple[pd.DataFrame, str]:
     st.markdown("**02 · SUBGRUPOS DE " + group_name + "**")
     subgroups = mv.summarize(group_rows, ["subgrupo_usuario"]).rename(
         columns={"subgrupo_usuario": "Subgrupo"}
@@ -536,7 +536,7 @@ def _overview_group_details(group_rows: pd.DataFrame, group_name: str,
     sub_index = _picked_index(sub_event, len(subgroups))
     if sub_index is None:
         st.caption("Selecione um subgrupo para consultar suas TES.")
-        return
+        return group_rows, f"GRUPO: {group_name}"
     sub_name = str(subgroups.iloc[sub_index]["Subgrupo"])
     sub_rows = group_rows.loc[group_rows["subgrupo_usuario"] == sub_name]
     st.markdown("**03 · TES DO SUBGRUPO " + sub_name + "**")
@@ -552,34 +552,46 @@ def _overview_group_details(group_rows: pd.DataFrame, group_name: str,
     tes_index = _picked_index(tes_event, len(tes_summary))
     if tes_index is None:
         st.caption("Selecione uma TES para carregar seus lançamentos.")
-        return
+        return sub_rows, f"GRUPO: {group_name} · SUBGRUPO: {sub_name}"
     chosen_tes = str(tes_summary.iloc[tes_index]["tes"])
     selected = sub_rows.loc[sub_rows["tes"] == chosen_tes]
-    _overview_movements(
+    selected_records = _overview_movements(
         selected, f"{token}_{group_index}_{sub_index}_{tes_index}"
     )
+    return selected_records, (
+        f"GRUPO: {group_name} · SUBGRUPO: {sub_name} · TES: {chosen_tes}"
+    )
+
+
+def _overview_scope_cards(slot, frame: pd.DataFrame, scope_label: str) -> None:
+    """Os cards refletem somente o nível mais profundo selecionado."""
+    with slot.container():
+        cards([
+            ("ENTRADAS DO KARDEX", cash(frame["valor_entrada"].sum())),
+            ("SAÍDAS DO KARDEX", cash(frame["valor_saida"].sum())),
+            ("VARIAÇÃO DO PERÍODO", cash(frame["liquido_valor"].sum())),
+        ])
+        st.caption(
+            f"{scope_label} · {count(len(frame))} movimentos · "
+            f"{count(frame['codigo'].nunique())} produtos · "
+            f"{count(frame['tes'].nunique())} TES distintas."
+        )
 
 
 def _overview(frame, token):
-    cards([
-        ("ENTRADAS DO KARDEX", cash(frame["valor_entrada"].sum())),
-        ("SAÍDAS DO KARDEX", cash(frame["valor_saida"].sum())),
-        ("VARIAÇÃO DO PERÍODO", cash(frame["liquido_valor"].sum())),
-    ])
+    # Reserva a posição dos cards antes das tabelas; preenche depois das
+    # seleções para mostrar o recorte corrente no alto do Resumo.
+    cards_slot = st.empty()
+    scope_frame = frame
+    scope_label = "TOTAL DO KARDEX"
     unknown = int((frame["descricao_tes"] == "NI - TES não localizada no cadastro").sum())
-    st.caption(
-        f"{count(len(frame))} registros · {count(frame.codigo.nunique())} produtos · "
-        f"{count(frame.tes.nunique())} TES distintas · "
-        f"{count(frame.loc[frame.op_identificada != '', 'op_identificada'].nunique())} OPs. "
-        "Valores brutos preservados; subgrupos classificados em fila."
-    )
     if unknown:
         st.warning(f"{count(unknown)} movimentações possuem TES sem descrição no cadastro de referência.")
     st.markdown("**01 · MOVIMENTAÇÕES POR GRUPO DE TES**")
-    st.caption("Selecione o checkbox de um grupo para consultar seus subgrupos, TES e movimentações, sem sair do Resumo.")
     try:
         config = _groups_read()
     except Exception as exc:
+        _overview_scope_cards(cards_slot, frame, scope_label)
         st.error(f"Não foi possível carregar os grupos cadastrados: {exc}")
         return
     classified = conditions.classify(frame, config)
@@ -590,6 +602,7 @@ def _overview(frame, token):
     ).hexdigest()[:10]
     summary = _overview_group_totals(classified, config)
     if summary.empty:
+        _overview_scope_cards(cards_slot, frame, scope_label)
         st.info("Nenhum grupo com movimentações neste período.")
         return
 
@@ -603,10 +616,15 @@ def _overview(frame, token):
     else:
         group_name = str(summary.iloc[group_index]["Grupo"])
         group_rows = classified.loc[classified["grupo_usuario"] == group_name]
+        scope_frame = group_rows
+        scope_label = f"GRUPO: {group_name}"
         if group_rows.empty:
             st.info("Este grupo não possui movimentações no período selecionado.")
         else:
-            _overview_group_details(group_rows, group_name, selection_token, group_index)
+            scope_frame, scope_label = _overview_group_details(
+                group_rows, group_name, selection_token, group_index
+            )
+    _overview_scope_cards(cards_slot, scope_frame, scope_label)
     with st.expander("EVOLUÇÃO MENSAL DO PERÍODO"):
         monthly = mv.summarize(frame, ["competencia"]).sort_values("competencia")
         _table(monthly[["competencia", "lancamentos", "valor_entrada",
