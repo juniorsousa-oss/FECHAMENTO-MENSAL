@@ -522,7 +522,7 @@ def _overview(frame, token):
     )
     if unknown:
         st.warning(f"{count(unknown)} movimentações possuem TES sem descrição no cadastro de referência.")
-    st.markdown("**MOVIMENTAÇÕES AGRUPADAS POR TES**")
+    st.markdown("**MOVIMENTAÇÕES POR GRUPO DE TES**")
     st.caption("Cada TES pertence a um único grupo configurado em Cadastros. As não vinculadas aparecem em SEM GRUPO.")
     try:
         config = _groups_read()
