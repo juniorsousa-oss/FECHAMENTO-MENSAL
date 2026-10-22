@@ -181,8 +181,7 @@ def _band():
     .st-key-fm_issue_filters [data-testid="stTextInput"] [data-baseweb="base-input"],
     .st-key-fm_issue_filters [data-testid="stDateInput"] [data-baseweb="base-input"],
     .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div,
-    .st-key-fm_issue_filters [data-testid="stSelectbox"] [role="combobox"],
-    .st-key-fm_issue_filters [data-testid="stDateInput"] > div > div {
+    .st-key-fm_issue_filters [data-testid="stSelectbox"]:not(:has([data-baseweb="select"])) [role="combobox"] {
       box-sizing:border-box!important;
       background-color:#fff!important;
       border:2px solid #9dabbf!important;
@@ -205,6 +204,14 @@ def _band():
       border-radius:9px!important;
       border:1px solid #b1bdce!important;
       outline:0!important;
+    }
+    /* Sem borda dupla quando o campo possui o wrapper BaseWeb. */
+    .st-key-fm_issue_filters [data-testid="stTextInput"] [data-baseweb="input"] input,
+    .st-key-fm_issue_filters [data-testid="stDateInput"] [data-baseweb="input"] input,
+    .st-key-fm_issue_filters [data-testid="stTextInput"] [data-baseweb="base-input"] input,
+    .st-key-fm_issue_filters [data-testid="stDateInput"] [data-baseweb="base-input"] input {
+      border:0!important;border-radius:9px!important;
+      background:transparent!important;box-shadow:none!important;
     }
     .st-key-fm_issue_filters [data-testid="stTextInput"] input::placeholder,
     .st-key-fm_issue_filters [data-testid="stDateInput"] input::placeholder {
