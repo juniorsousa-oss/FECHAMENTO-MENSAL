@@ -159,6 +159,9 @@ class IssueCheckUITests(unittest.TestCase):
             'with st.container(key="fm_issue_filter_actions"):', 1
         )[1].split("if submitted:", 1)[0]
         self.assertIn('action_search, action_clear = st.columns([1, 1], gap="small")', action_layout)
+        self.assertNotIn('with actions:', action_layout)
+        self.assertIn('max-width:450px!important;', source)
+        self.assertIn('flex-direction:row!important;', source)
         self.assertIn('"PESQUISAR"', action_layout)
         self.assertIn('"LIMPAR FILTROS"', action_layout)
         self.assertIn('height:46px!important;', source)
