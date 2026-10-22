@@ -75,7 +75,9 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.assertEqual(app.segmented_control[0].value, "Visão geral")
         frame = app.dataframe[0].value
         self.assertIn("TES", frame.columns)
-        self.assertIn("Descrição TES (Protheus)", frame.columns)
+        self.assertIn("Descrição TES", frame.columns)
+        self.assertIn("Tipo de TM", frame.columns)
+        self.assertEqual(frame.loc[frame["TES"] == "020", "Tipo de TM"].iloc[0], "Devolução")
         self.assertNotIn("Grupo", frame.columns)
         self.assertNotIn("Subgrupo / condição", frame.columns)
         self.assertEqual(frame["Entrada (R$)"].sum(), 30)
@@ -136,7 +138,16 @@ class MovementAnalysisUITests(unittest.TestCase):
         catalog_view = app.dataframe[0].value
         self.assertGreaterEqual(len(catalog_view), 342)
         self.assertEqual(len(catalog_view["TES"].unique()), len(catalog_view))
-        self.assertIn("Descrição no cadastro Protheus", catalog_view.columns)
+        self.assertIn("Descrição TES", catalog_view.columns)
+        self.assertIn("Tipo de TM", catalog_view.columns)
+        self.assertEqual(
+            catalog_view.loc[catalog_view["TES"] == "540", "Tipo de TM"].iloc[0],
+            "Requisição",
+        )
+        self.assertEqual(
+            catalog_view.loc[catalog_view["TES"] == "540", "Descrição TES"].iloc[0],
+            "BAIX CUSTO E QTD ZER",
+        )
         self.assertTrue(set(mv.tes_reference()).issubset(set(catalog_view["TES"])))
         self.assertNotIn("Condição", app.dataframe[0].value.columns)
         self.area(app, "Fontes e relatórios")
