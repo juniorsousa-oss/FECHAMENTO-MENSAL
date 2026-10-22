@@ -54,7 +54,7 @@ class KardexHistoryTests(unittest.TestCase):
         stream = io.BytesIO()
         with ZipFile(stream, "w", ZIP_DEFLATED) as archive:
             archive.writestr("manifesto.json", json.dumps(manifest))
-            archive.writestr("movimentacoes.jsonl", "\\n".join(json.dumps(row) for row in rows) + "\\n")
+            archive.writestr("movimentacoes.jsonl", "\n".join(json.dumps(row) for row in rows) + "\n")
         parsed = mv.parse_report(stream.getvalue(), "KARDEX_EP_20_E2.zip")
         self.assertEqual(len(parsed["rows"]), 3)
         self.assertEqual(len(parsed["meta"]["coberturas_arquivo"]), 6)
