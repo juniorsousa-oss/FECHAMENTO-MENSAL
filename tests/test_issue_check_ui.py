@@ -125,6 +125,33 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertTrue(any(w.label == "STATUS DA OP" for w in app.selectbox))
         self.assertTrue(any(w.label == "ALERTAS" for w in app.selectbox))
 
+    def test_selectbox_content_and_filter_buttons_use_shared_alignment(self):
+        source = (Path(__file__).resolve().parents[1] / "issue_check_ui.py").read_text("utf-8")
+        self.assertIn(
+            '.st-key-fm_issue_class_group [data-testid="stSelectbox"] [role="combobox"]',
+            source,
+        )
+        self.assertIn('align-items:center!important;', source)
+        self.assertIn(
+            '.st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] svg',
+            source,
+        )
+        self.assertIn(
+            '.st-key-fm_issue_filters .st-key-fm_issue_search_submit button,',
+            source,
+        )
+        self.assertIn(
+            '.st-key-fm_issue_filters .st-key-fm_issue_clear_filters button {',
+            source,
+        )
+        self.assertIn('height:48px!important;', source)
+        self.assertIn('margin:0!important;', source)
+        self.assertIn('with st.form("fm_issue_filter_form"', source)
+        app = AppTest.from_string(PROGRAM, default_timeout=20).run()
+        self.assertFalse(app.exception)
+        self.assertTrue(any(b.label == "PESQUISAR" for b in app.button))
+        self.assertTrue(any(b.label == "LIMPAR FILTROS" for b in app.button))
+
     def test_invoice_filters_have_two_independent_calendars_and_can_clear(self):
         from datetime import date
         app = AppTest.from_string(PROGRAM, default_timeout=20).run()
