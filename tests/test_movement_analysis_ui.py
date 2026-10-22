@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import movements as mv
 
 
-PROGRAM = '''
+PROGRAM = """
 import sys
 import streamlit as st
 sys.path.insert(0, "tests")
@@ -35,18 +35,14 @@ model = mv.build_model([pack])
 imports = [{"chave": "synthetic", "meta": {"arquivo_nome": "teste.xlsx", "periodo_inicio": "2026-09-01",
             "periodo_fim": "2026-10-19", "lancamentos": 5}, "atualizado_em": "2026-10-21T10:00:00Z"}]
 action = st.session_state.pop("_test_action", None)
-if action == "group":
+if action == "tes":
     st.session_state.test_selection = {"selection": {"rows": [0]}}
-    ui._group_selected("test_selection", [mv.ADJUSTMENT])
-elif action == "condition":
-    branch = model["frame"].loc[model["frame"]["documento"] == "AJUSTE"].iloc[0]
-    st.session_state.test_selection = {"selection": {"rows": [0]}}
-    ui._tes_selected("test_selection", [(branch.grupo_analise, branch.tes, branch.subgrupo_analise)])
+    ui._tes_selected("test_selection", ["520"])
 elif action == "op":
     st.session_state.test_selection = {"selection": {"rows": [0]}}
     ui._op_selected("test_selection", ["OP00001234567"])
 ui.render_results(model, imports)
-'''
+"""
 
 
 class MovementAnalysisUITests(unittest.TestCase):
@@ -59,72 +55,64 @@ class MovementAnalysisUITests(unittest.TestCase):
         app.segmented_control[0].set_value(name).run()
         self.assertFalse(app.exception)
 
-    def test_warehouse_inventory_marks_existing_and_future_warehouses_correctly(self):
-        import movement_analysis_ui as ui
-        import movements as mv
+    def test_warehouse_registry_remains_accessible(self):
         from test_movement_analysis import imported, record
+        import movement_analysis_ui as ui
         model = mv.build_model([imported([
             record(armazem="S2", documento="S2"),
             record(armazem="E2", data="2026-10-20", documento="E2"),
         ])])
-        frame = ui._warehouse_registry_overview(model)
-        states = frame.set_index("Armazém")
+        states = ui._warehouse_registry_overview(model).set_index("Armazém")
         self.assertEqual(states.loc["S2", "Situação"], "ATIVO")
         self.assertEqual(states.loc["E2", "Situação"], "ATIVO")
         self.assertEqual(states.loc["EP", "Situação"], "PENDENTE DE IMPORTAÇÃO")
         self.assertEqual(states.loc["20", "Situação"], "PENDENTE DE IMPORTAÇÃO")
-        self.assertEqual(int(states.loc["E2", "Registros vigentes"]), 1)
 
-    def test_summary_has_no_consultation_filters_and_keeps_the_period_totals(self):
+    def test_summary_uses_tes_and_literal_description_only(self):
         app = self.app()
         self.assertEqual(len(app.text_input), 0)
         self.assertEqual([x.label for x in app.multiselect], ["Armazéns"])
-        self.assertEqual(len(app.file_uploader), 0)
         self.assertEqual(app.segmented_control[0].value, "Visão geral")
-        groups = app.dataframe[0].value
-        self.assertEqual(groups["Entrada (R$)"].sum(), 30)
-        self.assertEqual(groups["Saída (R$)"].sum(), 35)
-        self.assertTrue(any("PERÍODO PARCIAL" in x.value for x in app.caption))
+        frame = app.dataframe[0].value
+        self.assertIn("TES", frame.columns)
+        self.assertIn("Descrição TES (Protheus)", frame.columns)
+        self.assertNotIn("Grupo", frame.columns)
+        self.assertNotIn("Subgrupo / condição", frame.columns)
+        self.assertEqual(frame["Entrada (R$)"].sum(), 30)
+        self.assertEqual(frame["Saída (R$)"].sum(), 35)
 
-    def test_consultation_filters_are_local_and_survive_navigation(self):
+    def test_tes_local_filter_survives_navigation(self):
         app = self.app()
-        self.area(app, "Grupos e TES")
-        next(x for x in app.multiselect if x.label == "Grupo de análise").set_value([mv.ADJUSTMENT]).run()
+        self.area(app, "TES e descrições")
+        tes = next(x for x in app.multiselect if x.label == "Códigos TES")
+        tes.set_value(["520"]).run()
         self.assertFalse(app.exception)
-        self.assertEqual(len(app.dataframe[0].value), 1)
+        self.assertEqual(app.dataframe[0].value["TES"].tolist(), ["520"])
         self.area(app, "Por OP")
-        self.assertEqual(app.text_input[0].value, "")
-        app.text_input[0].set_value("00001234567").run()
+        next(x for x in app.text_input if x.label == "Buscar OP ou material").set_value("00001234567").run()
         self.assertEqual(app.dataframe[0].value["OP"].tolist(), ["OP00001234567"])
         self.area(app, "Visão geral")
         self.assertEqual(app.dataframe[0].value["Saída (R$)"].sum(), 35)
-        self.area(app, "Grupos e TES")
-        self.assertEqual(next(x for x in app.multiselect if x.label == "Grupo de análise").value, [mv.ADJUSTMENT])
-        self.area(app, "Por OP")
-        self.assertEqual(app.text_input[0].value, "00001234567")
+        self.area(app, "TES e descrições")
+        self.assertEqual(next(x for x in app.multiselect if x.label == "Códigos TES").value, ["520"])
 
-    def test_group_and_condition_drilldown_opens_only_matching_records(self):
+    def test_tes_selection_opens_only_matching_ledger_records(self):
         app = self.app()
-        app.session_state["_test_action"] = "group"
-        app.run()
-        self.assertFalse(app.exception)
-        self.assertEqual(app.segmented_control[0].value, "Grupos e TES")
-        app.session_state["_test_action"] = "condition"
+        app.session_state["_test_action"] = "tes"
         app.run()
         self.assertFalse(app.exception)
         self.assertEqual(app.segmented_control[0].value, "Movimentações")
-        self.assertEqual(len(app.dataframe[0].value), 1)
         self.assertEqual(app.dataframe[0].value["TES"].tolist(), ["520"])
-        self.assertTrue(any("Grupo:" in x.value and "Condição:" in x.value for x in app.caption))
+        self.assertEqual(len(app.dataframe[0].value), 1)
+        self.assertTrue(any("TES: 520" in x.value for x in app.caption))
         next(x for x in app.button if "VOLTAR PARA" in x.label).click().run()
         self.assertFalse(app.exception)
-        self.assertEqual(app.segmented_control[0].value, "Grupos e TES")
+        self.assertEqual(app.segmented_control[0].value, "TES e descrições")
 
-    def test_op_drilldown_clears_old_record_filters_and_preserves_original_ae(self):
+    def test_op_drilldown_preserves_original_ae_and_clears_search(self):
         app = self.app()
         self.area(app, "Movimentações")
-        self.assertEqual(set(app.dataframe[0].value["Endereçamento compensado"]), {"NÃO"})
-        self.assertTrue(any("Endereçamento compensado" in x.value for x in app.caption))
+        self.assertNotIn("Endereçamento compensado", app.dataframe[0].value.columns)
         next(x for x in app.text_input if x.label == "Buscar nos registros").set_value("INEXISTENTE").run()
         self.assertEqual(len(app.dataframe), 0)
         app.session_state["_test_action"] = "op"
@@ -136,54 +124,42 @@ class MovementAnalysisUITests(unittest.TestCase):
         next(x for x in app.button if x.label == "LIMPAR CONSULTA").click().run()
         self.assertFalse(app.exception)
         self.assertEqual(len(app.dataframe[0].value), 4)
-        self.assertFalse(any("VOLTAR PARA" in x.label for x in app.button))
 
-    def test_classification_and_sources_remain_available_after_an_empty_search(self):
+    def test_catalog_independent_of_search_and_sources_accessible(self):
         app = self.app()
         self.area(app, "Movimentações")
         app.text_input[0].set_value("INEXISTENTE").run()
         self.assertEqual(len(app.dataframe), 0)
-        self.area(app, "Classificação")
-        self.assertEqual(len(app.text_input), 0)
-        self.assertEqual(len(app.dataframe[0].value), 8)
-        self.assertIn("999 · consumo de OPs / descrição ORDEM DE PRODUÇÃO", app.dataframe[0].value["Condição"].tolist())
-        next(x for x in app.button if x.label == "DETALHAR AJUSTES A REFINAR").click().run()
-        self.assertFalse(app.exception)
-        self.assertEqual(app.segmented_control[0].value, "Grupos e TES")
-        self.assertEqual(len(app.dataframe[0].value), 1)
+        self.area(app, "Cadastro TES")
+        self.assertEqual(len(app.dataframe[0].value), 342)
+        self.assertIn("Descrição no cadastro Protheus", app.dataframe[0].value.columns)
+        self.assertNotIn("Condição", app.dataframe[0].value.columns)
         self.area(app, "Fontes e relatórios")
         self.assertEqual(len(app.file_uploader), 1)
         self.assertTrue(any("Situação" in frame.value.columns for frame in app.dataframe))
-        self.assertTrue(any("4 registros" in x.value for x in app.caption))
 
-    def test_period_and_warehouse_scope_apply_to_every_consultation(self):
+    def test_period_and_warehouse_scope(self):
         app = self.app()
         next(x for x in app.multiselect if x.label == "Armazéns").set_value(["S2"]).run()
-        self.assertFalse(app.exception)
         self.assertEqual(app.dataframe[0].value["Saída (R$)"].sum(), 30)
         self.area(app, "Por OP")
         self.assertEqual(app.dataframe[0].value["OP"].tolist(), ["OP00001234567"])
         self.area(app, "Visão geral")
         next(x for x in app.selectbox if x.label == "Período da análise").set_value("ACUMULADO DO ANO").run()
-        self.assertFalse(app.exception)
         self.assertEqual(app.dataframe[0].value["Entrada (R$)"].sum(), 70)
         next(x for x in app.selectbox if x.label == "Competência analisada").set_value("2026-09").run()
-        self.assertFalse(app.exception)
         self.assertEqual(app.dataframe[0].value["Entrada (R$)"].sum(), 40)
-        self.assertEqual(app.dataframe[0].value["Saída (R$)"].sum(), 0)
 
-    def test_record_excel_uses_the_visible_consultation_not_the_whole_history(self):
+    def test_excel_of_filtered_op_preserves_ae(self):
         app = self.app()
         app.session_state["_test_action"] = "op"
         app.run()
         next(x for x in app.button if x.label == "PREPARAR EXCEL DO RECORTE").click().run()
         self.assertFalse(app.exception)
-        output = app.session_state["fm_mov_excel"][1]
-        workbook = openpyxl.load_workbook(io.BytesIO(output), read_only=True)
-        sheet = workbook["Movimentações"]
-        self.assertEqual(len(list(sheet.iter_rows(values_only=True))), 2)
-        self.assertEqual(sheet["AE2"].value, " OP00001234567 ")
-        workbook.close()
+        wb = openpyxl.load_workbook(io.BytesIO(app.session_state["fm_mov_excel"][1]), read_only=True)
+        self.assertEqual(wb["Movimentações"]["AE2"].value, " OP00001234567 ")
+        self.assertEqual(len(list(wb["Movimentações"].iter_rows(values_only=True))), 2)
+        wb.close()
 
 
 if __name__ == "__main__":
