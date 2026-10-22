@@ -51,8 +51,8 @@ NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
 
 TES_CATALOG_FILE = Path(__file__).parent / "config" / "tes_cadastro_protheus_20261022.b64"
-TES_CATALOG_VERSION = "TES-PROTHEUS-20261022+TM-CONFIRMADAS-20261022"
-TES_CONFIRMED_FILE = Path(__file__).parent / "config" / "tes_tipos_confirmados_20261022.json"
+TES_CATALOG_VERSION = "TES-PROTHEUS-20261022+TES-DESCRICOES-PRIORITARIAS-20261022"
+TES_OVERRIDES_FILE = Path(__file__).parent / "config" / "tes_descricoes_prioritarias.json"
 
 
 @lru_cache(maxsize=1)
@@ -73,32 +73,27 @@ def tes_reference() -> dict[str, str]:
 
 
 @lru_cache(maxsize=1)
-def tes_confirmed() -> dict[str, dict[str, str]]:
-    """Sete códigos/tipos fornecidos pelo usuário (Código TM / Tipo / Descrição)."""
-    payload = json.loads(TES_CONFIRMED_FILE.read_text(encoding="utf-8"))
+def tes_overrides() -> dict[str, str]:
+    """Nove descrições confirmadas que prevalecem sobre o catálogo-base."""
+    payload = json.loads(TES_OVERRIDES_FILE.read_text(encoding="utf-8"))
     tes = payload["tes"]
-    if set(tes) != {"010", "020", "030", "040", "520", "540", "550"}:
-        raise ValueError("Cadastro complementar TM/TES está inconsistente.")
+    expected = {"010", "020", "030", "040", "520", "540", "550", "499", "999"}
+    if set(tes) != expected or any(not isinstance(value, str) or not value.strip() for value in tes.values()):
+        raise ValueError("Descrições TES prioritárias inconsistentes.")
     return tes
 
 
 def rules() -> dict:
-    """Base de TES Protheus + sete registros informativos confirmados.
-
-    O tipo de TM não é um grupo gerencial e não cria regras de consumo.
-    """
+    """Uma descrição por TES; exceções do usuário substituem o cadastro-base."""
     config = json.loads(RULES_FILE.read_text(encoding="utf-8"))
-    catalog = {key: {"descricao": description, "tipo_tm": ""} for key, description in tes_reference().items()}
-    for code, fields in tes_confirmed().items():
-        catalog.setdefault(code, {})
-        catalog[code].update({
-            "descricao": fields["descricao"], "tipo_tm": fields["tipo_tm"],
-        })
+    descriptions = tes_reference().copy()
+    descriptions.update(tes_overrides())
     return {
         "versao": config["versao"] + "+" + TES_CATALOG_VERSION,
         "modo": "CADASTRO_TES_SOMENTE",
-        "tes": catalog,
+        "tes": {code: {"descricao": value} for code, value in descriptions.items()},
     }
+
 
 def normalized(value) -> str:
     text = unicodedata.normalize("NFKD", str(value or "").upper())
@@ -340,7 +335,6 @@ def classify(row: dict, config: dict) -> dict:
     cc = re.fullmatch(r"CC\s*(\d+)", ae, re.I)
     result.update({
         "descricao_tes": description,
-        "tipo_tm": tes_data.get("tipo_tm") or "NI",
         "grupo_analise": "", "subgrupo_analise": "",
         "grupo_provisorio": False, "regra_classificacao": "",
         "motivo_classificacao": "", "material_h001": False,
@@ -456,7 +450,7 @@ def summarize_ops(frame: pd.DataFrame) -> pd.DataFrame:
 EXPORT_HEADERS = ["Código", "Produto", "UM", "Descrição TES", "TES", "CF original", "Armazém", "Data", "Documento",
                   "Quantidade entrada", "Valor entrada", "Quantidade saída", "Valor saída", "Tipo vínculo AE", "Arquivo origem",
                   "Linha origem", "Endereço", "Grupo do arquivo", "Posição IPI", "Tipo do material", "CC", "Saldo após movimento",
-                  "Tipo de TM", "", "", "", "", "", "", "", "AE original"]
+                  "", "", "", "", "", "", "", "", "AE original"]
 
 
 def ledger_export(frame: pd.DataFrame) -> pd.DataFrame:
@@ -470,10 +464,9 @@ def ledger_export(frame: pd.DataFrame) -> pd.DataFrame:
         "Arquivo origem": frame["arquivo_origem"], "Linha origem": frame["linha_origem"], "Endereço": frame["endereco_relatorio"],
         "Grupo do arquivo": frame["grupo"], "Posição IPI": frame["posicao_ipi"], "Tipo do material": frame["tipo"],
         "CC": frame["cc_identificado"], "Saldo após movimento": frame["saldo_pos_lancamento"],
-        "Tipo de TM": frame["tipo_tm"],
     }
     result = pd.DataFrame(data)
-    for i in range(7):
+    for i in range(8):
         result[f"_reserva_{i}"] = ""
     result["AE original"] = frame["ae_original"]
     result.columns = EXPORT_HEADERS
@@ -494,10 +487,7 @@ def export_excel(frame: pd.DataFrame) -> bytes:
             op_summary[key] = pd.to_datetime(op_summary[key]).dt.date
     detail = summarize(active, ["tes", "descricao_tes"])
     detail = detail.drop(columns="tes_distintas")
-    detail.insert(1, "tipo_tm", detail["tes"].map(
-        lambda code: rules()["tes"].get(code, {}).get("tipo_tm") or "NI"
-    ))
-    names = {"tes": "TES", "tipo_tm": "Tipo de TM", "descricao_tes": "Descrição TES",
+    names = {"tes": "TES", "descricao_tes": "Descrição TES",
              "lancamentos": "Movimentos", "produtos": "Produtos", "tes_distintas": "TES distintas", "competencia": "Competência",
              "valor_entrada": "Entrada (R$)", "valor_saida": "Saída (R$)", "liquido_valor": "Variação (R$)",
              "op_identificada": "OP", "documentos": "Documentos", "primeira_data": "Primeiro movimento", "ultima_data": "Último movimento",
@@ -521,8 +511,7 @@ def export_excel(frame: pd.DataFrame) -> bytes:
             sheet.column_dimensions["R"].width = 48
             sheet.column_dimensions["S"].width = 40
             sheet.column_dimensions["AE"].width = 24
-            sheet.column_dimensions["W"].width = 20
-            for i in range(24, 31):
+            for i in range(23, 31):
                 sheet.column_dimensions[get_column_letter(i)].hidden = True
         header = []
         for col in data.columns:
