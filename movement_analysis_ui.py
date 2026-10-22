@@ -502,13 +502,16 @@ def _ops(frame, token):
     summary = mv.summarize_ops(frame)
     linked = frame.loc[frame["op_identificada"] != ""]
     cards([("OPS IDENTIFICADAS", count(len(summary))), ("MOVIMENTOS COM OP", count(len(linked))),
-           ("SAÍDAS EFETIVAS COM OP", cash(mv.effective(linked)["valor_saida"].sum()))])
+           ("SAÍDAS KARDEX COM OP", cash(linked["valor_saida"].sum()))])
     if summary.empty:
         st.info("Nenhuma movimentação com OP no recorte selecionado.")
         return
     key = "fm_mov_op_table_" + token
     values = summary["op_identificada"].tolist()
-    _table(summary, key=key, on_select=lambda:_op_selected(key, values))
+    _table(summary[[
+        "op_identificada", "lancamentos", "produtos", "documentos",
+        "primeira_data", "ultima_data", "valor_entrada", "valor_saida",
+    ]], key=key, on_select=lambda:_op_selected(key, values))
 
 
 def _detail(row):
