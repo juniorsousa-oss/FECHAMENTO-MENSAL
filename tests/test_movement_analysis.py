@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -14,81 +13,82 @@ import movements as mv
 
 
 def record(**values):
-    row = {"codigo": "00001000", "descricao": "MATERIAL DE TESTE", "um": "UN", "tipo": "MP", "grupo": "0000",
-           "armazem": "S2", "tes": "520", "data": "2026-10-01", "documento": "DOC1", "qtd_saida": "2",
-           "valor_saida": "10", "qtd_entrada": None, "valor_entrada": None, "ae_original": "CC600307",
-           "arquivo_origem": "teste.xlsx", "linha_origem": 3, "arquivo_sha256": "a"*64,
-           "saldo_pos_lancamento": "20", "valor_saldo_pos_lancamento": "100"}
+    row = {
+        "codigo": "00001000", "descricao": "MATERIAL DE TESTE", "um": "UN",
+        "tipo": "MP", "grupo": "0000", "armazem": "S2", "tes": "520",
+        "data": "2026-10-01", "documento": "DOC1", "qtd_saida": "2",
+        "valor_saida": "10", "qtd_entrada": None, "valor_entrada": None,
+        "ae_original": "CC600307", "arquivo_origem": "teste.xlsx",
+        "linha_origem": 3, "arquivo_sha256": "a" * 64,
+        "saldo_pos_lancamento": "20", "valor_saldo_pos_lancamento": "100",
+    }
     row.update(values)
     return mv.clean_record(row)
 
 
 def imported(rows, digest="a"):
-    return {"meta": {"sha256": digest*64, "arquivo_nome": digest+".xlsx", "lancamentos": len(rows),
-                     "periodo_inicio": "2026-10-01", "periodo_fim": "2026-10-31"}, "rows": rows}
+    return {
+        "meta": {
+            "sha256": digest * 64, "arquivo_nome": digest + ".xlsx",
+            "lancamentos": len(rows), "periodo_inicio": "2026-10-01",
+            "periodo_fim": "2026-10-31",
+        },
+        "rows": rows,
+    }
 
 
 class MovementAnalysisTests(unittest.TestCase):
-    def test_specific_material_precedes_op_and_consumption(self):
-        rows = [record(descricao="BARRA DE COBRE ELETROLÍTICO 10 MM", ae_original="OP00001234567"),
-                record(codigo="00002000", descricao="CHAPA POLICARBONATO", tipo="II", documento="DOC2")]
+    def test_no_old_groups_even_for_sheets_copper_op_cc_or_material_ii(self):
+        rows = [
+            record(descricao="BARRA DE COBRE ELETROLÍTICO", ae_original="OP00001234567"),
+            record(tipo="II", codigo="00002000", documento="II"),
+            record(tipo="PA", codigo="00003000", documento="PA"),
+            record(ae_original="CC123456", documento="CC"),
+        ]
         frame = mv.build_model([imported(rows)])["frame"]
-        self.assertEqual(set(frame.regra_classificacao), {mv.CLOSING_RULE})
-        self.assertEqual(set(frame.grupo_analise), {mv.FLOW})
+        self.assertEqual(len(frame), 4)
+        self.assertTrue((frame["grupo_analise"] == "").all())
+        self.assertTrue((frame["subgrupo_analise"] == "").all())
+        self.assertTrue((frame["regra_classificacao"] == "").all())
+        self.assertTrue((frame["motivo_classificacao"] == "").all())
         self.assertEqual(frame.iloc[0].op_identificada, "OP00001234567")
+        self.assertEqual(frame.iloc[3].cc_identificado, "123456")
 
-    def test_confirmed_tes_subgroups_and_production_order_description(self):
-        rows = [record(tes="040", documento="DEVOLUCAO"),
-                record(tes="550", documento="GARANTIA"),
-                record(tes="999", documento="CONSUMO")]
+    def test_all_descriptions_exactly_equal_tes_catalog(self):
+        codes = ["020", "040", "520", "550", "999", "815"]
+        frame = mv.build_model([imported([
+            record(tes=code, documento=code) for code in codes
+        ])])["frame"]
+        for code, description in zip(frame["tes"], frame["descricao_tes"]):
+            self.assertEqual(description, mv.tes_reference().get(
+                code, "NI - TES não localizada no cadastro"))
+        self.assertEqual(frame["valor_saida"].tolist(), [10.] * len(codes))
+
+    def test_raw_entries_and_exits_define_totals_without_automatic_compensation(self):
+        incoming = record(tes="499", ae_original="SEM OP", documento="TRANSF",
+                          qtd_entrada="2", valor_entrada="10",
+                          qtd_saida=None, valor_saida=None)
+        outgoing = record(tes="999", ae_original="OP00001234567", documento="TRANSF")
+        result = mv.build_model([imported([incoming, outgoing])])
+        frame = result["frame"]
+        self.assertEqual(len(frame), 2)
+        self.assertEqual(len(mv.effective(frame)), 2)
+        self.assertEqual(result["pares_enderecamento"], [])
+        self.assertFalse(frame["enderecamento_compensado"].any())
+        self.assertEqual(float(frame["valor_saida"].sum()), 10.0)
+        self.assertEqual(float(frame["valor_entrada"].sum()), 10.0)
+
+    def test_tes_summary_does_not_split_by_product_type_op_or_cc(self):
+        rows = [
+            record(tes="520", documento="D1", tipo="II"),
+            record(tes="520", documento="D2", tipo="PA", ae_original="OP00001234567"),
+            record(tes="520", documento="D3", tipo="MP", ae_original="CC30000"),
+        ]
         frame = mv.build_model([imported(rows)])["frame"]
-        self.assertEqual(frame["grupo_analise"].tolist(), [mv.FLOW] * 3)
-        self.assertEqual(frame["subgrupo_analise"].tolist(),
-                         ["RETORNO DE PRODUÇÃO", "AG, GARANTIA, ADEQUAÇÃO", "CONSUMO DE OPS"])
-        self.assertEqual(frame["regra_classificacao"].tolist(),
-                         ["040_SUBGRUPO_CONFIRMADO", "550_SUBGRUPO_CONFIRMADO", "999_SUBGRUPO_CONFIRMADO"])
-        self.assertEqual(frame["descricao_tes"].tolist(),
-                         ["DEVOLUCAO MES", "BAIXA PRODUCAO MES", "ORDEM DE PRODUÇÃO"])
-        self.assertEqual(frame["valor_saida"].tolist(), [10, 10, 10])
-
-    def test_flow_priority_and_remaining_pa_pi(self):
-        rows = [record(ae_original="OP00001234567", tipo="PI"),
-                record(ae_original="CC123456", documento="GR"),
-                record(tipo="II", documento="II"), record(tipo="MC", documento="MC"),
-                record(codigo=mv.rules()["materiais_h001"][0], tipo="MP", documento="H001"),
-                record(tipo="PI", documento="PI"), record(documento="MP")]
-        frame = mv.build_model([imported(rows)])["frame"]
-        expected = ["520_OP_MANUAL", "520_CC_GERENCIAL", "520_CC_CONSUMO", "520_CC_CONSUMO",
-                    "520_CC_CONSUMO", "520_BASE_A_VALIDAR", "520_BASE_A_VALIDAR"]
-        self.assertEqual(frame.regra_classificacao.tolist(), expected)
-        self.assertEqual(frame.iloc[2].subgrupo_analise, "MATERIAIS DE CONSUMO")
-        self.assertEqual(frame.iloc[0].grupo_analise, mv.FLOW)
-        self.assertEqual(frame.iloc[-2].grupo_analise, mv.ADJUSTMENT)
-        self.assertEqual(frame.iloc[-1].grupo_analise, mv.ADJUSTMENT)
-
-    def test_production_requires_tes_020_for_pa_and_pi(self):
-        rows = [record(tes=tes, tipo=category, documento=tes + category)
-                for tes in ("020", "520") for category in ("PA", "PI")]
-        frame = mv.build_model([imported(rows)])["frame"]
-        self.assertEqual(frame.grupo_analise.tolist(),
-                         [mv.PRODUCTION, mv.PRODUCTION, mv.ADJUSTMENT, mv.ADJUSTMENT])
-        self.assertEqual(frame.regra_classificacao.tolist(),
-                         ["AJUSTE_PA_PI_PRODUCAO_INTERNA", "AJUSTE_PA_PI_PRODUCAO_INTERNA",
-                          "520_BASE_A_VALIDAR", "520_BASE_A_VALIDAR"])
-        self.assertEqual(frame.valor_saida.tolist(), [10, 10, 10, 10])
-        self.assertEqual(frame.ae_original.tolist(), ["CC600307"] * 4)
-
-    def test_finished_component_is_not_raw_copper_or_sheet(self):
-        frame = mv.build_model([imported([record(descricao="PORCA PARA CHAPA DE COBRE")])])["frame"]
-        self.assertEqual(frame.iloc[0].grupo_analise, mv.ADJUSTMENT)
-
-    def test_020_production_and_closing(self):
-        rows = [record(tes="020", tipo="PA", qtd_saida=None, valor_saida=None, qtd_entrada="2", valor_entrada="10"),
-                record(tes="020", descricao="CHAPA ACO", documento="OUTRO")]
-        frame = mv.build_model([imported(rows)])["frame"]
-        self.assertEqual(frame.grupo_analise.tolist(), [mv.PRODUCTION, mv.FLOW])
-        self.assertEqual(frame.valor_entrada.tolist(), [10, 0])
-        self.assertEqual(frame.valor_saida.tolist(), [0, 10])  # direction comes from the report, not TES names
+        groups = mv.summarize(frame, ["tes", "descricao_tes"])
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups.iloc[0]["lancamentos"], 3)
+        self.assertEqual(groups.iloc[0]["valor_saida"], 30.0)
 
     def test_repeat_aware_overlap_and_idempotence(self):
         row = record()
@@ -99,35 +99,20 @@ class MovementAnalysisTests(unittest.TestCase):
         self.assertEqual(duplicates, 3)
         self.assertEqual(len({r["id_registro"] for r in merged}), 2)
 
-    def test_address_pair_ignores_op_and_is_one_to_one(self):
-        incoming = record(tes="499", ae_original="SEM OP", qtd_entrada="2", valor_entrada="10", qtd_saida=None, valor_saida=None)
-        outgoing = record(tes="999", ae_original="OP00001234567")
-        model = mv.build_model([imported([incoming, outgoing, outgoing])])
-        frame = model["frame"]
-        self.assertEqual(int(frame.enderecamento_compensado.sum()), 2)
-        self.assertEqual(len(mv.effective(frame)), 1)
-        op = mv.summarize_ops(frame).iloc[0]
-        self.assertEqual(op.lancamentos, 2)
-        self.assertEqual(op.enderecamentos, 1)
-        self.assertEqual(op.valor_saida, 10)
-
-    def test_quantity_difference_is_review_not_automatic_exclusion(self):
-        a = record(tes="499", qtd_entrada="2.001", valor_entrada="10", qtd_saida=None, valor_saida=None)
-        b = record(tes="999", qtd_saida="2", valor_saida="10")
-        model = mv.build_model([imported([a, b])])
-        self.assertFalse(model["frame"].enderecamento_compensado.any())
-        self.assertEqual(len(model["pares_enderecamento"]), 1)
-        self.assertEqual(model["pares_enderecamento"][0]["diferenca"], "0.001")
-
-    def test_unknown_group_uses_confirmed_description(self):
-        frame = mv.build_model([imported([record(tes="499")])])["frame"]
-        self.assertEqual(frame.iloc[0].grupo_analise, "ENDEREÇAMENTO")
-        self.assertTrue(frame.iloc[0].grupo_provisorio)
+    def test_source_value_direction_is_not_inferred_from_tes(self):
+        rows = [
+            record(tes="020", tipo="PA", qtd_saida=None, valor_saida=None,
+                   qtd_entrada="2", valor_entrada="10"),
+            record(tes="020", descricao="CHAPA ACO", documento="OUTRO"),
+        ]
+        frame = mv.build_model([imported(rows)])["frame"]
+        self.assertEqual(frame.valor_entrada.tolist(), [10, 0])
+        self.assertEqual(frame.valor_saida.tolist(), [0, 10])
+        self.assertEqual(set(frame.grupo_analise), {""})
 
     def test_original_ae_and_values_round_trip(self):
         row = record(ae_original=" OP00001234567 ", valor_saida="-12.34")
-        pack = mv.pack_import(imported([row]))
-        restored = mv.unpack_import(pack)["rows"][0]
+        restored = mv.unpack_import(mv.pack_import(imported([row])))["rows"][0]
         self.assertEqual(restored["ae_original"], " OP00001234567 ")
         self.assertEqual(restored["valor_saida"], "-12.34")
 
@@ -135,19 +120,22 @@ class MovementAnalysisTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Data"):
             record(data=None)
 
-    def test_excel_ae_column_and_numeric_dates(self):
+    def test_excel_preserves_original_ae_column_and_without_legacy_group_sheets(self):
         row = record(ae_original="OP00001234567", descricao="=NÃO É FÓRMULA")
-        model = mv.build_model([imported([row])])
-        output = mv.export_excel(model["frame"])
+        frame = mv.build_model([imported([row])])["frame"]
+        output = mv.export_excel(frame)
         wb = openpyxl.load_workbook(io.BytesIO(output), read_only=True)
+        self.assertEqual(wb.sheetnames, ["Por TES", "Mensal", "Por OP", "Movimentações"])
         sheet = wb["Movimentações"]
         self.assertEqual(sheet["AE1"].value, "AE original")
         self.assertEqual(sheet["AE2"].value, "OP00001234567")
+        self.assertEqual(sheet["D1"].value, "Descrição TES")
+        self.assertEqual(sheet["D2"].value, mv.tes_reference()["520"])
         self.assertEqual(sheet["B2"].data_type, "s")
         self.assertEqual(sheet["H2"].value.date().isoformat(), "2026-10-01")
         wb.close()
         with ZipFile(io.BytesIO(output)) as archive:
-            xml = archive.read("xl/worksheets/sheet5.xml").decode()
+            xml = archive.read("xl/worksheets/sheet4.xml").decode()
             self.assertNotIn('t="d"', xml)
 
     def test_exported_history_reimports_without_derived_classification(self):
