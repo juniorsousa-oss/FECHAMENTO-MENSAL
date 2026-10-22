@@ -750,7 +750,7 @@ def _exports(frame, model, token, *, include_history=True):
             st.markdown("**EXCEL DO PERÍODO**" if include_history else "**EXCEL DOS REGISTROS FILTRADOS**")
             st.caption(
                 f"{count(len(frame))} registros · Grupos e TES (expansíveis) · "
-                "Por OP (baixas expansíveis) · Movimentações (mesmas colunas da tela)."
+                "Por OP (baixas expansíveis) · Movimentações (coluna Grupo incluída)."
             )
             if st.button("PREPARAR EXCEL DO RECORTE", key="fm_mov_prepare_excel"):
                 with st.spinner("Preparando Excel com grupos, OPs e movimentações..."):
