@@ -667,6 +667,11 @@ def _overview(frame, token):
         st.error(f"Não foi possível carregar os grupos cadastrados: {exc}")
         return
     classified = conditions.classify(frame, config)
+    # Ao alterar grupos/condições em Cadastros, descartar seleções antigas
+    # para que os checkboxes jamais apontem para outro grupo por posição.
+    selection_token = token + "_" + hashlib.sha256(
+        json.dumps(config, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:10]
     summary = _overview_group_totals(classified, config)
     if summary.empty:
         st.info("Nenhum grupo com movimentações neste período.")
@@ -674,7 +679,7 @@ def _overview(frame, token):
 
     groups_table = summary[["Grupo", "tes_distintas", "lancamentos", "produtos",
                             "valor_entrada", "valor_saida", "liquido_valor"]]
-    group_event = _table(groups_table, key=f"fm_mov_overview_groups_{token}",
+    group_event = _table(groups_table, key=f"fm_mov_overview_groups_{selection_token}",
                          on_select="rerun", height=650)
     group_index = _picked_index(group_event, len(summary))
     if group_index is None:
@@ -685,7 +690,7 @@ def _overview(frame, token):
         if group_rows.empty:
             st.info("Este grupo não possui movimentações no período selecionado.")
         else:
-            _overview_group_details(group_rows, group_name, token, group_index)
+            _overview_group_details(group_rows, group_name, selection_token, group_index)
     with st.expander("EVOLUÇÃO MENSAL DO PERÍODO"):
         monthly = mv.summarize(frame, ["competencia"]).sort_values("competencia")
         _table(monthly[["competencia", "lancamentos", "valor_entrada",
