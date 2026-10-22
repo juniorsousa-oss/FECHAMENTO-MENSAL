@@ -566,46 +566,40 @@ def _ledger(frame, token):
             _detail(visible.iloc[selected[0]])
 
 
-def _classification(frame, model):
-    specs = [
-        (mv.CLOSING_RULE, "020 / 520 · chapa ou barra de cobre", mv.FLOW, mv.CLOSING),
-        ("520_OP_MANUAL", "520 · AE com OP", mv.FLOW, "BAIXA DE OP MANUAL"),
-        ("520_CC_GERENCIAL", "520 · CC diferente de 600307", mv.FLOW, "ACERTO GERENCIAL"),
-        ("520_CC_CONSUMO", "520 · CC 600307 e II, MC ou código da lista H0001", mv.FLOW, "MATERIAIS DE CONSUMO"),
-        ("AJUSTE_PA_PI_PRODUCAO_INTERNA", "020 · PA / PI que permanecia em Ajuste", mv.PRODUCTION, mv.PRODUCTION),
-        ("040_SUBGRUPO_CONFIRMADO", "040 · retorno de produção", mv.FLOW, "RETORNO DE PRODUÇÃO"),
-        ("550_SUBGRUPO_CONFIRMADO", "550 · AG, garantia, adequação", mv.FLOW, "AG, GARANTIA, ADEQUAÇÃO"),
-        ("999_SUBGRUPO_CONFIRMADO", "999 · consumo de OPs / descrição ORDEM DE PRODUÇÃO", mv.FLOW, "CONSUMO DE OPS"),
+def _catalog(frame):
+    """Cadastro de referência independente do recorte; nenhuma regra gerencial."""
+    reference = mv.tes_reference()
+    counts = frame.groupby("tes", sort=False).size().to_dict()
+    rows = [
+        {
+            "TES": code, "Descrição no cadastro Protheus": description,
+            "Movimentos no recorte": int(counts.get(code, 0)),
+        }
+        for code, description in reference.items()
     ]
-    active = mv.effective(frame)
-    rows = [{"Ordem": i, "Condição": condition, "Grupo": group, "Subgrupo": sub,
-             "Movimentos no recorte": int((active["regra_classificacao"] == code).sum())}
-            for i, (code, condition, group, sub) in enumerate(specs, 1)]
-    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-    adjustments = active.loc[active["grupo_analise"] == mv.ADJUSTMENT]
-    st.info(f"{count(len(adjustments))} movimentos permanecem em Ajuste de Estoque e aguardam refinamento das condições.")
-    st.button("DETALHAR AJUSTES A REFINAR", on_click=_adjustments, disabled=adjustments.empty, key="fm_mov_adjustments")
-    provisional = active.loc[active["grupo_provisorio"]]
-    if not provisional.empty:
-        with st.expander("GRUPOS PROVISÓRIOS POR DESCRIÇÃO DA TES"):
-            _table(mv.summarize(provisional, ["tes", "descricao_tes", "grupo_analise"]))
-    ids = set(frame["id_registro"])
-    candidates = [pair for pair in model["pares_enderecamento"] if pair["entrada_id"] in ids or pair["saida_id"] in ids]
-    with st.expander(f"PARES DE ENDEREÇAMENTO COM DIFERENÇA DE QUANTIDADE · {len(candidates)}"):
-        if candidates:
-            data = pd.DataFrame(candidates).drop(columns=["entrada_id", "saida_id"]).rename(columns={
-                "codigo": "Código", "data": "Data", "documento": "Documento", "armazem": "Armazém", "um": "UM",
-                "quantidade_entrada": "Quantidade entrada", "quantidade_saida": "Quantidade saída", "diferenca": "Diferença"})
-            st.dataframe(data, hide_index=True, width="stretch")
-            st.caption("Confira no sistema se as diferenças decorrem de arredondamento da mesma transferência. Esses pares continuam nos totais.")
-        else:
-            st.caption("Nenhum par nessas condições no recorte selecionado.")
-    with st.expander("CRITÉRIOS GERAIS"):
-        st.write("• A descrição principal da TES segue o cadastro confirmado.")
-        st.write("• Uma TES sem grupo confirmado utiliza a descrição como grupo provisório.")
-        st.write("• Pares 499/999 só deixam os totais efetivos quando compensam produto, armazém, documento, data, quantidade e valor. A presença de OP não impede a compensação.")
-        st.write("• A coluna AE original é preservada, incluindo o número completo da OP.")
-        st.caption(f"Regras {model['versao']} · {len(mv.rules()['materiais_h001'])} materiais vinculados à lista H0001.")
+    unknown = sorted(set(counts) - set(reference))
+    rows.extend({
+        "TES": code,
+        "Descrição no cadastro Protheus": "NI - TES não localizada no cadastro",
+        "Movimentos no recorte": int(counts[code]),
+    } for code in unknown)
+    st.caption(
+        f"{count(len(reference))} TES cadastradas no arquivo de referência · "
+        f"{count(len(unknown))} códigos presentes no recorte sem correspondência. "
+        "A descrição não define automaticamente grupo ou condição."
+    )
+    st.dataframe(
+        pd.DataFrame(rows).sort_values("TES", kind="stable"),
+        hide_index=True, width="stretch", height=600,
+        column_config={
+            "TES": st.column_config.TextColumn(width="small"),
+            "Descrição no cadastro Protheus": st.column_config.TextColumn(width="large"),
+        },
+    )
+    st.caption(
+        "Esta etapa usa apenas o cadastro TES. Não há regras por material, "
+        "CC, OP, centro de custo ou classificação gerencial."
+    )
 
 
 def _exports(frame, model, token, *, include_history=True):
@@ -645,6 +639,8 @@ def render_results(model, imports):
     .st-key-fm_mov_navigation button[aria-checked="true"] p{color:#fff!important}
     </style>''', unsafe_allow_html=True)
     area = st.session_state.get("fm_mov_area")
+    # Usuários que ainda têm a navegação antiga em sessão chegam à aba equivalente.
+    area = {"Grupos e TES": "TES e descrições", "Classificação": "Cadastro TES"}.get(area, area)
     if area not in AREAS:
         area = AREAS[0]
     st.session_state.fm_mov_area = area
@@ -655,12 +651,12 @@ def render_results(model, imports):
                              format_func=lambda value: AREA_LABELS.get(value, value),
                              label_visibility="collapsed", width="stretch")
     headers = {
-        "Visão geral": ("01 · RESUMO", "RESULTADO DO PERÍODO", "Acompanhe entradas, saídas e a composição por grupo. Selecione um grupo para aprofundar a análise."),
-        "Grupos e TES": ("02 · GRUPOS E TES", "ANÁLISE POR GRUPO E CONDIÇÃO", "Abra um grupo e selecione uma TES ou condição para consultar os registros que compõem o valor."),
-        "Por OP": ("03 · ORDENS DE PRODUÇÃO", "CONSULTA POR OP", "Localize a OP e selecione sua linha para abrir os materiais, documentos e movimentações vinculados."),
-        "Movimentações": ("04 · REGISTROS", "CONSULTA DOS MOVIMENTOS", "Busque um registro e selecione sua linha para conferir a AE original e o motivo da classificação."),
-        "Classificação": ("05 · CLASSIFICAÇÃO", "REGRAS E AJUSTES A REFINAR", "Consulte os critérios aplicados e avance aos ajustes que ainda precisam de refinamento."),
-        "Fontes e relatórios": ("06 · FONTES E RELATÓRIOS", "HISTÓRICO, IMPORTAÇÃO E EXPORTAÇÃO", "Consulte os arquivos utilizados, importe novos relatórios e gere o Excel ou a base histórica."),
+        "Visão geral": ("01 · VISÃO GERAL", "RESULTADO DO KARDEX", "Entradas, saídas e variação por TES, com os valores originais do histórico."),
+        "TES e descrições": ("02 · TES", "MOVIMENTAÇÕES POR TES", "Uma linha por código e descrição do cadastro Protheus. Selecione para consultar os lançamentos."),
+        "Por OP": ("03 · ORDENS DE PRODUÇÃO", "CONSULTA POR OP", "Localize OPs por sua identificação original e consulte os documentos vinculados."),
+        "Movimentações": ("04 · REGISTROS", "MOVIMENTAÇÕES ORIGINAIS", "Consulte as informações do KARDEX sem classificação gerencial ou exclusões automáticas."),
+        "Cadastro TES": ("05 · CADASTRO", "CATÁLOGO DE TES", "Descrições do cadastro Protheus, sem grupos e condições atribuídos."),
+        "Fontes e relatórios": ("06 · FONTES E RELATÓRIOS", "HISTÓRICO, IMPORTAÇÃO E EXPORTAÇÃO", "Registros originais, histórico de importações e relatórios por TES."),
     }
     band(*headers[area])
     if area == "Fontes e relatórios":
@@ -675,28 +671,25 @@ def render_results(model, imports):
         origin = st.session_state.fm_mov_record_origin
         st.button("← VOLTAR PARA " + AREA_LABELS.get(origin, origin).upper(),
                   on_click=_go_to, args=(origin,), key="fm_mov_back")
-    if view.empty:
+    if view.empty and area != "Cadastro TES":
         st.info("Nenhuma movimentação corresponde a esta consulta. Ajuste os filtros ou o período da análise.")
         return
     token = _view_token(view, area)
     if area == "Visão geral":
         _overview(view, token)
-    elif area == "Grupos e TES":
-        _groups(view, token)
+    elif area == "TES e descrições":
+        _tes(view, token)
     elif area == "Por OP":
         _ops(view, token)
     elif area == "Movimentações":
         _ledger(view, token)
         _exports(view, model, token, include_history=False)
-    else:
-        _classification(view, model)
-    confirmed = int(view["enderecamento_compensado"].sum())
-    if confirmed:
-        st.caption(f"{count(confirmed)} registros de endereço compensados permanecem na consulta e estão fora dos valores efetivos.")
+    elif area == "Cadastro TES":
+        _catalog(view)
 
 
 def render_movement_analysis():
-    band("MOVIMENTAÇÕES", "ANÁLISE DE MOVIMENTAÇÕES", "Histórico KARDEX · grupos e TES · vínculos por OP · rastreabilidade de cada registro.")
+    band("KARDEX", "MOVIMENTAÇÕES POR TES", "Histórico de entradas e saídas · descrição do cadastro Protheus · vínculos por OP · sem classificação gerencial.")
     flash = st.session_state.pop("fm_mov_flash", None)
     if flash:
         st.success(flash)
