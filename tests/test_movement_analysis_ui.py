@@ -192,8 +192,11 @@ class MovementAnalysisUITests(unittest.TestCase):
         next(x for x in app.button if x.label == "PREPARAR EXCEL DO RECORTE").click().run()
         self.assertFalse(app.exception)
         wb = openpyxl.load_workbook(io.BytesIO(app.session_state["fm_mov_excel"][1]), read_only=True)
-        self.assertEqual(wb["Movimentações"]["AE2"].value, " OP00001234567 ")
+        self.assertEqual(wb.sheetnames, ["Grupos e TES", "Por OP", "Movimentações"])
+        self.assertEqual(wb["Movimentações"]["H2"].value, " OP00001234567 ")
         self.assertEqual(len(list(wb["Movimentações"].iter_rows(values_only=True))), 2)
+        self.assertEqual(wb["Por OP"]["A2"].value, "OP00001234567")
+        self.assertEqual(wb["Grupos e TES"]["A2"].value, "SEM GRUPO")
         wb.close()
 
 
