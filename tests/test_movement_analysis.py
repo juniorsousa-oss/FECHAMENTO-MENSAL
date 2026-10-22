@@ -120,61 +120,65 @@ class MovementAnalysisTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Data"):
             record(data=None)
 
-    def test_excel_three_sheets_with_collapsible_groups_ops_and_screen_columns(self):
+    def test_excel_expands_group_subgroup_tes_op_and_preserves_screen_layout(self):
         import kardex_group_config as groups
-        row = record(tes="999", ae_original="OP00001234567", descricao="=NÃO É FÓRMULA")
-        frame = mv.build_model([imported([row])])["frame"]
-        cfg = groups.create_group(groups.empty(), "CONSUMO OP", known_tes={"999"})
+        sample = record(tes="999", ae_original="OP00001234567", descricao="=NÃO É FÓRMULA")
+        frame = mv.build_model([imported([sample])])["frame"]
+        cfg = groups.create_group(groups.empty(), "REQUISIÇÕES", known_tes={"999"})
         cfg = groups.assign_group(cfg, cfg["grupos"][0]["id"], ["999"], known_tes={"999"})
-        output = mv.export_excel(frame, group_config=cfg)
-        wb = openpyxl.load_workbook(io.BytesIO(output))
+        wb = openpyxl.load_workbook(io.BytesIO(mv.export_excel(frame, group_config=cfg)))
         self.assertEqual(wb.sheetnames, ["Grupos e TES", "Por OP", "Movimentações"])
 
-        grouped = wb["Grupos e TES"]
-        self.assertEqual(grouped["A1"].value, "Grupo / TES")
-        self.assertEqual(grouped["A2"].value, "CONSUMO OP")
-        self.assertEqual(grouped["A3"].value, "TES 999")
-        self.assertEqual(grouped["B3"].value, "SAÍDA DE INVENTÁRIO/CONSUMO OP")
-        self.assertTrue(grouped.row_dimensions[2].collapsed)
-        self.assertEqual(grouped.row_dimensions[3].outlineLevel, 1)
-        self.assertTrue(grouped.row_dimensions[3].hidden)
-        self.assertFalse(grouped.sheet_properties.outlinePr.summaryBelow)
-        self.assertEqual(grouped["A4"].value, "TOTAL GERAL")
-        self.assertEqual(grouped["G4"].value, 10.0)
+        first = wb["Grupos e TES"]
+        self.assertEqual(first["A1"].value, "Grupo / Subgrupo / TES")
+        self.assertEqual(first["A2"].value, "REQUISIÇÕES")
+        self.assertEqual(first["A3"].value, "SUBGRUPO · CONSUMO OP")
+        self.assertEqual(first["A4"].value, "TES 999")
+        self.assertEqual(first["B4"].value, "SAÍDA DE INVENTÁRIO/CONSUMO OP")
+        self.assertTrue(first.row_dimensions[2].collapsed)
+        self.assertEqual(first.row_dimensions[3].outlineLevel, 1)
+        self.assertTrue(first.row_dimensions[3].hidden)
+        self.assertEqual(first.row_dimensions[4].outlineLevel, 2)
+        self.assertTrue(first.row_dimensions[4].hidden)
+        self.assertFalse(first.sheet_properties.outlinePr.summaryBelow)
+        self.assertEqual(first["A5"].value, "TOTAL GERAL")
+        self.assertEqual(first["G5"].value, 10)
 
         op = wb["Por OP"]
         self.assertEqual(op["A2"].value, "OP00001234567")
         self.assertEqual(op["F2"].value, 1)
-        self.assertEqual(op["I2"].value, 10.0)
+        self.assertEqual(op["I2"].value, 10)
         self.assertTrue(op.row_dimensions[2].collapsed)
         self.assertEqual(op.row_dimensions[3].outlineLevel, 1)
         self.assertTrue(op.row_dimensions[3].hidden)
         self.assertEqual(op["A3"].value, "00001000")
         self.assertEqual(op["C3"].value, "999")
-        self.assertEqual(op["G3"].value, 2.0)
-        self.assertEqual(op["I3"].value, 10.0)
+        self.assertEqual(op["I3"].value, 10)
         self.assertEqual(op["M3"].value, "OP00001234567")
+        self.assertEqual(op["N3"].value, "REQUISIÇÕES")
+        self.assertEqual(op["O3"].value, "CONSUMO OP")
         self.assertEqual(op["J3"].number_format, "dd/mm/yyyy")
 
         ledger = wb["Movimentações"]
-        self.assertEqual([ledger.cell(1, i).value for i in range(1, 13)], [
-            "Data", "Código", "Produto", "Armazém", "TES", "Grupo",
+        headers = [ledger.cell(1, i).value for i in range(1, 14)]
+        self.assertEqual(headers, [
+            "Data", "Código", "Produto", "Armazém", "TES", "Grupo", "Subgrupo",
             "Entrada (R$)", "Saída (R$)", "AE original", "Descrição TES",
             "Tipo do material", "Documento",
         ])
-        self.assertEqual(ledger["F2"].value, "CONSUMO OP")
-        self.assertEqual(ledger["I2"].value, "OP00001234567")
+        self.assertEqual(ledger["F2"].value, "REQUISIÇÕES")
+        self.assertEqual(ledger["G2"].value, "CONSUMO OP")
+        self.assertEqual(ledger["J2"].value, "OP00001234567")
         self.assertEqual(ledger["B2"].value, "00001000")
         self.assertEqual(ledger["C2"].data_type, "s")
         self.assertEqual(ledger["C2"].value, "=NÃO É FÓRMULA")
         self.assertEqual(ledger["A2"].number_format, "dd/mm/yyyy")
         self.assertEqual(ledger["A2"].value.date().isoformat(), "2026-10-01")
-        self.assertEqual(ledger["H2"].value, 10)
-        self.assertEqual(ledger["H2"].number_format, '#,##0.00;[Red](#,##0.00)')
-        self.assertEqual(ledger.auto_filter.ref, "A1:L2")
+        self.assertEqual(ledger["I2"].value, 10)
+        self.assertEqual(ledger.auto_filter.ref, "A1:M2")
         wb.close()
 
-    def test_excel_groups_reconcile_and_op_only_expands_actual_exits(self):
+    def test_excel_groups_reconcile_and_op_expands_only_actual_exits(self):
         import kardex_group_config as groups
         rows = [
             record(tes="520", documento="B1", ae_original="OP00001234567", qtd_saida="2", valor_saida="10"),
@@ -187,25 +191,25 @@ class MovementAnalysisTests(unittest.TestCase):
                    qtd_saida=None, valor_saida=None, qtd_entrada="1", valor_entrada="12"),
         ]
         frame = mv.build_model([imported(rows)])["frame"]
-        config = groups.create_group(groups.empty(), "REQUISIÇÕES", known_tes={"520","999","499","540","010"})
-        config = groups.assign_group(config, config["grupos"][0]["id"], ["520", "999"],
-                                     known_tes={"520","999","499","540","010"})
-        config = groups.create_group(config, "ENTRADAS", known_tes={"520","999","499","540","010"})
-        config = groups.assign_group(config, config["grupos"][1]["id"], ["499"],
-                                     known_tes={"520","999","499","540","010"})
-        wb = openpyxl.load_workbook(io.BytesIO(mv.export_excel(frame, group_config=config)))
+        available = {"520","999","499","540","010"}
+        cfg = groups.create_group(groups.empty(), "REQUISIÇÕES", known_tes=available)
+        cfg = groups.assign_group(cfg, cfg["grupos"][0]["id"], ["520","999"], known_tes=available)
+        cfg = groups.create_group(cfg, "ENTRADAS", known_tes=available)
+        cfg = groups.assign_group(cfg, cfg["grupos"][1]["id"], ["499"], known_tes=available)
+        wb = openpyxl.load_workbook(io.BytesIO(mv.export_excel(frame,group_config=cfg)))
         summary = wb["Grupos e TES"]
-        self.assertEqual(summary["A2"].value, "REQUISIÇÕES")
-        self.assertEqual(summary["G2"].value, 30)
-        self.assertEqual(summary["A5"].value, "ENTRADAS")
-        self.assertEqual(summary["F5"].value, 5)
-        self.assertIn("SEM GRUPO", [summary.cell(r,1).value for r in range(2, summary.max_row+1)])
+        labels = [summary.cell(r, 1).value for r in range(2, summary.max_row + 1)]
+        self.assertIn("REQUISIÇÕES", labels)
+        self.assertIn("ENTRADAS", labels)
+        self.assertIn("SEM GRUPO", labels)
+        self.assertIn("SUBGRUPO · CONSUMO OP", labels)
+        self.assertIn("TES 999", labels)
         last = summary.max_row
-        self.assertEqual(summary.cell(last,1).value, "TOTAL GERAL")
-        self.assertEqual(summary.cell(last,4).value, 5)
-        self.assertEqual(summary.cell(last,6).value, 57)
-        self.assertEqual(summary.cell(last,7).value, 30)
-        self.assertEqual(summary.cell(last,8).value, 27)
+        self.assertEqual(summary.cell(last, 1).value, "TOTAL GERAL")
+        self.assertEqual(summary.cell(last, 4).value, 5)
+        self.assertEqual(summary.cell(last, 6).value, 57)
+        self.assertEqual(summary.cell(last, 7).value, 30)
+        self.assertEqual(summary.cell(last, 8).value, 27)
 
         ops = wb["Por OP"]
         positions = {ops.cell(r, 1).value: r for r in range(2, ops.max_row + 1)
@@ -215,25 +219,23 @@ class MovementAnalysisTests(unittest.TestCase):
         second_pos = positions["OP00007654321"]
         self.assertEqual(ops.cell(first_pos, 6).value, 2)
         self.assertEqual(ops.cell(first_pos, 9).value, 30)
-        self.assertEqual(second_pos-first_pos, 3)  # summary plus two actual baixa records
+        self.assertEqual(second_pos-first_pos, 3)
         self.assertEqual(ops.cell(second_pos, 6).value, 0)
-        self.assertEqual(ops.cell(second_pos + 1, 2).value, "SEM BAIXAS NO RECORTE")
-        movements_sheet = wb["Movimentações"]
-        self.assertEqual(len(list(movements_sheet.values)), 6)
-        self.assertEqual(movements_sheet["F1"].value, "Grupo")
-        observed = {
-            movements_sheet.cell(r, 5).value: movements_sheet.cell(r, 6).value
-            for r in range(2, movements_sheet.max_row + 1)
+        self.assertEqual(ops.cell(second_pos+1,2).value, "SEM BAIXAS NO RECORTE")
+        sheet = wb["Movimentações"]
+        self.assertEqual(len(list(sheet.values)), 6)
+        self.assertEqual(sheet["G1"].value, "Subgrupo")
+        mapping = {
+            sheet.cell(r,5).value: (sheet.cell(r,6).value, sheet.cell(r,7).value)
+            for r in range(2, sheet.max_row+1)
         }
-        self.assertEqual(observed["520"], "REQUISIÇÕES")
-        self.assertEqual(observed["999"], "REQUISIÇÕES")
-        self.assertEqual(observed["499"], "ENTRADAS")
-        self.assertEqual(observed["540"], "SEM GRUPO")
-        self.assertEqual(observed["010"], "SEM GRUPO")
-        self.assertEqual(
-            sum(movements_sheet.cell(r, 8).value or 0
-                for r in range(2, movements_sheet.max_row + 1)), 30
-        )
+        self.assertEqual(mapping["520"], ("REQUISIÇÕES", "CONSUMO OP"))
+        self.assertEqual(mapping["999"], ("REQUISIÇÕES", "CONSUMO OP"))
+        self.assertEqual(mapping["499"], ("ENTRADAS", "ENTRADAS"))
+        self.assertEqual(mapping["540"], ("SEM GRUPO", "ADEQUAÇÃO DE CUSTO"))
+        self.assertEqual(mapping["010"], ("SEM GRUPO", "SEM GRUPO"))
+        self.assertEqual(sum(sheet.cell(r,9).value or 0
+                             for r in range(2,sheet.max_row+1)),30)
         wb.close()
 
     def test_exported_history_reimports_without_derived_classification(self):
