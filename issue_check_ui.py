@@ -167,8 +167,11 @@ def _band():
       background:#f8fafc!important;
       border:1px solid #e5eaf1!important;
       border-radius:13px!important;
-      padding:.85rem .95rem .95rem!important;
-      height:100%;
+      padding:.85rem .95rem 1rem!important;
+      box-sizing:border-box!important;
+      height:auto!important;
+      min-height:136px!important;
+      overflow:visible!important;
     }
     .st-key-fm_issue_filters [data-testid="stTextInput"],
     .st-key-fm_issue_filters [data-testid="stSelectbox"],
@@ -368,77 +371,79 @@ def _band():
     [class*="st-key-fm_issue_op_ok_"] [data-testid="stButton"] button p {
       font-size:.78rem!important;font-weight:800!important;line-height:1.45!important;
     }
-    /* Ajuste fino SETTA | select BaseWeb: remover desnível do texto em
-       ALERTAS e STATUS, mantendo seta e valor na mesma linha vertical. */
+    /* Classificação: a caixa inteira deve caber dentro do cartão.
+       Não forçar altura de 100% nos filhos do BaseWeb: isso fazia
+       a parte inferior do seletor parecer cortada e o texto deslocado. */
+    .st-key-fm_issue_class_group [data-testid="stSelectbox"] {
+      overflow:visible!important;
+      padding-bottom:1px!important;
+    }
     .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] > div {
-      display:flex!important;
-      flex-direction:row!important;
-      align-items:center!important;
-      justify-content:space-between!important;
+      box-sizing:border-box!important;
       height:48px!important;
       min-height:48px!important;
-      padding-top:0!important;
-      padding-bottom:0!important;
-      overflow:hidden!important;
+      max-height:48px!important;
+      display:flex!important;
+      align-items:center!important;
+      padding-block:0!important;
+      overflow:visible!important;
     }
     .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] > div > div {
-      display:flex!important;
-      align-items:center!important;
-      min-height:0!important;
-      height:100%!important;
-      padding-top:0!important;
-      padding-bottom:0!important;
-    }
-    /* Nos controles BaseWeb, role=combobox pode pertencer a um input
-       invisível de acessibilidade; não alteramos sua geometria. */
-    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] > div > div:first-child {
-      display:flex!important;
-      align-items:center!important;
+      box-sizing:border-box!important;
       align-self:center!important;
-      height:100%!important;
-      margin-top:0!important;
-      margin-bottom:0!important;
-      line-height:1.35!important;
+      height:auto!important;
+      min-height:0!important;
+      margin-block:0!important;
+      padding-block:0!important;
     }
-    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] > div > div:first-child > div {
+    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] > div > div:first-child {
+      flex:1 1 auto!important;
+      min-width:0!important;
       display:flex!important;
       align-items:center!important;
-      line-height:1.35!important;
     }
     .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] svg {
-      display:block!important;
-      flex-shrink:0!important;
       align-self:center!important;
+      flex-shrink:0!important;
     }
-    /* Ambos os submits pertencem à mesma linha: altura, largura e
-       alinhamento independentes dos estilos antigos do botão Limpar. */
+    /* Faixa de ações única: os dois botões compartilham a mesma linha
+       e ficam juntos à direita, sem o grande vazio intermediário. */
+    .st-key-fm_issue_filter_actions {
+      border-top:1px solid #e4e9f1!important;
+      margin-top:.95rem!important;
+      padding-top:.85rem!important;
+    }
     .st-key-fm_issue_filters .st-key-fm_issue_search_submit,
     .st-key-fm_issue_filters .st-key-fm_issue_clear_filters {
-      display:flex!important;
-      align-items:stretch!important;
+      box-sizing:border-box!important;
       margin:0!important;
       padding:0!important;
+      width:100%!important;
     }
     .st-key-fm_issue_filters .st-key-fm_issue_search_submit [data-testid="stFormSubmitButton"],
     .st-key-fm_issue_filters .st-key-fm_issue_clear_filters [data-testid="stFormSubmitButton"] {
       width:100%!important;
       margin:0!important;
       padding:0!important;
-      align-self:stretch!important;
     }
     .st-key-fm_issue_filters .st-key-fm_issue_search_submit button,
     .st-key-fm_issue_filters .st-key-fm_issue_clear_filters button {
       box-sizing:border-box!important;
-      height:48px!important;
-      min-height:48px!important;
-      max-height:48px!important;
+      height:46px!important;
+      min-height:46px!important;
+      max-height:46px!important;
       width:100%!important;
       margin:0!important;
-      padding:.65rem 1rem!important;
+      padding:.6rem .85rem!important;
       display:flex!important;
-      justify-content:center!important;
       align-items:center!important;
-      line-height:1.2!important;
+      justify-content:center!important;
+      line-height:1.25!important;
+      white-space:nowrap!important;
+    }
+    @media(max-width:900px){
+      .st-key-fm_issue_search_group,
+      .st-key-fm_issue_class_group{min-height:0!important}
     }
     .fm-issue-mobile-hint{display:none}
     @media(max-width:900px){
@@ -1065,17 +1070,20 @@ def render_results(model):
                         "DATA FINAL", value=None, format="DD/MM/YYYY",
                         key="fm_issue_invoice_end",
                     )
-            action_space, action_search, action_clear = st.columns([2.4, 1, 1], gap="medium")
-            with action_search:
-                submitted = st.form_submit_button(
-                    "PESQUISAR", type="primary",
-                    key="fm_issue_search_submit", use_container_width=True,
-                )
-            with action_clear:
-                st.form_submit_button(
-                    "LIMPAR FILTROS", on_click=_clear_filters,
-                    key="fm_issue_clear_filters", use_container_width=True,
-                )
+            with st.container(key="fm_issue_filter_actions"):
+                _, actions = st.columns([2.6, 1.4], gap="small")
+                with actions:
+                    action_search, action_clear = st.columns([1, 1], gap="small")
+                    with action_search:
+                        submitted = st.form_submit_button(
+                            "PESQUISAR", type="primary",
+                            key="fm_issue_search_submit", use_container_width=True,
+                        )
+                    with action_clear:
+                        st.form_submit_button(
+                            "LIMPAR FILTROS", on_click=_clear_filters,
+                            key="fm_issue_clear_filters", use_container_width=True,
+                        )
 
     if submitted:
         submitted_dates, validation_error = _invoice_bounds(date_from_raw, date_to_raw)
