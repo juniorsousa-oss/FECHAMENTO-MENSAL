@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import html
 import math
 import sys
@@ -734,18 +735,34 @@ def _catalog(frame):
 
 def _exports(frame, model, token, *, include_history=True):
     title = "EXPORTAR RELATÓRIOS" if include_history else "EXPORTAR REGISTROS DESTA CONSULTA"
+    try:
+        group_config = _groups_read()
+        group_token = hashlib.sha256(json.dumps(
+            group_config, ensure_ascii=False, sort_keys=True
+        ).encode("utf-8")).hexdigest()[:12]
+    except Exception as exc:
+        st.error(f"Não foi possível carregar os grupos cadastrados para exportação: {exc}")
+        return
+    excel_token = token + "_" + group_token
     with st.expander(title, expanded=include_history):
         columns = st.columns(2) if include_history else [st.container()]
         with columns[0]:
             st.markdown("**EXCEL DO PERÍODO**" if include_history else "**EXCEL DOS REGISTROS FILTRADOS**")
-            st.caption(f"{count(len(frame))} registros · inclui os detalhamentos e a AE original.")
+            st.caption(
+                f"{count(len(frame))} registros · Grupos e TES (expansíveis) · "
+                "Por OP (baixas expansíveis) · Movimentações (mesmas colunas da tela)."
+            )
             if st.button("PREPARAR EXCEL DO RECORTE", key="fm_mov_prepare_excel"):
-                with st.spinner("Preparando o Excel com os registros do recorte..."):
-                    st.session_state.fm_mov_excel = (token, mv.export_excel(frame))
+                with st.spinner("Preparando Excel com grupos, OPs e movimentações..."):
+                    st.session_state.fm_mov_excel = (
+                        excel_token, mv.export_excel(frame, group_config=group_config)
+                    )
             prepared = st.session_state.get("fm_mov_excel")
-            if prepared and prepared[0] == token:
-                st.download_button("BAIXAR EXCEL DO RECORTE", prepared[1], file_name="Analise_Movimentacoes.xlsx",
-                                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="fm_mov_download_excel")
+            if prepared and prepared[0] == excel_token:
+                st.download_button("BAIXAR EXCEL DO RECORTE", prepared[1],
+                                   file_name="KARDEX_SETTA_Grupos_OP_Movimentacoes.xlsx",
+                                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                   key="fm_mov_download_excel")
         if include_history:
             with columns[1]:
                 st.markdown("**BASE HISTÓRICA COMPLETA**")
