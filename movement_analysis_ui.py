@@ -20,7 +20,7 @@ AREA_LABELS = {"Visão geral": "Resumo", "Por OP": "Consulta por OP", "Movimenta
 FILTER_AREAS = {"TES e descrições": "tes", "Por OP": "ops", "Movimentações": "ledger"}
 FILTER_FIELDS = {"tes": "TES", "search": "Busca", "op": "OP", "cc": "CC / CR", "categories": "Tipo"}
 MONEY_COLUMNS = {"valor_entrada": "Entrada (R$)", "valor_saida": "Saída (R$)", "liquido_valor": "Variação (R$)"}
-NAMES = {"tes": "TES", "descricao_tes": "Descrição TES (Protheus)",
+NAMES = {"tes": "TES", "descricao_tes": "Descrição TES", "tipo_tm": "Tipo de TM",
          "lancamentos": "Movimentos", "produtos": "Produtos", "tes_distintas": "TES distintas", "competencia": "Competência",
          "op_identificada": "OP", "documentos": "Documentos", "primeira_data": "Primeiro movimento", "ultima_data": "Último movimento",
          "enderecamentos": "Movimentos de endereço", **MONEY_COLUMNS}
@@ -450,6 +450,10 @@ def _context(frame, imports, coverage=None):
 def _tes_summary(frame) -> pd.DataFrame:
     """Uma linha por TES e descrição, sem agrupamentos subjetivos."""
     result = mv.summarize(frame, ["tes", "descricao_tes"])
+    confirmed = mv.rules()["tes"]
+    result["tipo_tm"] = result["tes"].map(
+        lambda code: confirmed.get(code, {}).get("tipo_tm") or "NI"
+    )
     return result.sort_values(["tes", "descricao_tes"], kind="stable").reset_index(drop=True)
 
 
@@ -461,7 +465,7 @@ def _tes_table(frame, token):
     key = "fm_mov_tes_table_" + token
     codes = summary["tes"].tolist()
     _table(
-        summary[["tes", "descricao_tes", "lancamentos", "produtos",
+        summary[["tes", "tipo_tm", "descricao_tes", "lancamentos", "produtos",
                  "valor_entrada", "valor_saida", "liquido_valor"]],
         key=key, on_select=lambda: _tes_selected(key, codes),
         height=700,
@@ -485,7 +489,7 @@ def _overview(frame, token):
     if unknown:
         st.warning(f"{count(unknown)} movimentações possuem TES sem descrição no cadastro de referência.")
     st.markdown("**MOVIMENTAÇÕES AGRUPADAS POR TES**")
-    st.caption("Os grupos gerenciais anteriores estão desativados; o código e a descrição do cadastro são as únicas chaves.")
+    st.caption("Os registros são agrupados por código TES e descrição. O tipo TM é apenas informativo.")
     _tes_table(frame, token + "_overview")
     with st.expander("EVOLUÇÃO MENSAL DO PERÍODO"):
         monthly = mv.summarize(frame, ["competencia"]).sort_values("competencia")
@@ -493,7 +497,7 @@ def _overview(frame, token):
 
 
 def _tes(frame, token):
-    st.caption("Uma linha por TES. As descrições seguem exatamente o cadastro Protheus, sem regras por produto, OP ou CC.")
+    st.caption("TES e descrição do cadastro de referência; os sete tipos TM informados são apenas metadados, sem regras por produto, OP ou CC.")
     _tes_table(frame, token)
 
 
@@ -521,6 +525,7 @@ def _detail(row):
         st.write("**DATA:** " + date.fromisoformat(row["data"]).strftime("%d/%m/%Y"))
         st.write("**TES:** " + row["tes"])
         st.write("**DESCRIÇÃO TES:** " + row["descricao_tes"])
+        st.write("**TIPO DE TM:** " + row.get("tipo_tm", "NI"))
         st.write("**DOCUMENTO:** " + row["documento"])
     with b:
         st.write("**ARMAZÉM:** " + row["armazem"])
@@ -554,7 +559,8 @@ def _ledger(frame, token):
     shown = pd.DataFrame({"Data": pd.to_datetime(visible["data"]).dt.date, "Código": visible["codigo"], "Produto": visible["descricao"],
                           "Armazém": visible["armazem"], "TES": visible["tes"], "Entrada (R$)": visible["valor_entrada"],
                           "Saída (R$)": visible["valor_saida"], "AE original": visible["ae_original"],
-                          "Descrição TES": visible["descricao_tes"], "Tipo": visible["tipo"],
+                          "Descrição TES": visible["descricao_tes"], "Tipo de TM": visible["tipo_tm"],
+                          "Tipo do material": visible["tipo"],
                           "Documento": visible["documento"]})
     key = f"fm_mov_ledger_{token}_{page}_{size}"
     event = st.dataframe(shown, key=key, hide_index=True, width="stretch", height=600,
@@ -570,32 +576,36 @@ def _ledger(frame, token):
 
 def _catalog(frame):
     """Cadastro de referência independente do recorte; nenhuma regra gerencial."""
-    reference = mv.tes_reference()
+    catalog = mv.rules()["tes"]
     counts = frame.groupby("tes", sort=False).size().to_dict()
     rows = [
         {
-            "TES": code, "Descrição no cadastro Protheus": description,
+            "TES": code,
+            "Tipo de TM": fields.get("tipo_tm") or "NI",
+            "Descrição TES": fields["descricao"],
             "Movimentos no recorte": int(counts.get(code, 0)),
         }
-        for code, description in reference.items()
+        for code, fields in catalog.items()
     ]
-    unknown = sorted(set(counts) - set(reference))
+    unknown = sorted(set(counts) - set(catalog))
     rows.extend({
         "TES": code,
-        "Descrição no cadastro Protheus": "NI - TES não localizada no cadastro",
+        "Tipo de TM": "NI",
+        "Descrição TES": "NI - TES não localizada no cadastro",
         "Movimentos no recorte": int(counts[code]),
     } for code in unknown)
     st.caption(
-        f"{count(len(reference))} TES cadastradas no arquivo de referência · "
-        f"{count(len(unknown))} códigos presentes no recorte sem correspondência. "
-        "A descrição não define automaticamente grupo ou condição."
+        f"{count(len(catalog))} TES no cadastro de referência · "
+        f"{count(len(mv.tes_confirmed()))} códigos com tipo TM informado · "
+        f"{count(len(unknown))} códigos movimentados sem correspondência. "
+        "Tipo de TM é um atributo cadastral, não um grupo gerencial."
     )
     st.dataframe(
         pd.DataFrame(rows).sort_values("TES", kind="stable"),
         hide_index=True, width="stretch", height=600,
         column_config={
             "TES": st.column_config.TextColumn(width="small"),
-            "Descrição no cadastro Protheus": st.column_config.TextColumn(width="large"),
+            "Descrição TES": st.column_config.TextColumn(width="large"),
         },
     )
     st.caption(
@@ -657,7 +667,7 @@ def render_results(model, imports):
         "TES e descrições": ("02 · TES", "MOVIMENTAÇÕES POR TES", "Uma linha por código e descrição do cadastro Protheus. Selecione para consultar os lançamentos."),
         "Por OP": ("03 · ORDENS DE PRODUÇÃO", "CONSULTA POR OP", "Localize OPs por sua identificação original e consulte os documentos vinculados."),
         "Movimentações": ("04 · REGISTROS", "MOVIMENTAÇÕES ORIGINAIS", "Consulte as informações do KARDEX sem classificação gerencial ou exclusões automáticas."),
-        "Cadastro TES": ("05 · CADASTRO", "CATÁLOGO DE TES", "Descrições do cadastro Protheus, sem grupos e condições atribuídos."),
+        "Cadastro TES": ("05 · CADASTRO", "CATÁLOGO DE TES", "TES, descrições e tipos de movimentação confirmados, sem grupos gerenciais."),
         "Fontes e relatórios": ("06 · FONTES E RELATÓRIOS", "HISTÓRICO, IMPORTAÇÃO E EXPORTAÇÃO", "Registros originais, histórico de importações e relatórios por TES."),
     }
     band(*headers[area])
