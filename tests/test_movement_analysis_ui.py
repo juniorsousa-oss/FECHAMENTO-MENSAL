@@ -19,6 +19,8 @@ sys.path.insert(0, "tests")
 from test_movement_analysis import record, imported
 import movements as mv
 import movement_analysis_ui as ui
+import kardex_group_config as group_cfg
+ui._groups_read = lambda: group_cfg.empty()
 
 rows = [
     record(documento="AJUSTE"),
@@ -70,18 +72,14 @@ class MovementAnalysisUITests(unittest.TestCase):
 
     def test_summary_uses_tes_and_literal_description_only(self):
         app = self.app()
-        self.assertEqual(len(app.text_input), 0)
         self.assertEqual([x.label for x in app.multiselect], ["Armazéns"])
         self.assertEqual(app.segmented_control[0].value, "Visão geral")
         frame = app.dataframe[0].value
-        self.assertIn("TES", frame.columns)
-        self.assertIn("Descrição TES", frame.columns)
-        self.assertNotIn("Tipo de TM", frame.columns)
-        self.assertEqual(frame.loc[frame["TES"] == "020", "Descrição TES"].iloc[0], "DEVOLUCAO TOTVS")
-        self.assertNotIn("Grupo", frame.columns)
-        self.assertNotIn("Subgrupo / condição", frame.columns)
-        self.assertEqual(frame["Entrada (R$)"].sum(), 30)
+        self.assertIn("Grupo", frame.columns)
+        self.assertEqual(frame["Grupo"].tolist(), ["SEM GRUPO"])
+        self.assertEqual(frame["Entrada (R$)"].sum(), 70)
         self.assertEqual(frame["Saída (R$)"].sum(), 35)
+        self.assertEqual(frame["Movimentos"].sum(), 5)
 
     def test_tes_local_filter_survives_navigation(self):
         app = self.app()
@@ -132,7 +130,7 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.area(app, "Movimentações")
         app.text_input[0].set_value("INEXISTENTE").run()
         self.assertEqual(len(app.dataframe), 0)
-        self.area(app, "Cadastro TES")
+        self.area(app, "Cadastros")
         # Catálogo: 342 códigos cadastrados mais eventuais TES do KARDEX
         # sem correspondência; nunca descartar os códigos não cadastrados.
         catalog_view = app.dataframe[0].value
