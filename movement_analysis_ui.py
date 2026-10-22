@@ -274,6 +274,11 @@ def _consultation_filters(frame, area):
     return _apply_filters(frame, values)
 
 
+def _grid_height(rows: int, limit: int = 600) -> int:
+    """Altura proporcional às linhas efetivas; não renderiza linhas fantasmas."""
+    return min(limit, max(72, 39 + 35 * int(rows)))
+
+
 def _table(data: pd.DataFrame, key=None, on_select=None, height=600):
     shown = _display_dates(data.rename(columns=NAMES))
     fmt = {label: cash for label in MONEY_COLUMNS.values() if label in shown.columns}
@@ -282,7 +287,19 @@ def _table(data: pd.DataFrame, key=None, on_select=None, height=600):
     if on_select:
         args.update(on_select=on_select, selection_mode="single-row")
     return st.dataframe(styled, hide_index=True, width="stretch",
-                        height=min(height, max(120, 77 + 35*min(len(shown), 100))), **args)
+                        height=_grid_height(len(shown), height), **args)
+
+
+def _picked_index(event, length: int):
+    """Seleciona uma única linha; ignora seleções inválidas ou removidas."""
+    if not event:
+        return None
+    selection = event.get("selection", {}) or {}
+    rows = selection.get("rows", []) or []
+    if not rows:
+        return None
+    index = int(rows[0])
+    return index if 0 <= index < length else None
 
 
 def _view_token(frame, extra=""):
@@ -512,6 +529,49 @@ def _tes_table(frame, token, config=None):
     st.caption("Cada movimentação pertence somente ao primeiro subgrupo atendido pela fila de condições.")
 
 
+def _overview_movements(selected: pd.DataFrame, token: str) -> None:
+    """Quarta etapa da consulta: só os movimentos da TES e subgrupo selecionados."""
+    ordered = selected.sort_values(
+        ["data", "codigo", "linha_origem", "id_registro"],
+        ascending=[False, True, True, True], kind="stable",
+    )
+    st.markdown("**04 · MOVIMENTAÇÕES DA TES**")
+    st.caption(f"{count(len(ordered))} movimentações da TES selecionada neste subgrupo. "
+               "Selecione um registro para consultar suas evidências.")
+    size = 100
+    pages = max(1, math.ceil(len(ordered) / size))
+    if pages > 1:
+        page = st.number_input("Página das movimentações", min_value=1, max_value=pages,
+                               value=1, step=1, key="fm_mov_overview_page_" + token)
+    else:
+        page = 1
+    visible = ordered.iloc[(page - 1) * size:page * size]
+    shown = pd.DataFrame({
+        "Data": pd.to_datetime(visible["data"]).dt.date,
+        "Código": visible["codigo"], "Produto": visible["descricao"],
+        "Armazém": visible["armazem"], "TES": visible["tes"],
+        "Grupo": visible["grupo_usuario"], "Subgrupo": visible["subgrupo_usuario"],
+        "Entrada (R$)": visible["valor_entrada"], "Saída (R$)": visible["valor_saida"],
+        "AE original": visible["ae_original"], "Descrição TES": visible["descricao_tes"],
+        "Tipo do material": visible["tipo"], "Documento": visible["documento"],
+    })
+    event = st.dataframe(
+        shown, hide_index=True, width="stretch",
+        height=_grid_height(len(visible), 630),
+        key=f"fm_mov_overview_mov_{token}_{page}",
+        on_select="rerun", selection_mode="single-row",
+        column_config={
+            "Data": st.column_config.DateColumn(format="DD/MM/YYYY"),
+            "Entrada (R$)": st.column_config.NumberColumn(format="%.2f"),
+            "Saída (R$)": st.column_config.NumberColumn(format="%.2f"),
+        },
+    )
+    position = _picked_index(event, len(visible))
+    if position is not None:
+        with st.expander("DETALHAMENTO DO REGISTRO", expanded=True):
+            _detail(visible.iloc[position])
+
+
 def _overview(frame, token):
     cards([
         ("ENTRADAS DO KARDEX", cash(frame["valor_entrada"].sum())),
@@ -527,30 +587,68 @@ def _overview(frame, token):
     )
     if unknown:
         st.warning(f"{count(unknown)} movimentações possuem TES sem descrição no cadastro de referência.")
-    st.markdown("**MOVIMENTAÇÕES POR GRUPO DE TES**")
+    st.markdown("**01 · MOVIMENTAÇÕES POR GRUPO DE TES**")
+    st.caption("Selecione o checkbox de um grupo para consultar seus subgrupos, TES e movimentações, sem sair do Resumo.")
     try:
         config = _groups_read()
     except Exception as exc:
-        st.warning(f"Não foi possível consultar o cadastro de grupos: {exc}. Os registros por TES permanecem disponíveis.")
-        _tes_table(frame, token + "_overview")
+        st.error(f"Não foi possível carregar os grupos cadastrados: {exc}")
         return
     classified = conditions.classify(frame, config)
     summary = mv.summarize(classified, ["grupo_usuario"]).rename(columns={"grupo_usuario": "Grupo"})
-    if not summary.empty:
-        _table(summary[["Grupo", "tes_distintas", "lancamentos", "produtos",
-                        "valor_entrada", "valor_saida", "liquido_valor"]], height=600)
-    with st.expander("SUBGRUPOS E TES DO GRUPO", expanded=False):
-        labels = summary["Grupo"].tolist() if not summary.empty else []
-        if labels:
-            label = st.selectbox("Grupo", labels, key="fm_mov_group_drill")
-            group_rows = classified.loc[classified["grupo_usuario"] == label]
-            subgroups = mv.summarize(group_rows, ["subgrupo_usuario"])
-            _table(subgroups[["subgrupo_usuario", "lancamentos", "produtos",
-                              "valor_entrada", "valor_saida", "liquido_valor"]])
-            _tes_table(group_rows, token + "_drill_" + label, config)
+    if summary.empty:
+        st.info("Nenhum grupo com movimentações neste período.")
+        return
+
+    groups_table = summary[["Grupo", "tes_distintas", "lancamentos", "produtos",
+                            "valor_entrada", "valor_saida", "liquido_valor"]]
+    group_event = _table(groups_table, key=f"fm_mov_overview_groups_{token}",
+                         on_select="rerun", height=650)
+    group_index = _picked_index(group_event, len(summary))
+    if group_index is None:
+        st.caption("Selecione um grupo acima para carregar os subgrupos.")
+    else:
+        group_name = str(summary.iloc[group_index]["Grupo"])
+        group_rows = classified.loc[classified["grupo_usuario"] == group_name]
+        st.markdown("**02 · SUBGRUPOS DE " + group_name + "**")
+        subgroups = mv.summarize(group_rows, ["subgrupo_usuario"]).rename(
+            columns={"subgrupo_usuario": "Subgrupo"}
+        )
+        sub_event = _table(
+            subgroups[["Subgrupo", "tes_distintas", "lancamentos", "produtos",
+                       "valor_entrada", "valor_saida", "liquido_valor"]],
+            key=f"fm_mov_overview_subgroups_{token}_{group_index}",
+            on_select="rerun", height=650,
+        )
+        sub_index = _picked_index(sub_event, len(subgroups))
+        if sub_index is None:
+            st.caption("Selecione um subgrupo para consultar suas TES.")
+        else:
+            sub_name = str(subgroups.iloc[sub_index]["Subgrupo"])
+            sub_rows = group_rows.loc[group_rows["subgrupo_usuario"] == sub_name]
+            st.markdown("**03 · TES DO SUBGRUPO " + sub_name + "**")
+            tes_summary = mv.summarize(sub_rows, ["tes", "descricao_tes"]).sort_values(
+                ["tes", "descricao_tes"], kind="stable"
+            ).reset_index(drop=True)
+            tes_event = _table(
+                tes_summary[["tes", "descricao_tes", "lancamentos", "produtos",
+                             "valor_entrada", "valor_saida", "liquido_valor"]],
+                key=f"fm_mov_overview_tes_{token}_{group_index}_{sub_index}",
+                on_select="rerun", height=650,
+            )
+            tes_index = _picked_index(tes_event, len(tes_summary))
+            if tes_index is None:
+                st.caption("Selecione uma TES para carregar seus lançamentos.")
+            else:
+                chosen_tes = str(tes_summary.iloc[tes_index]["tes"])
+                selected = sub_rows.loc[sub_rows["tes"] == chosen_tes]
+                _overview_movements(
+                    selected, f"{token}_{group_index}_{sub_index}_{tes_index}"
+                )
     with st.expander("EVOLUÇÃO MENSAL DO PERÍODO"):
         monthly = mv.summarize(frame, ["competencia"]).sort_values("competencia")
-        _table(monthly[["competencia", "lancamentos", "valor_entrada", "valor_saida", "liquido_valor"]])
+        _table(monthly[["competencia", "lancamentos", "valor_entrada",
+                        "valor_saida", "liquido_valor"]])
 
 
 def _tes(frame, token):
@@ -632,7 +730,8 @@ def _ledger(frame, token):
                           "Descrição TES": visible["descricao_tes"], "Tipo do material": visible["tipo"],
                           "Documento": visible["documento"]})
     key = f"fm_mov_ledger_{token}_{page}_{size}"
-    event = st.dataframe(shown, key=key, hide_index=True, width="stretch", height=600,
+    event = st.dataframe(shown, key=key, hide_index=True, width="stretch",
+                         height=_grid_height(len(visible), 600),
                          on_select="rerun", selection_mode="single-row",
                          column_config={"Data": st.column_config.DateColumn(format="DD/MM/YYYY"),
                                         "Entrada (R$)": st.column_config.NumberColumn(format="%.2f"),
@@ -802,7 +901,8 @@ def _catalog(frame):
                          "Grupo": groups.group_owner(config).get(code, groups.UNASSIGNED),
                          "Movimentos": int(movements_by_code.get(code, 0))})
         st.dataframe(pd.DataFrame(rows).sort_values("TES", kind="stable"),
-                     hide_index=True, width="stretch", height=550)
+                     hide_index=True, width="stretch",
+                     height=_grid_height(len(rows), 550))
 
 def _exports(frame, model, token, *, include_history=True):
     title = "EXPORTAR RELATÓRIOS" if include_history else "EXPORTAR REGISTROS DESTA CONSULTA"
