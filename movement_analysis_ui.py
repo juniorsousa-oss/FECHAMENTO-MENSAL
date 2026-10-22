@@ -317,7 +317,7 @@ def _import_controls(imports, model=None):
                 if model is not None and not model["frame"].empty:
                     replaced = sum((r.data[:7], r.armazem) in scopes for r in model["frame"].itertuples())
                 preview.append({"Arquivo": file.name, "Armazéns": ", ".join(item["meta"]["armazens"]),
-                                "Meses substituídos": ", ".join(m[5:] + "/" + m[:4] for m in item["meta"]["competencias"]),
+                                "Competências abrangidas": ", ".join(m[5:] + "/" + m[:4] for m in item["meta"]["competencias"]),
                                 "Dados até": end.strftime("%d/%m/%Y"), "Novos registros": len(item["rows"]),
                                 "Registros atuais no recorte": replaced})
             history.validate_batch(parsed)
@@ -355,7 +355,8 @@ def _warehouse_registry_overview(model) -> pd.DataFrame:
     frame = model.get("frame", pd.DataFrame())
     coverage = model.get("coverage_metas") or []
     current = {str(item["armazem"]) for item in coverage}
-    current.update(str(value) for value in frame["armazem"].unique() if value) if not frame.empty else None
+    if not frame.empty:
+        current.update(str(value) for value in frame["armazem"].unique() if value)
     expected = {"S2", "EP", "20", "E2"}
     order = {"S2": 0, "EP": 1, "20": 2, "E2": 3}
     result = []
