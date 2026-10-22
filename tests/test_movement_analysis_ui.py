@@ -72,6 +72,8 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.area(app, "Movimentações")
         ledger = app.dataframe[0].value
         self.assertTrue(ledger["Data"].notna().all())
+        self.assertIn("Grupo", ledger.columns)
+        self.assertIn("Subgrupo", ledger.columns)
 
     def test_warehouse_registry_remains_accessible(self):
         from test_movement_analysis import imported, record
@@ -186,6 +188,16 @@ class MovementAnalysisUITests(unittest.TestCase):
         next(x for x in app.selectbox if x.label == "Competência analisada").set_value("2026-09").run()
         self.assertEqual(app.dataframe[0].value["Entrada (R$)"].sum(), 40)
 
+    def test_conditions_priority_visible_in_cadastros(self):
+        app = self.app()
+        self.area(app, "Cadastros")
+        self.assertFalse(app.exception)
+        values = [item.value for item in app.markdown]
+        self.assertTrue(any("CONDIÇÕES E SUBGRUPOS" in value for value in values))
+        self.assertTrue(any("PRODUÇÃO INTERNA" in value for value in values))
+        self.assertTrue(any("CONSUMO OP" in value for value in values))
+        self.assertTrue(any("ADEQUAÇÃO DE CUSTO" in value for value in values))
+
     def test_excel_of_filtered_op_preserves_ae(self):
         app = self.app()
         app.session_state["_test_action"] = "op"
@@ -195,8 +207,10 @@ class MovementAnalysisUITests(unittest.TestCase):
         wb = openpyxl.load_workbook(io.BytesIO(app.session_state["fm_mov_excel"][1]), read_only=True)
         self.assertEqual(wb.sheetnames, ["Grupos e TES", "Por OP", "Movimentações"])
         self.assertEqual(wb["Movimentações"]["F1"].value, "Grupo")
+        self.assertEqual(wb["Movimentações"]["G1"].value, "Subgrupo")
         self.assertEqual(wb["Movimentações"]["F2"].value, "SEM GRUPO")
-        self.assertEqual(wb["Movimentações"]["I2"].value, " OP00001234567 ")
+        self.assertEqual(wb["Movimentações"]["G2"].value, "CONSUMO OP")
+        self.assertEqual(wb["Movimentações"]["J2"].value, " OP00001234567 ")
         self.assertEqual(len(list(wb["Movimentações"].iter_rows(values_only=True))), 2)
         self.assertEqual(wb["Por OP"]["A2"].value, "OP00001234567")
         self.assertEqual(wb["Grupos e TES"]["A2"].value, "SEM GRUPO")
