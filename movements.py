@@ -456,7 +456,7 @@ def summarize_ops(frame: pd.DataFrame) -> pd.DataFrame:
 EXPORT_HEADERS = ["Código", "Produto", "UM", "Descrição TES", "TES", "CF original", "Armazém", "Data", "Documento",
                   "Quantidade entrada", "Valor entrada", "Quantidade saída", "Valor saída", "Tipo vínculo AE", "Arquivo origem",
                   "Linha origem", "Endereço", "Grupo do arquivo", "Posição IPI", "Tipo do material", "CC", "Saldo após movimento",
-                  "", "", "", "", "", "", "", "", "AE original"]
+                  "Tipo de TM", "", "", "", "", "", "", "", "AE original"]
 
 
 def ledger_export(frame: pd.DataFrame) -> pd.DataFrame:
@@ -470,9 +470,10 @@ def ledger_export(frame: pd.DataFrame) -> pd.DataFrame:
         "Arquivo origem": frame["arquivo_origem"], "Linha origem": frame["linha_origem"], "Endereço": frame["endereco_relatorio"],
         "Grupo do arquivo": frame["grupo"], "Posição IPI": frame["posicao_ipi"], "Tipo do material": frame["tipo"],
         "CC": frame["cc_identificado"], "Saldo após movimento": frame["saldo_pos_lancamento"],
+        "Tipo de TM": frame["tipo_tm"],
     }
     result = pd.DataFrame(data)
-    for i in range(8):
+    for i in range(7):
         result[f"_reserva_{i}"] = ""
     result["AE original"] = frame["ae_original"]
     result.columns = EXPORT_HEADERS
@@ -493,7 +494,10 @@ def export_excel(frame: pd.DataFrame) -> bytes:
             op_summary[key] = pd.to_datetime(op_summary[key]).dt.date
     detail = summarize(active, ["tes", "descricao_tes"])
     detail = detail.drop(columns="tes_distintas")
-    names = {"tes": "TES", "descricao_tes": "Descrição TES",
+    detail.insert(1, "tipo_tm", detail["tes"].map(
+        lambda code: rules()["tes"].get(code, {}).get("tipo_tm") or "NI"
+    ))
+    names = {"tes": "TES", "tipo_tm": "Tipo de TM", "descricao_tes": "Descrição TES",
              "lancamentos": "Movimentos", "produtos": "Produtos", "tes_distintas": "TES distintas", "competencia": "Competência",
              "valor_entrada": "Entrada (R$)", "valor_saida": "Saída (R$)", "liquido_valor": "Variação (R$)",
              "op_identificada": "OP", "documentos": "Documentos", "primeira_data": "Primeiro movimento", "ultima_data": "Último movimento",
@@ -517,7 +521,8 @@ def export_excel(frame: pd.DataFrame) -> bytes:
             sheet.column_dimensions["R"].width = 48
             sheet.column_dimensions["S"].width = 40
             sheet.column_dimensions["AE"].width = 24
-            for i in range(23, 31):
+            sheet.column_dimensions["W"].width = 20
+            for i in range(24, 31):
                 sheet.column_dimensions[get_column_letter(i)].hidden = True
         header = []
         for col in data.columns:
