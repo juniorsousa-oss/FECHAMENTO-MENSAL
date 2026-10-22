@@ -15,13 +15,12 @@ import movement_store as store
 import movements as mv
 import kardex_history as history
 
-AREAS = ["Visão geral", "Grupos e TES", "Por OP", "Movimentações", "Classificação", "Fontes e relatórios"]
-AREA_LABELS = {"Visão geral": "Resumo", "Por OP": "Consulta por OP", "Movimentações": "Registros"}
-FILTER_AREAS = {"Grupos e TES": "groups", "Por OP": "ops", "Movimentações": "ledger"}
-FILTER_FIELDS = {"groups": "Grupo", "tes": "TES", "subgroups": "Condição", "search": "Busca",
-                 "op": "OP", "cc": "CC / CR", "categories": "Categoria"}
+AREAS = ["Visão geral", "TES e descrições", "Por OP", "Movimentações", "Cadastro TES", "Fontes e relatórios"]
+AREA_LABELS = {"Visão geral": "Resumo", "Por OP": "Consulta por OP", "Movimentações": "Registros", "TES e descrições": "TES"}
+FILTER_AREAS = {"TES e descrições": "tes", "Por OP": "ops", "Movimentações": "ledger"}
+FILTER_FIELDS = {"tes": "TES", "search": "Busca", "op": "OP", "cc": "CC / CR", "categories": "Tipo"}
 MONEY_COLUMNS = {"valor_entrada": "Entrada (R$)", "valor_saida": "Saída (R$)", "liquido_valor": "Variação (R$)"}
-NAMES = {"grupo_analise": "Grupo", "subgrupo_analise": "Subgrupo / condição", "tes": "TES", "descricao_tes": "Descrição principal",
+NAMES = {"tes": "TES", "descricao_tes": "Descrição TES (Protheus)",
          "lancamentos": "Movimentos", "produtos": "Produtos", "tes_distintas": "TES distintas", "competencia": "Competência",
          "op_identificada": "OP", "documentos": "Documentos", "primeira_data": "Primeiro movimento", "ultima_data": "Último movimento",
          "enderecamentos": "Movimentos de endereço", **MONEY_COLUMNS}
@@ -86,21 +85,11 @@ def _selected(key):
     return int(rows[0]) if rows else None
 
 
-def _group_selected(key, names):
-    position = _selected(key)
-    if position is None or position >= len(names):
-        return
-    _set_filters("Grupos e TES", {"groups": [names[position]]})
-    st.session_state.fm_mov_area = "Grupos e TES"
-
-
 def _tes_selected(key, values):
     position = _selected(key)
     if position is None or position >= len(values):
         return
-    group, tes, subgroup = values[position]
-    _open_records({"groups": [group], "tes": [tes], "subgroups": [subgroup]}, "Grupos e TES")
-
+    _open_records({"tes": [values[position]]}, "TES e descrições")
 
 def _op_selected(key, values):
     position = _selected(key)
@@ -110,7 +99,7 @@ def _op_selected(key, values):
 
 
 def _defaults():
-    return {"groups": [], "tes": [], "subgroups": [], "categories": [], "search": "", "op": "", "cc": ""}
+    return {"tes": [], "categories": [], "search": "", "op": "", "cc": ""}
 
 
 def _filter_key(area, field):
@@ -165,16 +154,6 @@ def _clear_filters(area):
         st.session_state.pop("fm_mov_record_origin", None)
 
 
-def _adjustments():
-    _set_filters("Grupos e TES", {"groups": [mv.ADJUSTMENT]})
-    st.session_state.fm_mov_area = "Grupos e TES"
-
-
-def _all_groups():
-    _set_filters("Grupos e TES", {})
-    st.session_state.fm_mov_area = "Grupos e TES"
-
-
 def _multiselect(label, options, key, format_func=None):
     if key in st.session_state:
         valid = [v for v in st.session_state[key] if v in options]
@@ -204,8 +183,7 @@ def _local_input(area, field, label, *, options=None, placeholder=None):
 
 def _apply_filters(frame, values):
     view = frame
-    for field, column in (("groups", "grupo_analise"), ("tes", "tes"),
-                          ("subgroups", "subgrupo_analise"), ("categories", "tipo")):
+    for field, column in (("tes", "tes"), ("categories", "tipo")):
         if values.get(field):
             view = view.loc[view[column].isin(values[field])]
     search = mv.normalized(values.get("search", ""))
@@ -219,13 +197,13 @@ def _apply_filters(frame, values):
 
 
 def _consultation_filters(frame, area):
-    if area == "Grupos e TES":
-        a, b = st.columns(2)
+    if area == "TES e descrições":
+        a, b = st.columns([1.25, 2])
         with a:
-            groups = _local_input(area, "groups", "Grupo de análise", options=sorted(frame["grupo_analise"].unique()))
+            _local_input(area, "tes", "Códigos TES", options=sorted(frame["tes"].unique()))
         with b:
-            options = frame.loc[frame["grupo_analise"].isin(groups)] if groups else frame
-            _local_input(area, "tes", "TES", options=sorted(options["tes"].unique()))
+            _local_input(area, "search", "Localizar movimentação",
+                         placeholder="Produto, documento, descrição ou OP")
     elif area == "Por OP":
         _local_input(area, "search", "Buscar OP ou material", placeholder="Número da OP, código ou descrição do produto")
     else:
@@ -235,11 +213,9 @@ def _consultation_filters(frame, area):
         with st.expander(title):
             a, b, c = st.columns(3)
             with a:
-                _local_input(area, "groups", "Grupo de análise", options=sorted(frame["grupo_analise"].unique()))
-                _local_input(area, "subgroups", "Subgrupo / condição", options=sorted(frame["subgrupo_analise"].unique()))
+                _local_input(area, "tes", "Códigos TES", options=sorted(frame["tes"].unique()))
             with b:
-                _local_input(area, "tes", "TES", options=sorted(frame["tes"].unique()))
-                _local_input(area, "categories", "Categoria do produto", options=sorted(frame["tipo"].unique()))
+                _local_input(area, "categories", "Tipo do material", options=sorted(frame["tipo"].unique()))
             with c:
                 _local_input(area, "op", "OP", placeholder="OP ou número completo/parcial")
                 _local_input(area, "cc", "CC / CR", placeholder="Ex.: 600307")
