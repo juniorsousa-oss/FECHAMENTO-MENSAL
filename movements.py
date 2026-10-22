@@ -473,78 +473,205 @@ def ledger_export(frame: pd.DataFrame) -> pd.DataFrame:
     return result.reset_index(drop=True)
 
 
-def export_excel(frame: pd.DataFrame) -> bytes:
-    """Application export: native numeric dates and text identifiers, including physical AE."""
+def export_excel(frame: pd.DataFrame, group_config: dict | None = None) -> bytes:
+    """Exportação SETTA: Grupos > TES, OPs > baixas e registros como na tela.
+
+    As linhas detalhadas são recolhidas pelo agrupamento nativo do Excel.
+    A geração é streaming para suportar o histórico completo do KARDEX.
+    Não altera registros nem presume TES como baixa: utiliza saída real.
+    """
     from openpyxl import Workbook
     from openpyxl.cell import WriteOnlyCell
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
-    wb = Workbook(write_only=True)
+    import kardex_group_config as gc
+
+    config = gc.validated(group_config if group_config is not None else gc.empty())
+    owner = gc.group_owner(config)
     active = effective(frame)
-    op_summary = summarize_ops(frame)
-    for key in ("primeira_data", "ultima_data"):
-        if key in op_summary.columns:
-            op_summary[key] = pd.to_datetime(op_summary[key]).dt.date
-    detail = summarize(active, ["tes", "descricao_tes"])
-    detail = detail.drop(columns="tes_distintas")
-    monthly = summarize(active, ["competencia"])
-    if not monthly.empty:
-        monthly["competencia"] = monthly["competencia"].map(
-            lambda month: month[5:7] + "/" + month[:4]
-        )
-    names = {"tes": "TES", "descricao_tes": "Descrição TES",
-             "lancamentos": "Movimentos", "produtos": "Produtos", "tes_distintas": "TES distintas", "competencia": "Competência",
-             "valor_entrada": "Entrada (R$)", "valor_saida": "Saída (R$)", "liquido_valor": "Variação (R$)",
-             "op_identificada": "OP", "documentos": "Documentos", "primeira_data": "Primeiro movimento", "ultima_data": "Último movimento",
-             "enderecamentos": "Movimentos de endereço", "regra_classificacao": "Regra"}
-    sections = [
-        ("Por TES", detail),
-        ("Mensal", monthly),
-        ("Por OP", op_summary),
-        ("Movimentações", ledger_export(frame)),
-    ]
-    for name, data in sections:
-        if name != "Movimentações":
-            data = data.rename(columns=names)
+    wb = Workbook(write_only=True)
+    title_color = "111827"
+    group_color = "E9EFF8"
+    detail_color = "F8FAFC"
+    total_color = "D9E6F5"
+    money_format = '#,##0.00;[Red](#,##0.00)'
+    quantity_format = '#,##0.000###;[Red](#,##0.000###)'
+    counters = {}
+
+    def start_sheet(name: str, headers: list[str], widths: list[int], *, outline: bool = False):
         sheet = wb.create_sheet(name)
+        counters[name] = 0
         sheet.freeze_panes = "B2"
-        for i, col in enumerate(data.columns, 1):
-            sheet.column_dimensions[get_column_letter(i)].width = 18 if i > 1 else 24
-        if name == "Movimentações":
-            sheet.column_dimensions["B"].width = 65
-            sheet.column_dimensions["D"].width = 30
-            sheet.column_dimensions["R"].width = 48
-            sheet.column_dimensions["S"].width = 40
-            sheet.column_dimensions["AE"].width = 24
-            for i in range(23, 31):
-                sheet.column_dimensions[get_column_letter(i)].hidden = True
-        header = []
-        for col in data.columns:
-            cell = WriteOnlyCell(sheet, str(col)); cell.data_type = "s"
-            cell.fill = PatternFill("solid", fgColor="111827"); cell.font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
-            cell.alignment = Alignment(wrap_text=True, vertical="center")
-            header.append(cell)
-        sheet.append(header); sheet.row_dimensions[1].height = 32
-        for row in data.itertuples(index=False, name=None):
-            cells = []
-            for column_index, item in enumerate(row, 1):
-                if pd.isna(item):
-                    item = None
-                cell = WriteOnlyCell(sheet, item)
-                if isinstance(item, str):
-                    cell.data_type = "s"  # OP/SKU/AE and user text are never interpreted as formulas
-                elif isinstance(item, (date, datetime)):
-                    cell.number_format = "dd/mm/yyyy"
-                elif isinstance(item, float):
-                    cell.number_format = ('#,##0.000###;[Red](#,##0.000###)' if name == "Movimentações" and column_index in (10, 12)
-                                          else '#,##0.00;[Red](#,##0.00)')
-                if name == "Movimentações" and column_index in (2, 4, 18, 19):
-                    cell.alignment = Alignment(wrap_text=True, vertical="top")
-                cells.append(cell)
-            sheet.append(cells)
-        if len(data.columns):
-            sheet.auto_filter.ref = f"A1:{get_column_letter(len(data.columns))}{len(data)+1}"
-    buffer = io.BytesIO(); wb.save(buffer)
+        sheet.sheet_view.showGridLines = False
+        if outline:
+            sheet.sheet_properties.outlinePr.summaryBelow = False
+            sheet.sheet_properties.outlinePr.showSummaryRight = False
+            sheet.sheet_view.showOutlineSymbols = True
+            sheet.sheet_format.outlineLevelRow = 1
+        for index, width in enumerate(widths, 1):
+            sheet.column_dimensions[get_column_letter(index)].width = width
+        write(sheet, headers, style="header")
+        return sheet
+
+    def write(sheet, values, *, style="detail", level=0, collapsed=False,
+              date_cols=(), money_cols=(), quantity_cols=()):
+        counters[sheet.title] += 1
+        number = counters[sheet.title]
+        if level:
+            sheet.row_dimensions[number].outlineLevel = level
+            sheet.row_dimensions[number].hidden = True
+        if collapsed:
+            sheet.row_dimensions[number].collapsed = True
+        if style == "header":
+            sheet.row_dimensions[number].height = 30
+        elif style in ("group", "total"):
+            sheet.row_dimensions[number].height = 24
+        filled = []
+        for index, item in enumerate(values, 1):
+            if item is not None and not isinstance(item, (list, dict)) and pd.isna(item):
+                item = None
+            if index in date_cols and isinstance(item, str) and item:
+                item = date.fromisoformat(item[:10])
+            cell = WriteOnlyCell(sheet, item)
+            if isinstance(item, str):
+                # Never interpret descriptions, product codes or documents as formulas.
+                cell.data_type = "s"
+            cell.font = Font(
+                name="Arial", size=10,
+                bold=style in ("header", "group", "total"),
+                color="FFFFFF" if style == "header" else title_color,
+            )
+            if style == "header":
+                cell.fill = PatternFill("solid", fgColor=title_color)
+            elif style in ("group", "total"):
+                cell.fill = PatternFill("solid", fgColor=group_color if style == "group" else total_color)
+            elif style == "child":
+                cell.fill = PatternFill("solid", fgColor=detail_color)
+            cell.alignment = Alignment(
+                vertical="center", wrap_text=style == "header",
+                indent=1 if level and index == 1 else 0,
+            )
+            if index in date_cols and isinstance(item, (date, datetime)):
+                cell.number_format = "dd/mm/yyyy"
+            elif index in money_cols and isinstance(item, (int, float, Decimal)):
+                cell.number_format = money_format
+            elif index in quantity_cols and isinstance(item, (int, float, Decimal)):
+                cell.number_format = quantity_format
+            filled.append(cell)
+        sheet.append(filled)
+
+    # 01 — Grupo (linha visível) -> TES (linhas recolhidas).
+    group_headers = ["Grupo / TES", "Descrição TES", "TES distintas", "Movimentos",
+                     "Produtos", "Entrada (R$)", "Saída (R$)", "Variação (R$)"]
+    group_sheet = start_sheet(
+        "Grupos e TES", group_headers, [33, 67, 18, 16, 15, 23, 23, 23], outline=True
+    )
+    if not active.empty:
+        work = active.assign(grupo_excel=active["tes"].map(owner).fillna(gc.UNASSIGNED))
+        main_stats = summarize(work, ["grupo_excel"])
+        tes_stats = summarize(work, ["grupo_excel", "tes", "descricao_tes"])
+        main_lookup = {r["grupo_excel"]: r for r in main_stats.to_dict("records")}
+        tes_lookup = {
+            name: sub.sort_values(["tes", "descricao_tes"], kind="stable")
+            for name, sub in tes_stats.groupby("grupo_excel", sort=False)
+        }
+        order = [g["nome"] for g in config["grupos"]]
+        if gc.UNASSIGNED in main_lookup:
+            order.append(gc.UNASSIGNED)
+        for group_name in order:
+            stat = main_lookup.get(group_name)
+            if stat is None:
+                continue
+            subt = tes_lookup.get(group_name)
+            write(
+                group_sheet,
+                [group_name, "", int(stat["tes_distintas"]), int(stat["lancamentos"]),
+                 int(stat["produtos"]), float(stat["valor_entrada"]),
+                 float(stat["valor_saida"]), float(stat["liquido_valor"])],
+                style="group", collapsed=subt is not None and not subt.empty,
+                money_cols=(6, 7, 8),
+            )
+            if subt is not None:
+                for entry in subt.itertuples(index=False):
+                    write(
+                        group_sheet,
+                        [f"TES {entry.tes}", entry.descricao_tes, 1,
+                         int(entry.lancamentos), int(entry.produtos),
+                         float(entry.valor_entrada), float(entry.valor_saida),
+                         float(entry.liquido_valor)],
+                        style="child", level=1, money_cols=(6, 7, 8),
+                    )
+        write(group_sheet,
+              ["TOTAL GERAL", "", int(active["tes"].nunique()), len(active),
+               int(active["codigo"].nunique()), float(active["valor_entrada"].sum()),
+               float(active["valor_saida"].sum()), float(active["liquido_valor"].sum())],
+              style="total", money_cols=(6, 7, 8))
+
+    # 02 — OP (linha visível) -> todas as saídas reais da OP (linhas recolhidas).
+    op_headers = ["OP / Código", "Descrição / Situação", "TES", "Movimentos",
+                  "Produtos", "Baixas", "Qtd baixada", "UM", "Saída (R$)",
+                  "Data / Período", "Armazém", "Documento", "AE original"]
+    op_sheet = start_sheet("Por OP", op_headers,
+                           [26, 68, 12, 16, 15, 12, 17, 12, 23, 28, 14, 25, 26],
+                           outline=True)
+    op_data = summarize_ops(active)
+    if not op_data.empty:
+        linked = active.loc[active["op_identificada"] != ""]
+        has_saida = (linked["qtd_saida"] != 0) | (linked["valor_saida"] != 0)
+        outgoing = linked.loc[has_saida].sort_values(
+            ["op_identificada", "data", "codigo", "linha_origem", "id_registro"],
+            ascending=[True, False, True, True, True], kind="stable"
+        )
+        detail_by_op = {key: part for key, part in outgoing.groupby("op_identificada", sort=False)}
+        for op in op_data.itertuples(index=False):
+            children = detail_by_op.get(op.op_identificada)
+            quantity_rows = len(children) if children is not None else 0
+            interval = date.fromisoformat(op.primeira_data).strftime("%d/%m/%Y")
+            end_date = date.fromisoformat(op.ultima_data).strftime("%d/%m/%Y")
+            interval = interval if interval == end_date else interval + " a " + end_date
+            write(op_sheet, [
+                op.op_identificada, "TOTAL DA OP", "", int(op.lancamentos),
+                int(op.produtos), quantity_rows, None, "",
+                float(op.valor_saida), interval, "", "", "",
+            ], style="group", collapsed=True, money_cols=(9,))
+            if children is None or children.empty:
+                write(op_sheet, ["", "SEM BAIXAS NO RECORTE", "", "", "", "",
+                                 None, "", 0.0, None, "", "", ""],
+                      style="child", level=1, money_cols=(9,))
+                continue
+            for movement in children.itertuples(index=False):
+                write(op_sheet, [
+                    str(movement.codigo), str(movement.descricao), str(movement.tes),
+                    None, None, None, float(movement.qtd_saida), str(movement.um),
+                    float(movement.valor_saida), movement.data, str(movement.armazem),
+                    str(movement.documento), str(movement.ae_original),
+                ], style="child", level=1, date_cols=(10,), money_cols=(9,),
+                    quantity_cols=(7,))
+
+    # 03 — A mesma seleção e sequência de colunas exibida em KARDEX > Registros.
+    ledger_headers = ["Data", "Código", "Produto", "Armazém", "TES",
+                      "Entrada (R$)", "Saída (R$)", "AE original",
+                      "Descrição TES", "Tipo do material", "Documento"]
+    ledger_sheet = start_sheet(
+        "Movimentações", ledger_headers,
+        [17, 17, 80, 15, 12, 22, 22, 29, 53, 20, 29]
+    )
+    if not active.empty:
+        ordered = active.sort_values(
+            ["data", "codigo", "linha_origem", "id_registro"],
+            ascending=[False, True, True, True], kind="stable"
+        )
+        for row in ordered.itertuples(index=False):
+            write(ledger_sheet, [
+                row.data, str(row.codigo), str(row.descricao),
+                str(row.armazem), str(row.tes), float(row.valor_entrada),
+                float(row.valor_saida), str(row.ae_original), str(row.descricao_tes),
+                str(row.tipo), str(row.documento),
+            ], date_cols=(1,), money_cols=(6, 7))
+    ledger_sheet.auto_filter.ref = f"A1:K{max(counters['Movimentações'], 1)}"
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
     return buffer.getvalue()
 
 
