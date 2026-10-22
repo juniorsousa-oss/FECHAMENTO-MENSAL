@@ -136,9 +136,9 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.assertEqual(self.card_values(app)[0], "R$ 0,00")
         self.assertIn(self.card_values(app)[1], ("R$ 20,00", "R$ 5,00"))
         self.assertFalse(any("Selecione o checkbox de um grupo" in x.value
-                             for x in app.markdown + app.caption))
+                             for x in list(app.markdown) + list(app.caption)))
         self.assertFalse(any("movimentações encontradas." in x.value
-                             for x in app.markdown + app.caption))
+                             for x in list(app.markdown) + list(app.caption)))
         self.assertEqual(app.segmented_control[0].value, "Visão geral")
 
     def test_menu_only_four_areas_and_legacy_session_is_redirected(self):
