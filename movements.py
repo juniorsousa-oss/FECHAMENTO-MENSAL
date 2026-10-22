@@ -431,9 +431,9 @@ def summarize_ops(frame: pd.DataFrame) -> pd.DataFrame:
     ).reset_index().sort_values("valor_saida", ascending=False, kind="stable").reset_index(drop=True)
 
 
-EXPORT_HEADERS = ["Código", "Produto", "UM", "Grupo", "TES", "CF original", "Armazém", "Data", "Documento",
+EXPORT_HEADERS = ["Código", "Produto", "UM", "Descrição TES", "TES", "CF original", "Armazém", "Data", "Documento",
                   "Quantidade entrada", "Valor entrada", "Quantidade saída", "Valor saída", "Tipo vínculo AE", "Arquivo origem",
-                  "Linha origem", "Endereço", "Subgrupo", "Motivo da classificação", "Categoria", "CC", "Material H0001",
+                  "Linha origem", "Endereço", "Grupo do arquivo", "Posição IPI", "Tipo do material", "CC", "Saldo após movimento",
                   "", "", "", "", "", "", "", "", "AE original"]
 
 
@@ -441,13 +441,13 @@ def ledger_export(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return pd.DataFrame(columns=EXPORT_HEADERS)
     data = {
-        "Código": frame["codigo"], "Produto": frame["descricao"], "UM": frame["um"], "Grupo": frame["grupo_analise"],
+        "Código": frame["codigo"], "Produto": frame["descricao"], "UM": frame["um"], "Descrição TES": frame["descricao_tes"],
         "TES": frame["tes"], "CF original": frame["cf"], "Armazém": frame["armazem"], "Data": pd.to_datetime(frame["data"]).dt.date,
         "Documento": frame["documento"], "Quantidade entrada": frame["qtd_entrada"], "Valor entrada": frame["valor_entrada"],
         "Quantidade saída": frame["qtd_saida"], "Valor saída": frame["valor_saida"], "Tipo vínculo AE": frame["tipo_vinculo_ae"],
         "Arquivo origem": frame["arquivo_origem"], "Linha origem": frame["linha_origem"], "Endereço": frame["endereco_relatorio"],
-        "Subgrupo": frame["subgrupo_analise"], "Motivo da classificação": frame["motivo_classificacao"], "Categoria": frame["tipo"],
-        "CC": frame["cc_identificado"], "Material H0001": frame["material_h001"].map({True: "SIM", False: "NÃO"}),
+        "Grupo do arquivo": frame["grupo"], "Posição IPI": frame["posicao_ipi"], "Tipo do material": frame["tipo"],
+        "CC": frame["cc_identificado"], "Saldo após movimento": frame["saldo_pos_lancamento"],
     }
     result = pd.DataFrame(data)
     for i in range(8):
@@ -469,22 +469,18 @@ def export_excel(frame: pd.DataFrame) -> bytes:
     for key in ("primeira_data", "ultima_data"):
         if key in op_summary.columns:
             op_summary[key] = pd.to_datetime(op_summary[key]).dt.date
-    detail = summarize(active, ["tes", "descricao_tes", "grupo_analise", "subgrupo_analise"])
+    detail = summarize(active, ["tes", "descricao_tes"])
     detail = detail.drop(columns="tes_distintas")
-    names = {"grupo_analise": "Grupo", "tes": "TES", "descricao_tes": "Descrição principal", "subgrupo_analise": "Subgrupo / condição",
+    names = {"tes": "TES", "descricao_tes": "Descrição TES",
              "lancamentos": "Movimentos", "produtos": "Produtos", "tes_distintas": "TES distintas", "competencia": "Competência",
              "valor_entrada": "Entrada (R$)", "valor_saida": "Saída (R$)", "liquido_valor": "Variação (R$)",
              "op_identificada": "OP", "documentos": "Documentos", "primeira_data": "Primeiro movimento", "ultima_data": "Último movimento",
              "enderecamentos": "Movimentos de endereço", "regra_classificacao": "Regra"}
-    classification = summarize(active, ["grupo_analise", "subgrupo_analise", "motivo_classificacao"])
-    classification = classification.drop(columns="tes_distintas").rename(columns={"motivo_classificacao": "Motivo da classificação"})
     sections = [
-        ("Por grupo", summarize(active, ["grupo_analise"])),
         ("Por TES", detail),
         ("Mensal", summarize(active, ["competencia"])),
         ("Por OP", op_summary),
         ("Movimentações", ledger_export(frame)),
-        ("Classificação", classification),
     ]
     for name, data in sections:
         if name != "Movimentações":
