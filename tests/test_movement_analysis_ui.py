@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import re
 import sys
 import unittest
 from datetime import date
@@ -38,24 +39,54 @@ model = mv.build_model([pack])
 imports = [{"chave": "synthetic", "meta": {"arquivo_nome": "teste.xlsx", "periodo_inicio": "2026-09-01",
             "periodo_fim": "2026-10-19", "lancamentos": 5}, "atualizado_em": "2026-10-21T10:00:00Z"}]
 action = st.session_state.pop("_test_action", None)
-if action in ("group_only", "drill", "op_drill"):
+scoped_actions = ("group_scoped", "sub_scoped", "tes_scoped", "movement_scoped")
+if action in scoped_actions:
+    known = {"020", "520", "550"}
+    configured = group_cfg.create_group(group_cfg.empty(), "RETORNOS", known_tes=known)
+    configured = group_cfg.assign_group(configured, configured["grupos"][0]["id"],
+                                        ["020"], known_tes=known)
+    configured = group_cfg.create_group(configured, "BAIXAS", known_tes=known)
+    configured = group_cfg.assign_group(configured, configured["grupos"][1]["id"],
+                                        ["520", "550"], known_tes=known)
+    ui._groups_read = lambda: configured
+if action in ("group_only", "drill", "op_drill") + scoped_actions:
     original_table = ui._table
     def select_in_order(data, *args, **kwargs):
         displayed = original_table(data, *args, **kwargs)
         key = kwargs.get("key", "")
-        if action in ("group_only", "drill") and "_overview_groups_" in key:
-            return {"selection": {"rows": [0]}}
-        if action == "drill" and ("_overview_subgroups_" in key or "_overview_tes_" in key):
+        if "_overview_groups_" in key:
+            if action in ("group_only", "drill"):
+                return {"selection": {"rows": [0]}}
+            if action in scoped_actions:
+                return {"selection": {"rows": [1]}}  # BAIXAS, R$ 35 em saídas.
+        if "_overview_subgroups_" in key:
+            if action == "drill":
+                return {"selection": {"rows": [0]}}
+            if action in ("sub_scoped", "tes_scoped", "movement_scoped"):
+                # Consumo OP é o subgrupo dos dois movimentos da TES 550.
+                ix = data["Subgrupo"].tolist().index("CONSUMO OP")
+                return {"selection": {"rows": [ix]}}
+        if "_overview_tes_" in key and action in ("drill", "tes_scoped", "movement_scoped"):
             return {"selection": {"rows": [0]}}
         if action == "op_drill" and "_op_table_" in key:
             return {"selection": {"rows": [0]}}
         return displayed
     ui._table = select_in_order
+if action == "movement_scoped":
+    original_dataframe = ui.st.dataframe
+    def select_movement(*args, **kwargs):
+        displayed = original_dataframe(*args, **kwargs)
+        if "fm_mov_overview_mov_" in str(kwargs.get("key", "")):
+            return {"selection": {"rows": [0]}}
+        return displayed
+    ui.st.dataframe = select_movement
 try:
     ui.render_results(model, imports)
 finally:
-    if action in ("group_only", "drill", "op_drill"):
+    if action in ("group_only", "drill", "op_drill") + scoped_actions:
         ui._table = original_table
+    if action == "movement_scoped":
+        ui.st.dataframe = original_dataframe
 """
 
 
@@ -68,6 +99,47 @@ class MovementAnalysisUITests(unittest.TestCase):
     def area(self, app, name):
         app.segmented_control[0].set_value(name).run()
         self.assertFalse(app.exception)
+
+    def card_values(self, app):
+        snippets = [x.value for x in app.markdown if 'class="summary-grid"' in x.value]
+        self.assertEqual(len(snippets), 1)
+        return re.findall(r'class="summary-card-value">([^<]+)', snippets[0])
+
+    def test_cards_follow_full_group_subgroup_tes_and_selected_movement(self):
+        app = self.app()
+        self.assertEqual(self.card_values(app), [
+            "R$ 30,00", "R$ 35,00", "R$ -5,00"
+        ])
+        app.session_state["_test_action"] = "group_scoped"
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(self.card_values(app), [
+            "R$ 0,00", "R$ 35,00", "R$ -35,00"
+        ])
+        app.session_state["_test_action"] = "sub_scoped"
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(self.card_values(app), [
+            "R$ 0,00", "R$ 25,00", "R$ -25,00"
+        ])
+        app.session_state["_test_action"] = "tes_scoped"
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(self.card_values(app), [
+            "R$ 0,00", "R$ 25,00", "R$ -25,00"
+        ])
+        self.assertTrue(any("04 · MOVIMENTAÇÕES DA TES" in x.value for x in app.markdown))
+        app.session_state["_test_action"] = "movement_scoped"
+        app.run()
+        self.assertFalse(app.exception)
+        # Um único lançamento de baixa deve substituir os R$ 25 do conjunto.
+        self.assertEqual(self.card_values(app)[0], "R$ 0,00")
+        self.assertIn(self.card_values(app)[1], ("R$ 20,00", "R$ 5,00"))
+        self.assertFalse(any("Selecione o checkbox de um grupo" in x.value
+                             for x in app.markdown + app.caption))
+        self.assertFalse(any("movimentações encontradas." in x.value
+                             for x in app.markdown + app.caption))
+        self.assertEqual(app.segmented_control[0].value, "Visão geral")
 
     def test_menu_only_four_areas_and_legacy_session_is_redirected(self):
         import movement_analysis_ui as ui
