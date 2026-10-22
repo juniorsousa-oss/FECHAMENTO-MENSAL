@@ -49,7 +49,7 @@ class KardexImportUITests(unittest.TestCase):
         self.assertFalse(app.exception)
         preview = app.dataframe[0].value.iloc[0]
         self.assertEqual(preview["Armazéns"], "S2")
-        self.assertEqual(preview["Meses substituídos"], "10/2026")
+        self.assertEqual(preview["Competências abrangidas"], "10/2026")
         self.assertEqual(preview["Registros atuais no recorte"], 2)
         self.assertEqual(preview["Novos registros"], 1)
         self.assertNotIn("saved", app.session_state)
