@@ -76,8 +76,8 @@ class MovementAnalysisUITests(unittest.TestCase):
         frame = app.dataframe[0].value
         self.assertIn("TES", frame.columns)
         self.assertIn("Descrição TES", frame.columns)
-        self.assertIn("Tipo de TM", frame.columns)
-        self.assertEqual(frame.loc[frame["TES"] == "020", "Tipo de TM"].iloc[0], "Devolução")
+        self.assertNotIn("Tipo de TM", frame.columns)
+        self.assertEqual(frame.loc[frame["TES"] == "020", "Descrição TES"].iloc[0], "DEVOLUCAO TOTVS")
         self.assertNotIn("Grupo", frame.columns)
         self.assertNotIn("Subgrupo / condição", frame.columns)
         self.assertEqual(frame["Entrada (R$)"].sum(), 30)
@@ -139,22 +139,19 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.assertGreaterEqual(len(catalog_view), 342)
         self.assertEqual(len(catalog_view["TES"].unique()), len(catalog_view))
         self.assertIn("Descrição TES", catalog_view.columns)
-        self.assertIn("Tipo de TM", catalog_view.columns)
-        self.assertEqual(
-            catalog_view.loc[catalog_view["TES"] == "540", "Tipo de TM"].iloc[0],
-            "Requisição",
-        )
+        self.assertNotIn("Tipo de TM", catalog_view.columns)
+        self.assertNotIn("Origem", catalog_view.columns)
         self.assertEqual(
             catalog_view.loc[catalog_view["TES"] == "540", "Descrição TES"].iloc[0],
             "BAIX CUSTO E QTD ZER",
         )
         self.assertEqual(
-            catalog_view.loc[catalog_view["TES"] == "540", "Origem"].iloc[0],
-            "Tabela TM informada",
+            catalog_view.loc[catalog_view["TES"] == "499", "Descrição TES"].iloc[0],
+            "ENTRADA DE INVENTÁRIO/ENTRADA OP",
         )
         self.assertEqual(
-            catalog_view.loc[catalog_view["TES"] == "815", "Origem"].iloc[0],
-            "Cadastro TES Protheus",
+            catalog_view.loc[catalog_view["TES"] == "999", "Descrição TES"].iloc[0],
+            "SAÍDA DE INVENTÁRIO/CONSUMO OP",
         )
         self.assertTrue(set(mv.tes_reference()).issubset(set(catalog_view["TES"])))
         self.assertNotIn("Condição", app.dataframe[0].value.columns)
