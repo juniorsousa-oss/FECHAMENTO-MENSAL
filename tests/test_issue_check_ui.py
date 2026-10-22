@@ -128,7 +128,7 @@ class IssueCheckUITests(unittest.TestCase):
     def test_selectbox_content_and_filter_buttons_use_shared_alignment(self):
         source = (Path(__file__).resolve().parents[1] / "issue_check_ui.py").read_text("utf-8")
         self.assertIn(
-            '.st-key-fm_issue_class_group [data-testid="stSelectbox"] [role="combobox"]',
+            '.st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] > div > div:first-child',
             source,
         )
         self.assertIn('align-items:center!important;', source)
