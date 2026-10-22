@@ -485,10 +485,11 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None) -> bytes
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
     import kardex_group_config as gc
+    import kardex_conditions as conditions
 
     config = gc.validated(group_config if group_config is not None else gc.empty())
     owner = gc.group_owner(config)
-    active = effective(frame)
+    active = conditions.classify(effective(frame), config)
     wb = Workbook(write_only=True)
     title_color = "111827"
     group_color = "E9EFF8"
@@ -507,7 +508,7 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None) -> bytes
             sheet.sheet_properties.outlinePr.summaryBelow = False
             sheet.sheet_properties.outlinePr.showSummaryRight = False
             sheet.sheet_view.showOutlineSymbols = True
-            sheet.sheet_format.outlineLevelRow = 1
+            sheet.sheet_format.outlineLevelRow = 2
         for index, width in enumerate(widths, 1):
             sheet.column_dimensions[get_column_letter(index)].width = width
         write(sheet, headers, style="header")
@@ -560,21 +561,23 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None) -> bytes
             filled.append(cell)
         sheet.append(filled)
 
-    # 01 — Grupo (linha visível) -> TES (linhas recolhidas).
-    group_headers = ["Grupo / TES", "Descrição TES", "TES distintas", "Movimentos",
+    # 01 — Grupo -> Subgrupo -> TES (ambos níveis recolhíveis no Excel).
+    group_headers = ["Grupo / Subgrupo / TES", "Descrição TES", "TES distintas", "Movimentos",
                      "Produtos", "Entrada (R$)", "Saída (R$)", "Variação (R$)"]
     group_sheet = start_sheet(
-        "Grupos e TES", group_headers, [33, 67, 18, 16, 15, 23, 23, 23], outline=True
+        "Grupos e TES", group_headers, [43, 67, 18, 16, 15, 23, 23, 23], outline=True
     )
     if not active.empty:
-        work = active.assign(grupo_excel=active["tes"].map(owner).fillna(gc.UNASSIGNED))
-        main_stats = summarize(work, ["grupo_excel"])
-        tes_stats = summarize(work, ["grupo_excel", "tes", "descricao_tes"])
-        main_lookup = {r["grupo_excel"]: r for r in main_stats.to_dict("records")}
-        tes_lookup = {
-            name: sub.sort_values(["tes", "descricao_tes"], kind="stable")
-            for name, sub in tes_stats.groupby("grupo_excel", sort=False)
-        }
+        main_stats = summarize(active, ["grupo_usuario"])
+        sub_stats = summarize(active, ["grupo_usuario", "subgrupo_usuario"])
+        tes_stats = summarize(active, ["grupo_usuario", "subgrupo_usuario", "tes", "descricao_tes"])
+        main_lookup = {r["grupo_usuario"]: r for r in main_stats.to_dict("records")}
+        sub_lookup = {name: part.sort_values("subgrupo_usuario", kind="stable")
+                      for name, part in sub_stats.groupby("grupo_usuario", sort=False)}
+        detail_lookup = {(group, subgroup): part.sort_values(
+            ["tes", "descricao_tes"], kind="stable"
+        ) for (group, subgroup), part in
+            tes_stats.groupby(["grupo_usuario", "subgrupo_usuario"], sort=False)}
         order = [g["nome"] for g in config["grupos"]]
         if gc.UNASSIGNED in main_lookup:
             order.append(gc.UNASSIGNED)
@@ -582,25 +585,26 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None) -> bytes
             stat = main_lookup.get(group_name)
             if stat is None:
                 continue
-            subt = tes_lookup.get(group_name)
-            write(
-                group_sheet,
-                [group_name, "", int(stat["tes_distintas"]), int(stat["lancamentos"]),
-                 int(stat["produtos"]), float(stat["valor_entrada"]),
-                 float(stat["valor_saida"]), float(stat["liquido_valor"])],
-                style="group", collapsed=subt is not None and not subt.empty,
-                money_cols=(6, 7, 8),
-            )
-            if subt is not None:
-                for entry in subt.itertuples(index=False):
-                    write(
-                        group_sheet,
-                        [f"TES {entry.tes}", entry.descricao_tes, 1,
-                         int(entry.lancamentos), int(entry.produtos),
-                         float(entry.valor_entrada), float(entry.valor_saida),
-                         float(entry.liquido_valor)],
-                        style="child", level=1, money_cols=(6, 7, 8),
-                    )
+            write(group_sheet,
+                  [group_name, "", int(stat["tes_distintas"]), int(stat["lancamentos"]),
+                   int(stat["produtos"]), float(stat["valor_entrada"]),
+                   float(stat["valor_saida"]), float(stat["liquido_valor"])],
+                  style="group", collapsed=True, money_cols=(6, 7, 8))
+            for subgroup in sub_lookup[group_name].itertuples(index=False):
+                child = detail_lookup[(group_name, subgroup.subgrupo_usuario)]
+                write(group_sheet, [
+                    "SUBGRUPO · " + subgroup.subgrupo_usuario, "",
+                    int(subgroup.tes_distintas), int(subgroup.lancamentos), int(subgroup.produtos),
+                    float(subgroup.valor_entrada), float(subgroup.valor_saida),
+                    float(subgroup.liquido_valor)
+                ], style="group", level=1, collapsed=True, money_cols=(6, 7, 8))
+                for entry in child.itertuples(index=False):
+                    write(group_sheet, [
+                        "TES " + str(entry.tes), str(entry.descricao_tes), 1,
+                        int(entry.lancamentos), int(entry.produtos),
+                        float(entry.valor_entrada), float(entry.valor_saida),
+                        float(entry.liquido_valor)
+                    ], style="child", level=2, money_cols=(6, 7, 8))
         write(group_sheet,
               ["TOTAL GERAL", "", int(active["tes"].nunique()), len(active),
                int(active["codigo"].nunique()), float(active["valor_entrada"].sum()),
@@ -610,9 +614,9 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None) -> bytes
     # 02 — OP (linha visível) -> todas as saídas reais da OP (linhas recolhidas).
     op_headers = ["OP / Código", "Descrição / Situação", "TES", "Movimentos",
                   "Produtos", "Baixas", "Qtd baixada", "UM", "Saída (R$)",
-                  "Data / Período", "Armazém", "Documento", "AE original"]
+                  "Data / Período", "Armazém", "Documento", "AE original", "Grupo", "Subgrupo"]
     op_sheet = start_sheet("Por OP", op_headers,
-                           [26, 68, 12, 16, 15, 12, 17, 12, 23, 28, 14, 25, 26],
+                           [26, 68, 12, 16, 15, 12, 17, 12, 23, 28, 14, 25, 26, 32, 41],
                            outline=True)
     op_data = summarize_ops(active)
     if not op_data.empty:
@@ -632,11 +636,11 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None) -> bytes
             write(op_sheet, [
                 op.op_identificada, "TOTAL DA OP", "", int(op.lancamentos),
                 int(op.produtos), quantity_rows, None, "",
-                float(op.valor_saida), interval, "", "", "",
+                float(op.valor_saida), interval, "", "", "", "", "",
             ], style="group", collapsed=True, money_cols=(9,))
             if children is None or children.empty:
                 write(op_sheet, ["", "SEM BAIXAS NO RECORTE", "", "", "", "",
-                                 None, "", 0.0, None, "", "", ""],
+                                 None, "", 0.0, None, "", "", "", "", ""],
                       style="child", level=1, money_cols=(9,))
                 continue
             for movement in children.itertuples(index=False):
@@ -645,18 +649,17 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None) -> bytes
                     None, None, None, float(movement.qtd_saida), str(movement.um),
                     float(movement.valor_saida), movement.data, str(movement.armazem),
                     str(movement.documento), str(movement.ae_original),
+                    str(movement.grupo_usuario), str(movement.subgrupo_usuario),
                 ], style="child", level=1, date_cols=(10,), money_cols=(9,),
                     quantity_cols=(7,))
 
-    # 03 — Colunas da tela KARDEX > Registros, acrescidas do grupo da TES.
-    # O vínculo com o cadastro é calculado somente na exportação; não muda
-    # o lançamento original nem os totais financeiros.
-    ledger_headers = ["Data", "Código", "Produto", "Armazém", "TES", "Grupo",
+    # 03 — Mesmas colunas e ordem do KARDEX > Registros, incluindo subgrupo.
+    ledger_headers = ["Data", "Código", "Produto", "Armazém", "TES", "Grupo", "Subgrupo",
                       "Entrada (R$)", "Saída (R$)", "AE original",
                       "Descrição TES", "Tipo do material", "Documento"]
     ledger_sheet = start_sheet(
         "Movimentações", ledger_headers,
-        [17, 17, 80, 15, 12, 33, 22, 22, 29, 53, 20, 29]
+        [17, 17, 80, 15, 12, 33, 41, 22, 22, 29, 53, 20, 29]
     )
     if not active.empty:
         ordered = active.sort_values(
@@ -667,12 +670,12 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None) -> bytes
             write(ledger_sheet, [
                 row.data, str(row.codigo), str(row.descricao),
                 str(row.armazem), str(row.tes),
-                owner.get(str(row.tes), gc.UNASSIGNED),
+                str(row.grupo_usuario), str(row.subgrupo_usuario),
                 float(row.valor_entrada), float(row.valor_saida),
                 str(row.ae_original), str(row.descricao_tes),
                 str(row.tipo), str(row.documento),
-            ], date_cols=(1,), money_cols=(7, 8))
-    ledger_sheet.auto_filter.ref = f"A1:L{max(counters['Movimentações'], 1)}"
+            ], date_cols=(1,), money_cols=(8, 9))
+    ledger_sheet.auto_filter.ref = f"A1:M{max(counters['Movimentações'], 1)}"
 
     buffer = io.BytesIO()
     wb.save(buffer)
