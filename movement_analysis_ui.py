@@ -589,6 +589,8 @@ def _detail(row):
     with b:
         st.write("**ARMAZÉM:** " + row["armazem"])
         st.write("**TIPO DO MATERIAL:** " + row["tipo"])
+        st.write("**GRUPO:** " + row.get("grupo_usuario", groups.UNASSIGNED))
+        st.write("**SUBGRUPO:** " + row.get("subgrupo_usuario", groups.UNASSIGNED))
         st.write("**CC / CR:** " + (row["cc_identificado"] or "—"))
     with c:
         st.write("**AE ORIGINAL:**")
@@ -700,34 +702,90 @@ def _catalog(frame):
                 except Exception as exc:
                     st.error(f"Não foi possível excluir o grupo: {exc}")
 
-    st.markdown("**03 · CONDIÇÕES E EXCEÇÕES**")
-    st.caption("Registre ou exclua condições para configuração futura. "
-               "Enquanto não definirmos seus critérios, elas NÃO alteram valores ou grupos.")
-    with st.form("fm_mov_condition_create", clear_on_submit=True):
-        condition_name = st.text_input("Nova condição", placeholder="Nome para identificar a condição")
-        if st.form_submit_button("ADICIONAR CONDIÇÃO"):
-            try:
-                updated = groups.create_condition(config, condition_name, known_tes=available)
-                _groups_commit(updated, available)
-                st.success("Condição cadastrada.")
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Não foi possível cadastrar a condição: {exc}")
-    for condition in config["condicoes"]:
-        a, b = st.columns([4, 1], gap="small")
-        with a:
-            st.write(condition["nome"])
-        with b:
-            confirm = st.checkbox("Confirmar", key="fm_mov_condition_confirm_" + condition["id"])
-            if st.button("EXCLUIR", disabled=not confirm,
-                         key="fm_mov_condition_delete_" + condition["id"]):
+    st.markdown("**03 · CONDIÇÕES E SUBGRUPOS · FILA DE PRIORIDADE**")
+    st.caption(
+        "O sistema verifica as condições na ordem abaixo. A primeira condição "
+        "atendida classifica a movimentação e impede que ela entre nas seguintes. "
+        "Sem correspondência, o subgrupo será igual ao grupo da TES."
+    )
+    from kardex_conditions import TEMPLATES, TEMPLATE_BY_RULE
+    unregistered = [
+        item for item in TEMPLATES
+        if item["id"] not in {condition["id"] for condition in config["condicoes"]}
+    ]
+    if unregistered:
+        with st.form("fm_mov_condition_restore"):
+            rule_id = st.selectbox(
+                "Reativar condição predefinida",
+                [item["id"] for item in unregistered],
+                format_func=lambda key: next(x["nome"] for x in unregistered if x["id"] == key)
+            )
+            if st.form_submit_button("INCLUIR REGRA NA FILA"):
                 try:
-                    updated = groups.delete_condition(config, condition["id"], known_tes=available)
+                    updated = groups.add_predefined_condition(
+                        config, rule_id, known_tes=available
+                    )
                     _groups_commit(updated, available)
-                    st.success("Condição excluída.")
                     st.rerun()
                 except Exception as exc:
-                    st.error(f"Não foi possível excluir a condição: {exc}")
+                    st.error(f"Não foi possível incluir a regra: {exc}")
+    st.markdown("**PRIORIDADE · SUBGRUPO · CRITÉRIO**")
+    for priority, condition in enumerate(config["condicoes"], 1):
+        template = TEMPLATE_BY_RULE.get(condition.get("regra", ""))
+        with st.container(border=True):
+            info, up, down, delete = st.columns([6, 1, 1, 1], gap="small")
+            with info:
+                st.markdown(f"**{priority:02d} · {condition['nome']}**")
+                st.caption(
+                    template["criterio"] if template else
+                    "Condição descritiva; critério automático ainda não definido"
+                )
+            with up:
+                if st.button("↑", key="fm_mov_condition_up_" + condition["id"],
+                             disabled=priority == 1):
+                    try:
+                        _groups_commit(groups.move_condition(
+                            config, condition["id"], -1, known_tes=available
+                        ), available)
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Erro ao alterar a prioridade: {exc}")
+            with down:
+                if st.button("↓", key="fm_mov_condition_down_" + condition["id"],
+                             disabled=priority == len(config["condicoes"])):
+                    try:
+                        _groups_commit(groups.move_condition(
+                            config, condition["id"], 1, known_tes=available
+                        ), available)
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Erro ao alterar a prioridade: {exc}")
+            with delete:
+                with st.popover("Excluir"):
+                    st.caption("Excluir esta condição interrompe sua aplicação, sem apagar movimentos.")
+                    if st.button("CONFIRMAR EXCLUSÃO",
+                                 key="fm_mov_condition_delete_" + condition["id"]):
+                        try:
+                            _groups_commit(groups.delete_condition(
+                                config, condition["id"], known_tes=available
+                            ), available)
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Não foi possível excluir a condição: {exc}")
+    with st.expander("Adicionar condição personalizada (sem regra automática)"):
+        with st.form("fm_mov_condition_create", clear_on_submit=True):
+            condition_name = st.text_input("Nome da nova condição")
+            if st.form_submit_button("CADASTRAR CONDIÇÃO"):
+                try:
+                    updated = groups.create_condition(
+                        config, condition_name, known_tes=available
+                    )
+                    _groups_commit(updated, available)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Não foi possível cadastrar a condição: {exc}")
+    st.caption("A configuração afeta apenas os subgrupos apresentados e exportados. "
+               "O grupo, a TES, os estoques, os valores e as quantidades originais são preservados.")
 
     with st.expander("04 · CONSULTAR CATÁLOGO TES"):
         movements_by_code = frame.groupby("tes", sort=False).size().to_dict()
@@ -813,7 +871,7 @@ def render_results(model, imports):
         "TES e descrições": ("02 · TES", "MOVIMENTAÇÕES POR TES", "TES individuais e descrições vigentes, com rastreabilidade dos lançamentos."),
         "Por OP": ("03 · ORDENS DE PRODUÇÃO", "CONSULTA POR OP", "Localize OPs por sua identificação original e consulte os documentos vinculados."),
         "Movimentações": ("04 · REGISTROS", "MOVIMENTAÇÕES ORIGINAIS", "Consulte as informações do KARDEX sem classificação gerencial ou exclusões automáticas."),
-        "Cadastros": ("05 · CADASTROS", "CONFIGURAÇÕES DE GRUPOS E TES", "Crie grupos, vincule TES e gerencie condições sem modificar o histórico."),
+        "Cadastros": ("05 · CADASTROS", "GRUPOS, TES E SUBGRUPOS", "Gerencie as TES e a fila de condições que define os subgrupos."),
         "Fontes e relatórios": ("06 · FONTES E RELATÓRIOS", "HISTÓRICO, IMPORTAÇÃO E EXPORTAÇÃO", "Registros originais, histórico de importações e relatórios por TES."),
     }
     band(*headers[area])
@@ -847,7 +905,7 @@ def render_results(model, imports):
 
 
 def render_movement_analysis():
-    band("KARDEX", "MOVIMENTAÇÕES POR TES", "Histórico de entradas e saídas · descrição do cadastro Protheus · vínculos por OP · sem classificação gerencial.")
+    band("KARDEX", "MOVIMENTAÇÕES POR TES", "Entradas e saídas · grupo configurável por TES · subgrupo definido pela primeira condição da fila.")
     flash = st.session_state.pop("fm_mov_flash", None)
     if flash:
         st.success(flash)
