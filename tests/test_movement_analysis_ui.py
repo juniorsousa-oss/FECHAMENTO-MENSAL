@@ -131,8 +131,13 @@ class MovementAnalysisUITests(unittest.TestCase):
         app.text_input[0].set_value("INEXISTENTE").run()
         self.assertEqual(len(app.dataframe), 0)
         self.area(app, "Cadastro TES")
-        self.assertEqual(len(app.dataframe[0].value), 342)
-        self.assertIn("Descrição no cadastro Protheus", app.dataframe[0].value.columns)
+        # Catálogo: 342 códigos cadastrados mais eventuais TES do KARDEX
+        # sem correspondência; nunca descartar os códigos não cadastrados.
+        catalog_view = app.dataframe[0].value
+        self.assertGreaterEqual(len(catalog_view), 342)
+        self.assertEqual(len(catalog_view["TES"].unique()), len(catalog_view))
+        self.assertIn("Descrição no cadastro Protheus", catalog_view.columns)
+        self.assertTrue(set(mv.tes_reference()).issubset(set(catalog_view["TES"])))
         self.assertNotIn("Condição", app.dataframe[0].value.columns)
         self.area(app, "Fontes e relatórios")
         self.assertEqual(len(app.file_uploader), 1)
