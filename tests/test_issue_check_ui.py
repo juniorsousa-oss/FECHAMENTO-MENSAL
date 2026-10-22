@@ -85,6 +85,33 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertIn("21/10/2026", markup)
         self.assertIn("FINALIZADO EM PÁTIO", markup)
 
+    def test_filter_inputs_have_contrast_borders_and_desktop_mobile_groups(self):
+        # Regressão: os placeholders eram visíveis, mas as superfícies
+        # clicáveis dos selects, datas e busca não possuíam demarcação.
+        source = (Path(__file__).resolve().parents[1] / "issue_check_ui.py").read_text("utf-8")
+        for selector in (
+            '.st-key-fm_issue_filters [data-testid="stTextInput"] [data-baseweb="input"]',
+            '.st-key-fm_issue_filters [data-testid="stDateInput"] [data-baseweb="input"]',
+            '.st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div',
+            '.st-key-fm_issue_filters [data-testid="stTextInput"] input',
+            '.st-key-fm_issue_filters [data-testid="stDateInput"] input',
+        ):
+            self.assertIn(selector, source)
+        self.assertIn('border:2px solid #9dabbf!important', source)
+        self.assertIn('min-height:48px!important', source)
+        self.assertIn('box-shadow:0 0 0 3px rgba(24,49,79,.16)', source)
+        for key in ("fm_issue_search_group", "fm_issue_class_group", "fm_issue_date_filters"):
+            self.assertIn(f'key="{key}"', source)
+        self.assertIn("01 · PESQUISA", source)
+        self.assertIn("02 · CLASSIFICAÇÃO", source)
+        self.assertIn("03 · PERÍODO DE FATURAMENTO", source)
+        app = AppTest.from_string(PROGRAM, default_timeout=20).run()
+        self.assertFalse(app.exception)
+        self.assertEqual({w.label for w in app.date_input}, {"DATA INICIAL", "DATA FINAL"})
+        self.assertTrue(any(w.label == "LOCALIZAR OP" for w in app.text_input))
+        self.assertTrue(any(w.label == "STATUS DA OP" for w in app.selectbox))
+        self.assertTrue(any(w.label == "ALERTAS" for w in app.selectbox))
+
     def test_invoice_filters_have_two_independent_calendars_and_can_clear(self):
         from datetime import date
         app = AppTest.from_string(PROGRAM, default_timeout=20).run()
