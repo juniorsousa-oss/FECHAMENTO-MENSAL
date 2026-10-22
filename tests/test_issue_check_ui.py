@@ -211,6 +211,19 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertIsNone(ui._material_at_position(group, {"rows": [6]}))
         self.assertIsNone(ui._material_at_position(group, {"rows": [-1]}))
 
+    def test_kardex_manifest_warehouses_are_included_in_conference_without_stock_rows(self):
+        import issue_check_ui as ui
+        entries = [
+            {"meta": {"armazens": ["EP", "20", "E2"], "escopos": [
+                {"armazem": "EP", "competencia": "2026-01"},
+                {"armazem": "20", "competencia": "2026-10"},
+                {"armazem": "E2", "competencia": "2026-10"},
+            ]}},
+            {"meta": {"armazem": "S2"}},
+        ]
+        self.assertEqual(ui._history_warehouses(entries), {"S2", "EP", "20", "E2"})
+        self.assertEqual(ui._history_warehouses([{"meta": {}}, {"meta": None}]), set())
+
     def test_an_unavailable_source_is_not_presented_as_zero_stock_or_issues(self):
         program = '''
 from unittest.mock import patch
