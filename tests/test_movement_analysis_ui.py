@@ -54,7 +54,13 @@ elif action in ("group_only", "drill"):
             return {"selection": {"rows": [0]}}
         return displayed
     ui._table = select_in_order
-ui.render_results(model, imports)
+try:
+    ui.render_results(model, imports)
+finally:
+    if action in ("group_only", "drill"):
+        # Streamlit AppTest reutiliza o módulo entre execuções; não deixar
+        # o mock de seleção interferir nos demais testes.
+        ui._table = original_table
 """
 
 
