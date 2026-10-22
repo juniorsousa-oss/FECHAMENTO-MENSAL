@@ -148,6 +148,14 @@ class MovementAnalysisUITests(unittest.TestCase):
             catalog_view.loc[catalog_view["TES"] == "540", "Descrição TES"].iloc[0],
             "BAIX CUSTO E QTD ZER",
         )
+        self.assertEqual(
+            catalog_view.loc[catalog_view["TES"] == "540", "Origem"].iloc[0],
+            "Tabela TM informada",
+        )
+        self.assertEqual(
+            catalog_view.loc[catalog_view["TES"] == "815", "Origem"].iloc[0],
+            "Cadastro TES Protheus",
+        )
         self.assertTrue(set(mv.tes_reference()).issubset(set(catalog_view["TES"])))
         self.assertNotIn("Condição", app.dataframe[0].value.columns)
         self.area(app, "Fontes e relatórios")
