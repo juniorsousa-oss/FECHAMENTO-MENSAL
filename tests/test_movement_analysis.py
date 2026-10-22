@@ -60,8 +60,8 @@ class MovementAnalysisTests(unittest.TestCase):
             record(tes=code, documento=code) for code in codes
         ])])["frame"]
         for code, description in zip(frame["tes"], frame["descricao_tes"]):
-            self.assertEqual(description, mv.tes_reference().get(
-                code, "NI - TES não localizada no cadastro"))
+            self.assertEqual(description, mv.rules()["tes"].get(
+                code, {}).get("descricao", "NI - TES não localizada no cadastro"))
         self.assertEqual(frame["valor_saida"].tolist(), [10.] * len(codes))
 
     def test_raw_entries_and_exits_define_totals_without_automatic_compensation(self):
@@ -130,7 +130,10 @@ class MovementAnalysisTests(unittest.TestCase):
         self.assertEqual(sheet["AE1"].value, "AE original")
         self.assertEqual(sheet["AE2"].value, "OP00001234567")
         self.assertEqual(sheet["D1"].value, "Descrição TES")
-        self.assertEqual(sheet["D2"].value, mv.tes_reference()["520"])
+        self.assertEqual(sheet["D2"].value, mv.rules()["tes"]["520"]["descricao"])
+        self.assertEqual(sheet["W1"].value, "Tipo de TM")
+        self.assertEqual(sheet["W2"].value, "Requisição")
+        self.assertEqual(wb["Por TES"]["B1"].value, "Tipo de TM")
         self.assertEqual(sheet["B2"].data_type, "s")
         self.assertEqual(sheet["H2"].value.date().isoformat(), "2026-10-01")
         wb.close()
