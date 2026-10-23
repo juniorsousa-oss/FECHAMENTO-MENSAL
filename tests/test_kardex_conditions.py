@@ -89,12 +89,13 @@ class ConditionsTests(unittest.TestCase):
 
     def test_new_conditions_take_precedence_and_preserve_original_type(self):
         rows = pd.DataFrame([
-            row("epi520", "520", cf="601401", cc="123456", qty=1),
-            row("epi540", "540", cf="601401.0", qty=1),
-            row("epi_over_op", "520", cf="601401", op="OP123", qty=1),
+            row("epi520", "520", cf="RE0", cc="601401", qty=1),
+            row("epi540", "540", cf="RE0", cc="601401", qty=1),
+            row("epi_over_op", "520", cc="601401", op="OP123", qty=1),
             row("tc_tp", "520", kind="MP", cc="987654", group="MATERIAL USADO TC/TP", qty=1),
             row("tc_tp_desc", "520", kind="MP", desc="MATERIAL USADO TC TP", qty=1),
             row("tp_only", "520", kind="MP", desc="TRANSFORMADOR DE POTENCIAL TP", qty=1, cc="600307"),
+            row("not_epi", "520", cc="123456", cf="601401", qty=1),
             row("adjust_020", "020", kind="MP", cc="600307"),
             row("adjust_520", "520", kind="MP", cc="600307"),
             row("return_040", "040", kind="MP", cc="600307"),
@@ -107,7 +108,7 @@ class ConditionsTests(unittest.TestCase):
             "epi520":cond.EPI, "epi540":cond.EPI,
             "epi_over_op":cond.CONSUMPTION,
             "tc_tp":cond.CONSUMABLE, "tc_tp_desc":cond.CONSUMABLE,
-            "tp_only":cond.STOCK_ADJUSTMENT,
+            "tp_only":cond.STOCK_ADJUSTMENT, "not_epi":cond.MANAGEMENT,
             "adjust_020":cond.STOCK_ADJUSTMENT, "adjust_520":cond.STOCK_ADJUSTMENT,
             "return_040":cond.PRODUCTION_RETURN,
             "production_precedes_return":cond.PRODUCTION,
