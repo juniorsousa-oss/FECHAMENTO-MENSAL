@@ -18,37 +18,67 @@ UNASSIGNED = "SEM GRUPO"
 
 def empty() -> dict:
     from kardex_conditions import TEMPLATES
-    return {"versao": 2, "grupos": [], "condicoes": [
+    return {"versao": 3, "grupos": [], "condicoes": [
         {"id": item["id"], "nome": item["nome"], "regra": item["regra"]}
         for item in TEMPLATES
     ]}
 
 
 def _migrate_conditions(data: dict) -> dict:
-    """Migra configuração V1 preservando grupos e condições personalizadas.
+    """Adiciona novas regras apenas uma vez sem modificar grupos nem condições excluídas.
 
-    Só semeia regras na migração inicial; exclusões posteriores são definitivas
-    e podem ser revertidas manualmente no cadastro.
+    V1 -> V2: seis condições iniciais. V2 -> V3: quatro condições
+    complementares na ordem definida. Versões V3 não são ressemeadas.
     """
     from kardex_conditions import TEMPLATES
-    if int(data.get("versao") or 1) >= 2:
+    version = int(data.get("versao") or 1)
+    if version >= 3:
         return data
-    legacy = list(data.get("condicoes") or [])
-    by_name = {str(item.get("nome") or "").strip().casefold(): item
-               for item in legacy if isinstance(item, dict)}
-    recognized = {t["nome"].casefold() for t in TEMPLATES}
-    conditions = []
-    for template in TEMPLATES:
-        found = by_name.get(template["nome"].casefold())
-        conditions.append({
-            "id": template["id"], "nome": template["nome"], "regra": template["regra"],
-        })
-    conditions.extend(item for item in legacy
-                      if isinstance(item, dict)
-                      and str(item.get("nome") or "").strip().casefold() not in recognized)
     upgraded = copy.deepcopy(data)
-    upgraded["versao"] = 2
-    upgraded["condicoes"] = conditions
+    if version < 2:
+        legacy = list(upgraded.get("condicoes") or [])
+        known_names = {t["nome"].casefold() for t in TEMPLATES}
+        original = [
+            t for t in TEMPLATES
+            if t["regra"] in (
+                "producao_interna", "consumo_op", "acerto_gerencial",
+                "material_consumo", "chapas_barras", "adequacao_custo"
+            )
+        ]
+        upgraded["condicoes"] = [
+            {"id":t["id"], "nome":t["nome"], "regra":t["regra"]}
+            for t in original
+        ] + [
+            item for item in legacy
+            if isinstance(item, dict)
+            and str(item.get("nome") or "").casefold() not in known_names
+        ]
+    current = upgraded.get("condicoes") or []
+    present = {x.get("id") for x in current if isinstance(x, dict)}
+    additions = {t["regra"]:t for t in TEMPLATES if t["id"] not in present}
+    for name, anchor in (
+        ("consumo_epi", "consumo_op"),
+        ("tc_tp_consumo", "consumo_epi"),
+    ):
+        template = additions.get(name)
+        if not template:
+            continue
+        anchor_index = next(
+            (i for i,x in enumerate(current) if x.get("regra") == anchor),
+            None
+        )
+        insert_at = anchor_index+1 if anchor_index is not None else 0
+        current.insert(insert_at, {
+            "id":template["id"], "nome":template["nome"], "regra":template["regra"]
+        })
+    for name in ("ajuste_estoque", "retorno_producao"):
+        template = additions.get(name)
+        if template:
+            current.append({
+                "id":template["id"], "nome":template["nome"], "regra":template["regra"]
+            })
+    upgraded["condicoes"] = current
+    upgraded["versao"] = 3
     return upgraded
 
 def normalize_tes(value: object) -> str:
@@ -61,7 +91,7 @@ def validated(data: dict, known_tes: set[str] | None = None) -> dict:
     output = _migrate_conditions(copy.deepcopy(data))
     output.setdefault("grupos", [])
     output.setdefault("condicoes", [])
-    output["versao"] = 2
+    output["versao"] = 3
     if not isinstance(output["grupos"], list) or not isinstance(output["condicoes"], list):
         raise ValueError("Estrutura inválida de grupos ou condições.")
     names, owners, ids = set(), {}, set()
@@ -110,7 +140,7 @@ def validated(data: dict, known_tes: set[str] | None = None) -> dict:
                 raise ValueError("Regra executável cadastrada mais de uma vez.")
             rule_names.add(rule_id)
         ids.add(ident); condition_names.add(title.casefold()); condition["nome"] = title
-    return {"versao": 2, "grupos": output["grupos"], "condicoes": output["condicoes"]}
+    return {"versao": 3, "grupos": output["grupos"], "condicoes": output["condicoes"]}
 
 def create_group(data: dict, name: str, *, known_tes: set[str]) -> dict:
     updated = validated(data, known_tes)
@@ -202,9 +232,8 @@ def load() -> dict:
     records = response.json() or []
     payload = records[0]["valor"] if records else empty()
     data = validated(payload)
-    if records and int(payload.get("versao") or 1) < 2:
-        # Migração única: as seis condições passam a existir no banco;
-        # não ressemeia regras que o usuário excluir depois.
+    if records and int(payload.get("versao") or 1) < 3:
+        # Migração única até V3; excluir regras depois não as recria.
         db.rpc("fm_salvar_configuracao", {"p_chave": CONFIG_KEY, "p_valor": data}, timeout=45)
     return data
 
