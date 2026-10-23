@@ -31,7 +31,7 @@ TEMPLATES = [
     {"id": "kardex_cond_02_consumo_op", "regra": "consumo_op", "nome": CONSUMPTION,
      "criterio": "Qualquer saída com OP identificada na AE"},
     {"id": "kardex_cond_07_consumo_epi", "regra": "consumo_epi", "nome": EPI,
-     "criterio": "TES 520/540 + CF 601401"},
+     "criterio": "TES 520/540 + centro de custo 601401 identificado no campo AE (CC601401)"},
     {"id": "kardex_cond_08_tc_tp_consumo", "regra": "tc_tp_consumo", "nome": CONSUMABLE,
      "criterio": "TES 520 + identificação explícita de MATERIAL USADO TC/TP (tipo considerado II para análise)"},
     {"id": "kardex_cond_03_acerto_gerencial", "regra": "acerto_gerencial", "nome": MANAGEMENT,
@@ -116,13 +116,10 @@ def classify(frame: pd.DataFrame, config: dict) -> pd.DataFrame:
         pd.to_numeric(out["qtd_saida"], errors="coerce").fillna(0).ne(0)
         | pd.to_numeric(out["valor_saida"], errors="coerce").fillna(0).ne(0)
     )
-    cf = (out.get("cf", pd.Series("", index=out.index)).fillna("").astype(str).str.strip()
-          .str.replace(r"\.0+$", "", regex=True)
-          .str.replace(r"[^0-9]", "", regex=True))
     matches = {
         "producao_interna": tes.isin(["020", "040"]) & kind.isin(["PA", "PI"]),
         "consumo_op": outgoing & op,
-        "consumo_epi": tes.isin(["520", "540"]) & cf.eq("601401"),
+        "consumo_epi": tes.isin(["520", "540"]) & cc_provided & cc.eq("601401"),
         "tc_tp_consumo": tc_tp,
         "acerto_gerencial": tes.isin(["520", "550"]) & cc_provided & cc.ne("600307"),
         "material_consumo": tes.isin(["520", "550"]) & kind.eq("II"),
