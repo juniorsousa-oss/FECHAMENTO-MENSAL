@@ -120,7 +120,7 @@ def validated(data: dict, known_tes: set[str] | None = None) -> dict:
                 unique_codes.append(code)
         group["tes"] = unique_codes
     from kardex_conditions import TEMPLATE_BY_ID, TEMPLATE_BY_RULE
-    condition_names = set()
+    condition_names = {}
     rule_names = set()
     for condition in output["condicoes"]:
         if not isinstance(condition, dict):
@@ -129,9 +129,13 @@ def validated(data: dict, known_tes: set[str] | None = None) -> dict:
         title = str(condition.get("nome") or "").strip()
         if not ident or ident in ids or not 1 <= len(title) <= 120:
             raise ValueError("Identificador ou nome da condição inválido.")
-        if title.casefold() in condition_names:
-            raise ValueError("Já existe uma condição com esse nome.")
         rule_id = str(condition.get("regra") or "")
+        existing = condition_names.get(title.casefold())
+        # MATERIAL DE CONSUMO possui duas verificações sequenciais, com
+        # identificadores distintos, mas o mesmo subgrupo de destino.
+        permitted_pair = {"tc_tp_consumo", "material_consumo"}
+        if existing is not None and {existing, rule_id} != permitted_pair:
+            raise ValueError("Já existe uma condição com esse nome.")
         if rule_id:
             template = TEMPLATE_BY_RULE.get(rule_id)
             if template is None or template["id"] != ident or template["nome"] != title:
@@ -139,7 +143,7 @@ def validated(data: dict, known_tes: set[str] | None = None) -> dict:
             if rule_id in rule_names:
                 raise ValueError("Regra executável cadastrada mais de uma vez.")
             rule_names.add(rule_id)
-        ids.add(ident); condition_names.add(title.casefold()); condition["nome"] = title
+        ids.add(ident); condition_names[title.casefold()] = rule_id or ident; condition["nome"] = title
     return {"versao": 3, "grupos": output["grupos"], "condicoes": output["condicoes"]}
 
 def create_group(data: dict, name: str, *, known_tes: set[str]) -> dict:
