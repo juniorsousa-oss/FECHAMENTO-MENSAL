@@ -116,7 +116,9 @@ def classify(frame: pd.DataFrame, config: dict) -> pd.DataFrame:
         pd.to_numeric(out["qtd_saida"], errors="coerce").fillna(0).ne(0)
         | pd.to_numeric(out["valor_saida"], errors="coerce").fillna(0).ne(0)
     )
-    cf = out.get("cf", pd.Series("", index=out.index)).fillna("").astype(str).str.replace(r"[^0-9]", "", regex=True)
+    cf = (out.get("cf", pd.Series("", index=out.index)).fillna("").astype(str).str.strip()
+          .str.replace(r"\.0+$", "", regex=True)
+          .str.replace(r"[^0-9]", "", regex=True))
     matches = {
         "producao_interna": tes.isin(["020", "040"]) & kind.isin(["PA", "PI"]),
         "consumo_op": outgoing & op,
