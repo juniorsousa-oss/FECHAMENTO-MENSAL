@@ -500,7 +500,7 @@ def _overview_movements(selected: pd.DataFrame, token: str, *,
         "Grupo": visible["grupo_usuario"], "Subgrupo": visible["subgrupo_usuario"],
         "Entrada (R$)": visible["valor_entrada"], "Saída (R$)": visible["valor_saida"],
         "AE original": visible["ae_original"], "Descrição TES": visible["descricao_tes"],
-        "Tipo do material": visible["tipo"], "Documento": visible["documento"],
+        "Tipo do material": visible["tipo_analise"], "Documento": visible["documento"],
     })
     event = st.dataframe(
         shown, hide_index=True, width="stretch",
@@ -674,7 +674,9 @@ def _detail(row):
         st.write("**DOCUMENTO:** " + row["documento"])
     with b:
         st.write("**ARMAZÉM:** " + row["armazem"])
-        st.write("**TIPO DO MATERIAL:** " + row["tipo"])
+        st.write("**TIPO DO MATERIAL (ANÁLISE):** " + row.get("tipo_analise", row["tipo"]))
+        if row.get("tipo_analise", row["tipo"]) != row["tipo"]:
+            st.caption("Tipo original do KARDEX: " + row["tipo"] + " · reclassificado como II apenas nesta análise.")
         st.write("**GRUPO:** " + row.get("grupo_usuario", groups.UNASSIGNED))
         st.write("**SUBGRUPO:** " + row.get("subgrupo_usuario", groups.UNASSIGNED))
         st.write("**CC / CR:** " + (row["cc_identificado"] or "—"))
