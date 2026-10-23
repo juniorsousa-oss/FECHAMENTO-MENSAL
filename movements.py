@@ -673,7 +673,7 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None) -> bytes
                 str(row.grupo_usuario), str(row.subgrupo_usuario),
                 float(row.valor_entrada), float(row.valor_saida),
                 str(row.ae_original), str(row.descricao_tes),
-                str(row.tipo), str(row.documento),
+                str(row.tipo_analise), str(row.documento),
             ], date_cols=(1,), money_cols=(8, 9))
     ledger_sheet.auto_filter.ref = f"A1:M{max(counters['Movimentações'], 1)}"
 
