@@ -58,7 +58,7 @@ class ConditionsTests(unittest.TestCase):
         self.assertEqual(tagged["valor_entrada"].sum(), frame["valor_entrada"].sum())
         self.assertEqual(tagged.loc["1", "condicao_ordem"], 4)
         self.assertEqual(tagged.loc["11", "condicao_ordem"], 5)
-        self.assertEqual(tagged.loc["12", "condicao_id"], "kardex_cond_09_ajuste_estoque")
+        self.assertEqual(tagged.loc["12", "condicao_id"], "kardex_cond_14_ajuste_520_sem_op")
         self.assertEqual(tagged.loc["13", "condicao_id"], "")
         self.assertTrue(pd.isna(tagged.loc["13", "condicao_ordem"]))
 
