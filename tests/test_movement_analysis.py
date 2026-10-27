@@ -134,7 +134,7 @@ class MovementAnalysisTests(unittest.TestCase):
         self.assertEqual(first["A2"].value, "REQUISIÇÕES")
         self.assertEqual(first["A3"].value, "SUBGRUPO · CONSUMO OP")
         self.assertEqual(first["A4"].value, "TES 999")
-        self.assertEqual(first["B4"].value, "SAÍDA DE INVENTÁRIO/CONSUMO OP")
+        self.assertEqual(first["B4"].value, "CONSUMO DE OP")
         self.assertTrue(first.row_dimensions[2].collapsed)
         self.assertEqual(first.row_dimensions[3].outlineLevel, 1)
         self.assertTrue(first.row_dimensions[3].hidden)
