@@ -20,16 +20,22 @@ CONSUMABLE = "MATERIAL DE CONSUMO"
 SHEET_BAR = "ADEQUAÇÃO DE CHAPAS E BARRAS"
 COST = "ADEQUAÇÃO DE CUSTO"
 EPI = "CONSUMO DE EPI"
+TRANSFER = "TRANSFERÊNCIA DE ARMAZÉM"
+FALLBACK_STOCK = "ADEQUAÇÃO DE ESTOQUE"
 STOCK_ADJUSTMENT = "AJUSTE DE ESTOQUE"
 PRODUCTION_RETURN = "RETORNO DE PRODUÇÃO"
 
 # Identificadores estáveis. A lista persistida define a ordem e pode ser
 # reorganizada em Cadastros. Deletar uma regra remove sua aplicação.
 TEMPLATES = [
+    {"id": "kardex_cond_11_epi_ep", "regra": "consumo_epi_ep", "nome": EPI,
+     "criterio": "Toda baixa TES 520 no armazém EP, independentemente do CC ou OP"},
+    {"id": "kardex_cond_12_transferencia", "regra": "transferencia_armazem", "nome": TRANSFER,
+     "criterio": "TES 547 — transferência de armazém"},
     {"id": "kardex_cond_01_producao_interna", "regra": "producao_interna", "nome": PRODUCTION,
      "criterio": "TES 020/040 + tipo PA ou PI"},
     {"id": "kardex_cond_02_consumo_op", "regra": "consumo_op", "nome": CONSUMPTION,
-     "criterio": "Qualquer saída com OP identificada na AE"},
+     "criterio": "Saída com OP na AE OU baixa TES 520 de chapa/barra com CC 600307"},
     {"id": "kardex_cond_07_consumo_epi", "regra": "consumo_epi", "nome": EPI,
      "criterio": "TES 520/540 + centro de custo 601401 identificado no campo AE (CC601401)"},
     {"id": "kardex_cond_08_tc_tp_consumo", "regra": "tc_tp_consumo", "nome": CONSUMABLE,
@@ -39,7 +45,7 @@ TEMPLATES = [
     {"id": "kardex_cond_04_material_consumo", "regra": "material_consumo", "nome": CONSUMABLE,
      "criterio": "TES 520/550 + tipo II"},
     {"id": "kardex_cond_05_chapas_barras", "regra": "chapas_barras", "nome": SHEET_BAR,
-     "criterio": "TES 020/030/040/520/540/550 + CC 600307 + material de chapa/barra"},
+     "criterio": "TES 020/030/040/540/550 + CC 600307 + material de chapa/barra (520 vai para CONSUMO OP)"},
     {"id": "kardex_cond_06_adequacao_custo", "regra": "adequacao_custo", "nome": COST,
      "criterio": "TES 030/540 (quando não houver condição anterior)"},
     {"id": "kardex_cond_09_ajuste_estoque", "regra": "ajuste_estoque", "nome": STOCK_ADJUSTMENT,
@@ -98,7 +104,7 @@ def classify(frame: pd.DataFrame, config: dict) -> pd.DataFrame:
         return out
     group = out["tes"].map(owners).fillna(groups.UNASSIGNED)
     out["grupo_usuario"] = group
-    out["subgrupo_usuario"] = group.copy()
+    out["subgrupo_usuario"] = group.where(group.ne("FLUXO DE ESTOQUE"), FALLBACK_STOCK)
     out["condicao_id"] = ""
     out["condicao_ordem"] = pd.Series(pd.NA, index=out.index, dtype="Int64")
 
@@ -111,19 +117,23 @@ def classify(frame: pd.DataFrame, config: dict) -> pd.DataFrame:
     cc = cc.str.lstrip("0").replace("", "0")
     cc_provided = out["cc_identificado"].fillna("").astype(str).str.strip().ne("")
     op = out["op_identificada"].fillna("").astype(str).str.strip().ne("")
+    warehouse = out["armazem"].fillna("").astype(str).str.strip().str.upper()
     # Uma saída só é considerada existente quando quantidade OU valor sai.
     outgoing = (
         pd.to_numeric(out["qtd_saida"], errors="coerce").fillna(0).ne(0)
         | pd.to_numeric(out["valor_saida"], errors="coerce").fillna(0).ne(0)
     )
+    sheets_520 = tes.eq("520") & cc_provided & cc.eq("600307") & out["codigo"].isin(sheet_bar_codes())
     matches = {
+        "consumo_epi_ep": tes.eq("520") & warehouse.eq("EP") & outgoing,
+        "transferencia_armazem": tes.eq("547"),
         "producao_interna": tes.isin(["020", "040"]) & kind.isin(["PA", "PI"]),
-        "consumo_op": outgoing & op,
+        "consumo_op": outgoing & (op | sheets_520),
         "consumo_epi": tes.isin(["520", "540"]) & cc_provided & cc.eq("601401"),
         "tc_tp_consumo": tc_tp,
         "acerto_gerencial": tes.isin(["520", "550"]) & cc_provided & cc.ne("600307"),
         "material_consumo": tes.isin(["520", "550"]) & kind.eq("II"),
-        "chapas_barras": tes.isin(["020", "030", "040", "520", "540", "550"])
+        "chapas_barras": tes.isin(["020", "030", "040", "540", "550"])
         & cc_provided & cc.eq("600307") & out["codigo"].isin(sheet_bar_codes()),
         "adequacao_custo": tes.isin(["030", "540"]),
         "ajuste_estoque": tes.isin(["020", "520"]) & group.eq("FLUXO DE ESTOQUE"),
