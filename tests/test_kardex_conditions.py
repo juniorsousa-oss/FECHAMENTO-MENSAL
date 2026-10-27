@@ -85,7 +85,7 @@ class ConditionsTests(unittest.TestCase):
                              row("fixo","550",cc="600307",qty=0)])
         result = cond.classify(rows,self.data)
         self.assertEqual(result["subgrupo_usuario"].tolist(),
-                         ["FLUXO DE ESTOQUE",cond.MANAGEMENT,"FLUXO DE ESTOQUE"])
+                         [cond.FALLBACK_STOCK,cond.MANAGEMENT,cond.FALLBACK_STOCK])
 
     def test_new_conditions_take_precedence_and_preserve_original_type(self):
         rows = pd.DataFrame([
