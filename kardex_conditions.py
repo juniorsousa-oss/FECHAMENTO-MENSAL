@@ -28,9 +28,9 @@ PRODUCTION_RETURN = "RETORNO DE PRODUÇÃO"
 # Identificadores estáveis. A lista persistida define a ordem e pode ser
 # reorganizada em Cadastros. Deletar uma regra remove sua aplicação.
 TEMPLATES = [
-    {"id": "kardex_cond_13_consumo_lista_520_sem_op", "regra": "consumo_lista_520_sem_op",
-     "nome": "MATERIAL DE CONSUMO — LISTA 520 SEM OP", "subgrupo": CONSUMABLE,
-     "criterio": "TES 520 + produto na lista confirmada (54 códigos) + ausência de OP no AE"},
+    {"id": "kardex_cond_14_ajuste_520_sem_op", "regra": "ajuste_520_sem_op",
+     "nome": "AJUSTE DE ESTOQUE — TES 520 SEM OP", "subgrupo": STOCK_ADJUSTMENT,
+     "criterio": "TES 520 sem OP identificada na AE: AJUSTE DE ESTOQUE, independentemente do tipo ou CC"},
     {"id": "kardex_cond_11_epi_ep", "regra": "consumo_epi_ep", "nome": EPI,
      "criterio": "Toda baixa TES 520 no armazém EP, independentemente do CC ou OP"},
     {"id": "kardex_cond_12_transferencia", "regra": "transferencia_armazem", "nome": TRANSFER,
@@ -66,19 +66,6 @@ def sheet_bar_codes() -> frozenset[str]:
     source = Path(__file__).parent / "config" / "kardex_chapas_barras_codigos.json"
     payload = json.loads(source.read_text("utf-8"))
     return frozenset(payload["codigos"])
-
-
-@lru_cache(maxsize=1)
-def consumo_520_sem_op_codes() -> frozenset[str]:
-    """Produtos explicitamente enviados para a exceção TES 520 sem OP."""
-    source = Path(__file__).parent / "config" / "kardex_consumo_520_sem_op_codigos.json"
-    payload = json.loads(source.read_text(encoding="utf-8"))
-    codes = payload["codigos"]
-    if len(codes) != 54 or len(set(codes)) != len(codes):
-        raise ValueError("Cadastro dos 54 produtos TES 520 sem OP inconsistente.")
-    if any(not re.fullmatch(r"\d{8}", code) for code in codes):
-        raise ValueError("Códigos de produto inválidos na lista TES 520 sem OP.")
-    return frozenset(codes)
 
 
 def _normalize_text(value) -> str:
@@ -140,13 +127,12 @@ def classify(frame: pd.DataFrame, config: dict) -> pd.DataFrame:
         | pd.to_numeric(out["valor_saida"], errors="coerce").fillna(0).ne(0)
     )
     sheets_520 = tes.eq("520") & cc_provided & cc.eq("600307") & out["codigo"].isin(sheet_bar_codes())
-    # Regra mais prioritária: código explícito da lista, TES 520 e
-    # nenhuma OP identificada na AE. Não depende do tipo, do CC nem do armazém.
-    material_520_sem_op = tes.eq("520") & ~op & out["codigo"].astype(str).isin(
-        consumo_520_sem_op_codes()
-    )
+    # Regra revisada: TODO lançamento TES 520 sem OP vira AJUSTE DE ESTOQUE.
+    # Corrige inclusive o código 00703452, antes capturado pela lista
+    # de 54 materiais. A presença de CC ou tipo II não muda a prioridade.
+    ajuste_520_sem_op = tes.eq("520") & ~op
     matches = {
-        "consumo_lista_520_sem_op": material_520_sem_op,
+        "ajuste_520_sem_op": ajuste_520_sem_op,
         "consumo_epi_ep": tes.eq("520") & warehouse.eq("EP") & outgoing,
         "transferencia_armazem": tes.eq("547"),
         "producao_interna": tes.isin(["020", "040"]) & kind.isin(["PA", "PI"]),
