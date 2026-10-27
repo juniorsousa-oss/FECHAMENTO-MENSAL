@@ -248,7 +248,7 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.assertIn("Descrição TES", catalog.columns)
         self.assertEqual(
             catalog.loc[catalog["TES"] == "999", "Descrição TES"].iloc[0],
-            "SAÍDA DE INVENTÁRIO/CONSUMO OP",
+            "CONSUMO DE OP",
         )
         self.assertTrue(any("CONDIÇÕES E SUBGRUPOS" in x.value for x in app.markdown))
         self.area(app, "Fontes e relatórios")
