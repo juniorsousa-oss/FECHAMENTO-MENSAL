@@ -18,81 +18,91 @@ UNASSIGNED = "SEM GRUPO"
 
 def empty() -> dict:
     from kardex_conditions import TEMPLATES
-    return {"versao": 4, "grupos": [], "condicoes": [
+    return {"versao": 5, "grupos": [], "condicoes": [
         {"id": item["id"], "nome": item["nome"], "regra": item["regra"]}
         for item in TEMPLATES
     ]}
 
 
 def _migrate_conditions(data: dict) -> dict:
-    """Adiciona novas regras apenas uma vez sem modificar grupos nem condições excluídas.
+    """Migra condições uma vez, preservando grupos e exclusões anteriores.
 
-    V1 -> V2: condições iniciais; V2 -> V3: complementares.
-    V3 -> V4: EPI do EP e transferência 547 no começo da fila.
-    Regras excluídas não são recriadas após a migração da sua versão.
+    Até V4: migrações históricas; V4 -> V5: novo material de consumo listado
+    e sem OP no topo da fila. V5 não recria condições excluídas.
     """
     from kardex_conditions import TEMPLATES
     version = int(data.get("versao") or 1)
-    if version >= 4:
+    if version >= 5:
         return data
     upgraded = copy.deepcopy(data)
-    if version < 2:
-        legacy = list(upgraded.get("condicoes") or [])
-        known_names = {t["nome"].casefold() for t in TEMPLATES}
-        original = [
-            t for t in TEMPLATES
-            if t["regra"] in (
-                "producao_interna", "consumo_op", "acerto_gerencial",
-                "material_consumo", "chapas_barras", "adequacao_custo"
-            )
-        ]
-        upgraded["condicoes"] = [
-            {"id":t["id"], "nome":t["nome"], "regra":t["regra"]}
-            for t in original
-        ] + [
-            item for item in legacy
-            if isinstance(item, dict)
-            and str(item.get("nome") or "").casefold() not in known_names
-        ]
-    if version < 3:
-        current = upgraded.get("condicoes") or []
-        present = {x.get("id") for x in current if isinstance(x, dict)}
-        additions = {t["regra"]:t for t in TEMPLATES if t["id"] not in present}
-        for name, anchor in (
-            ("consumo_epi", "consumo_op"),
-            ("tc_tp_consumo", "consumo_epi"),
-        ):
-            template = additions.get(name)
-            if not template:
-                continue
-            anchor_index = next(
-                (i for i,x in enumerate(current) if x.get("regra") == anchor),
-                None
-            )
-            insert_at = anchor_index+1 if anchor_index is not None else 0
-            current.insert(insert_at, {
-                "id":template["id"], "nome":template["nome"], "regra":template["regra"]
-            })
-        for name in ("ajuste_estoque", "retorno_producao"):
-            template = additions.get(name)
-            if template:
-                current.append({
-                    "id":template["id"], "nome":template["nome"], "regra":template["regra"]
+    if version < 4:
+        if version < 2:
+            legacy = list(upgraded.get("condicoes") or [])
+            known_names = {t["nome"].casefold() for t in TEMPLATES}
+            original = [
+                t for t in TEMPLATES
+                if t["regra"] in (
+                    "producao_interna", "consumo_op", "acerto_gerencial",
+                    "material_consumo", "chapas_barras", "adequacao_custo"
+                )
+            ]
+            upgraded["condicoes"] = [
+                {"id": t["id"], "nome": t["nome"], "regra": t["regra"]}
+                for t in original
+            ] + [
+                item for item in legacy
+                if isinstance(item, dict)
+                and str(item.get("nome") or "").casefold() not in known_names
+            ]
+        if version < 3:
+            current = upgraded.get("condicoes") or []
+            present = {x.get("id") for x in current if isinstance(x, dict)}
+            additions = {t["regra"]: t for t in TEMPLATES if t["id"] not in present}
+            for name, anchor in (
+                ("consumo_epi", "consumo_op"),
+                ("tc_tp_consumo", "consumo_epi"),
+            ):
+                template = additions.get(name)
+                if not template:
+                    continue
+                anchor_index = next(
+                    (i for i, x in enumerate(current) if x.get("regra") == anchor),
+                    None
+                )
+                insert_at = anchor_index + 1 if anchor_index is not None else 0
+                current.insert(insert_at, {
+                    "id": template["id"], "nome": template["nome"], "regra": template["regra"]
                 })
-        upgraded["condicoes"] = current
+            for name in ("ajuste_estoque", "retorno_producao"):
+                template = additions.get(name)
+                if template:
+                    current.append({
+                        "id": template["id"], "nome": template["nome"], "regra": template["regra"]
+                    })
+            upgraded["condicoes"] = current
+        current = list(upgraded.get("condicoes") or [])
+        present = {item.get("id") for item in current if isinstance(item, dict)}
+        new_priority = [
+            template for template in TEMPLATES
+            if template["regra"] in ("consumo_epi_ep", "transferencia_armazem")
+            and template["id"] not in present
+        ]
+        # Não alterar a ordem que o usuário definiu para as regras preexistentes.
+        upgraded["condicoes"] = [
+            {"id": item["id"], "nome": item["nome"], "regra": item["regra"]}
+            for item in new_priority
+        ] + current
+
+    # V4 -> V5: nova exceção é anterior a EPI/CC/consumo genérico. Ao
+    # selecionar os códigos explícitos, a fila pára nessa primeira regra.
     current = list(upgraded.get("condicoes") or [])
-    present = {item.get("id") for item in current if isinstance(item, dict)}
-    new_priority = [
-        template for template in TEMPLATES
-        if template["regra"] in ("consumo_epi_ep", "transferencia_armazem")
-        and template["id"] not in present
-    ]
-    # Não alterar a ordem que o usuário definiu para as regras preexistentes.
-    upgraded["condicoes"] = [
-        {"id":item["id"], "nome":item["nome"], "regra":item["regra"]}
-        for item in new_priority
-    ] + current
-    upgraded["versao"] = 4
+    template = next(t for t in TEMPLATES if t["regra"] == "consumo_lista_520_sem_op")
+    if not any(item.get("id") == template["id"] for item in current):
+        current.insert(0, {
+            "id": template["id"], "nome": template["nome"], "regra": template["regra"]
+        })
+    upgraded["condicoes"] = current
+    upgraded["versao"] = 5
     return upgraded
 
 def normalize_tes(value: object) -> str:
@@ -105,7 +115,7 @@ def validated(data: dict, known_tes: set[str] | None = None) -> dict:
     output = _migrate_conditions(copy.deepcopy(data))
     output.setdefault("grupos", [])
     output.setdefault("condicoes", [])
-    output["versao"] = 4
+    output["versao"] = 5
     if not isinstance(output["grupos"], list) or not isinstance(output["condicoes"], list):
         raise ValueError("Estrutura inválida de grupos ou condições.")
     names, owners, ids = set(), {}, set()
@@ -161,7 +171,7 @@ def validated(data: dict, known_tes: set[str] | None = None) -> dict:
                 raise ValueError("Regra executável cadastrada mais de uma vez.")
             rule_names.add(rule_id)
         ids.add(ident); condition_names[title.casefold()] = rule_id or ident; condition["nome"] = title
-    return {"versao": 4, "grupos": output["grupos"], "condicoes": output["condicoes"]}
+    return {"versao": 5, "grupos": output["grupos"], "condicoes": output["condicoes"]}
 
 def create_group(data: dict, name: str, *, known_tes: set[str]) -> dict:
     updated = validated(data, known_tes)
@@ -253,8 +263,8 @@ def load() -> dict:
     records = response.json() or []
     payload = records[0]["valor"] if records else empty()
     data = validated(payload)
-    if records and int(payload.get("versao") or 1) < 4:
-        # Migração única até V4; excluir regras depois não as recria.
+    if records and int(payload.get("versao") or 1) < 5:
+        # Migração única até V5; regras excluídas depois não reaparecem.
         db.rpc("fm_salvar_configuracao", {"p_chave": CONFIG_KEY, "p_valor": data}, timeout=45)
     return data
 
