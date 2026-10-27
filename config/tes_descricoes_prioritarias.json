@@ -1,14 +1,14 @@
 {
-  "versao": "2026-10-22.override.2",
-  "descricao": "Descrições prioritárias definidas pelo usuário; substituem integralmente as do relatório-base para esses códigos.",
+  "versao": "2026-10-27.override.3",
+  "descricao": "Descrições prioritárias definidas pelo usuário; prevalecem sobre o relatório-base para os códigos informados.",
   "tes": {
     "499": "ENTRADA DE INVENTÁRIO/ENTRADA OP",
-    "520": "BAIXA SA TOTVS",
+    "520": "AJUSTE DE SAÍDA ERRO DE ESTOQUE",
     "540": "BAIX CUSTO E QTD ZER",
     "550": "BAIXA PRODUCAO MES",
-    "999": "SAÍDA DE INVENTÁRIO/CONSUMO OP",
+    "999": "CONSUMO DE OP",
     "010": "MOV PRODUCAO MES PA",
-    "020": "DEVOLUCAO TOTVS",
+    "020": "AJUSTE DE ENTRADA ERRO DE ESTOQUE",
     "030": "ENTR CUSTO E QTD ZER",
     "040": "DEVOLUCAO MES"
   }
