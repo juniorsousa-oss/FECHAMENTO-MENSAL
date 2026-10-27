@@ -47,11 +47,11 @@ class KardexGroupConfigTests(unittest.TestCase):
         cfg = cg.assign_group(cfg, cfg["grupos"][0]["id"], ["020"], known_tes=KNOWN)
         before = cg.summarize(frame(), cfg)
         cfg = cg.create_condition(cfg, "Verificar ajuste de inventário", known_tes=KNOWN)
-        self.assertEqual(len(cfg["condicoes"]), 11)
+        self.assertEqual(len(cfg["condicoes"]), 13)
         cond_id = cfg["condicoes"][-1]["id"]
         self.assertTrue(before.equals(cg.summarize(frame(), cfg)))
         cfg = cg.delete_condition(cfg, cond_id, known_tes=KNOWN)
-        self.assertEqual(len(cfg["condicoes"]), 10)
+        self.assertEqual(len(cfg["condicoes"]), 12)
         self.assertTrue(before.equals(cg.summarize(frame(), cfg)))
 
     def test_invalid_names_codes_duplicate_groups_are_rejected(self):
