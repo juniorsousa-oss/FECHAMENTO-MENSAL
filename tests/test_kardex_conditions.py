@@ -1,4 +1,4 @@
-"""Testa aplicação sequencial das dez condições confirmadas do KARDEX."""
+"""Testa aplicação sequencial das doze condições confirmadas do KARDEX."""
 from __future__ import annotations
 import unittest
 import pandas as pd
@@ -8,20 +8,20 @@ import kardex_conditions as cond
 
 
 def row(label, tes, *, kind="MP", cc="", op="", qty=0, amount=0, code="00000001",
-        cf="", desc="MATERIAL", group=""):
+        cf="", desc="MATERIAL", group="", warehouse="S2"):
     return {"id_registro": label, "codigo": code, "tes": tes, "tipo": kind,
             "cc_identificado": cc, "op_identificada": op, "qtd_saida": qty,
             "valor_saida": amount, "valor_entrada": 1, "liquido_valor": 1-amount,
-            "descricao": desc, "grupo": group, "cf": cf, "descricao_tes": "TESTE"}
+            "descricao": desc, "grupo": group, "cf": cf, "armazem": warehouse, "descricao_tes": "TESTE"}
 
 
 class ConditionsTests(unittest.TestCase):
     def setUp(self):
         self.data = cfg.empty()
-        self.known = {"010","020","030","040","499","520","540","550","999"}
+        self.known = {"010","020","030","040","499","520","540","550","999","547"}
         self.data = cfg.create_group(self.data, "FLUXO DE ESTOQUE", known_tes=self.known)
         self.data = cfg.assign_group(self.data, self.data["grupos"][0]["id"],
-                                     ["020","030","040","520","540","550"], known_tes=self.known)
+                                     ["020","030","040","520","540","550","547"], known_tes=self.known)
         self.sheet = next(iter(cond.sheet_bar_codes()))
 
     def test_first_matching_condition_excludes_all_following_conditions(self):
@@ -56,8 +56,8 @@ class ConditionsTests(unittest.TestCase):
         self.assertEqual(len(tagged), len(frame))
         self.assertEqual(tagged["valor_saida"].sum(), frame["valor_saida"].sum())
         self.assertEqual(tagged["valor_entrada"].sum(), frame["valor_entrada"].sum())
-        self.assertEqual(tagged.loc["1", "condicao_ordem"], 1)
-        self.assertEqual(tagged.loc["11", "condicao_ordem"], 2)
+        self.assertEqual(tagged.loc["1", "condicao_ordem"], 3)
+        self.assertEqual(tagged.loc["11", "condicao_ordem"], 4)
         self.assertEqual(tagged.loc["12", "condicao_id"], "kardex_cond_09_ajuste_estoque")
         self.assertEqual(tagged.loc["13", "condicao_id"], "")
         self.assertTrue(pd.isna(tagged.loc["13", "condicao_ordem"]))
@@ -71,7 +71,7 @@ class ConditionsTests(unittest.TestCase):
         self.assertEqual(cond.classify(original,cfg2).iloc[0].subgrupo_usuario,cond.CONSUMABLE)
 
     def test_deleted_conditions_do_not_reappear_and_can_be_restored(self):
-        key = cond.TEMPLATES[1]["id"]
+        key = next(t["id"] for t in cond.TEMPLATES if t["regra"] == "consumo_op")
         removed = cfg.delete_condition(self.data,key,known_tes=self.known)
         record = pd.DataFrame([row("op","999",op="OP123",qty=4)])
         self.assertEqual(cond.classify(record,removed).iloc[0].subgrupo_usuario,"SEM GRUPO")
@@ -123,7 +123,61 @@ class ConditionsTests(unittest.TestCase):
         self.assertEqual(tagged["valor_entrada"].sum(), rows["valor_entrada"].sum())
         self.assertEqual(tagged["valor_saida"].sum(), rows["valor_saida"].sum())
         self.assertEqual(len(tagged), len(rows))
-        self.assertEqual(tagged.loc["epi520", "condicao_ordem"], 3)
+        self.assertEqual(tagged.loc["epi520", "condicao_ordem"], 5)
+
+    def test_new_warehouse_and_sheet_rules_override_lower_priority(self):
+        frame = pd.DataFrame([
+            row("epi_ep", "520", warehouse="EP", cc="999999", qty=2),
+            row("epi_ep_with_op", "520", warehouse="ep", op="OP456", qty=3),
+            row("epi_ep_ii", "520", warehouse="EP", kind="II", cc="600307", qty=3),
+            row("epi_ep_no_baixa", "520", warehouse="EP", cc="999999", qty=0),
+            row("epi_s2", "520", warehouse="S2", cc="999999", qty=2),
+            row("transfer", "547", warehouse="EP", qty=1, op="OP456"),
+            row("transfer_no_saida", "547", warehouse="S2"),
+            row("sheet520", "520", cc="600307", qty=2, code=self.sheet),
+            row("sheet520_no_baixa", "520", cc="600307", qty=0, code=self.sheet),
+            row("sheet520_ii", "520", cc="600307", kind="II", qty=4, code=self.sheet),
+            row("sheet550", "550", cc="600307", qty=3, code=self.sheet),
+            row("default_547_untouched", "020", cc="", kind="MP"),
+        ])
+        tagged = cond.classify(frame, self.data).set_index("id_registro")
+        self.assertEqual(tagged.loc["epi_ep", "subgrupo_usuario"], cond.EPI)
+        self.assertEqual(tagged.loc["epi_ep_with_op", "subgrupo_usuario"], cond.EPI)
+        self.assertEqual(tagged.loc["epi_ep_ii", "subgrupo_usuario"], cond.EPI)
+        self.assertEqual(tagged.loc["epi_ep_no_baixa", "subgrupo_usuario"], cond.MANAGEMENT)
+        self.assertEqual(tagged.loc["epi_s2", "subgrupo_usuario"], cond.MANAGEMENT)
+        self.assertEqual(tagged.loc["transfer", "subgrupo_usuario"], cond.TRANSFER)
+        self.assertEqual(tagged.loc["transfer_no_saida", "subgrupo_usuario"], cond.TRANSFER)
+        self.assertEqual(tagged.loc["sheet520", "subgrupo_usuario"], cond.CONSUMPTION)
+        self.assertEqual(tagged.loc["sheet520_ii", "subgrupo_usuario"], cond.CONSUMPTION)
+        self.assertEqual(tagged.loc["sheet520_no_baixa", "subgrupo_usuario"], cond.STOCK_ADJUSTMENT)
+        self.assertEqual(tagged.loc["sheet550", "subgrupo_usuario"], cond.SHEET_BAR)
+        self.assertEqual(tagged.loc["default_547_untouched", "subgrupo_usuario"], cond.STOCK_ADJUSTMENT)
+        self.assertEqual(tagged["valor_saida"].sum(), frame["valor_saida"].sum())
+        self.assertEqual(len(tagged), len(frame))
+
+    def test_fallback_stock_group_is_renamed_without_changing_group(self):
+        active = cfg.delete_condition(self.data, "kardex_cond_09_ajuste_estoque", known_tes=self.known)
+        tagged = cond.classify(pd.DataFrame([
+            row("fallback", "520", cc="600307"),
+            row("other_group", "999")
+        ]), active).set_index("id_registro")
+        self.assertEqual(tagged.loc["fallback", "grupo_usuario"], "FLUXO DE ESTOQUE")
+        self.assertEqual(tagged.loc["fallback", "subgrupo_usuario"], cond.FALLBACK_STOCK)
+        self.assertEqual(tagged.loc["other_group", "subgrupo_usuario"], "SEM GRUPO")
+
+    def test_v3_migration_prepends_two_new_conditions_only_once(self):
+        old = {"versao":3, "grupos": self.data["grupos"],
+               "condicoes": [dict(x) for x in self.data["condicoes"]
+                            if x["regra"] not in ("consumo_epi_ep", "transferencia_armazem")]}
+        converted = cfg.validated(old, self.known)
+        self.assertEqual(converted["versao"], 4)
+        self.assertEqual(
+            [x["regra"] for x in converted["condicoes"][:2]],
+            ["consumo_epi_ep", "transferencia_armazem"]
+        )
+        self.assertEqual(converted["condicoes"][2:], old["condicoes"])
+        self.assertEqual(cfg.validated(converted, self.known), converted)
 
     def test_v2_migration_adds_only_new_conditions_preserving_existing_order(self):
         old = {
@@ -137,15 +191,15 @@ class ConditionsTests(unittest.TestCase):
             ],
         }
         migrated = cfg.validated(old, self.known)
-        self.assertEqual(migrated["versao"], 3)
-        self.assertEqual(len(migrated["condicoes"]), 10)
+        self.assertEqual(migrated["versao"], 4)
+        self.assertEqual(len(migrated["condicoes"]), 12)
         self.assertEqual(migrated["grupos"], old["grupos"])
         self.assertEqual(
             [item["regra"] for item in migrated["condicoes"]],
             [item["regra"] for item in cond.TEMPLATES],
         )
         removed = cfg.delete_condition(migrated, "kardex_cond_07_consumo_epi", known_tes=self.known)
-        self.assertEqual(len(cfg.validated(removed,self.known)["condicoes"]), 9)
+        self.assertEqual(len(cfg.validated(removed,self.known)["condicoes"]), 11)
         self.assertNotIn("kardex_cond_07_consumo_epi", [
             x["id"] for x in cfg.validated(removed,self.known)["condicoes"]
         ])
@@ -154,11 +208,11 @@ class ConditionsTests(unittest.TestCase):
         old = {"versao":1,"grupos":[{"id":"old","nome":"TESTE","tes":["520"]}],
                "condicoes":[]}
         upgraded = cfg.validated(old,self.known)
-        self.assertEqual(upgraded["versao"],3)
+        self.assertEqual(upgraded["versao"],4)
         self.assertEqual(upgraded["grupos"][0]["nome"],"TESTE")
-        self.assertEqual(len(upgraded["condicoes"]),10)
+        self.assertEqual(len(upgraded["condicoes"]),12)
         filtered = cfg.delete_condition(upgraded,cond.TEMPLATES[0]["id"],known_tes=self.known)
-        self.assertEqual(len(cfg.validated(filtered)["condicoes"]),9)
+        self.assertEqual(len(cfg.validated(filtered)["condicoes"]),11)
 
 
 if __name__ == "__main__":
