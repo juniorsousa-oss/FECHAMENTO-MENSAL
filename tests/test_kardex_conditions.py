@@ -1,4 +1,4 @@
-"""Testa aplicação sequencial das treze condições confirmadas do KARDEX."""
+"""Testa aplicação sequencial das treze condições do KARDEX, incluindo ajuste 520 sem OP."""
 from __future__ import annotations
 import unittest
 import pandas as pd
@@ -45,9 +45,9 @@ class ConditionsTests(unittest.TestCase):
         tagged = cond.classify(frame, self.data).set_index("id_registro")
         expected = {
             "1":cond.PRODUCTION, "2":cond.PRODUCTION,
-            "3":cond.MANAGEMENT, "4":cond.CONSUMABLE,
+            "3":cond.MANAGEMENT, "4":cond.STOCK_ADJUSTMENT,
             "5":cond.SHEET_BAR, "6":cond.SHEET_BAR,
-            "7":cond.COST, "8":cond.COST, "9":cond.MANAGEMENT,
+            "7":cond.COST, "8":cond.COST, "9":cond.STOCK_ADJUSTMENT,
             "10":cond.CONSUMPTION, "11":cond.CONSUMPTION,
             "12":cond.STOCK_ADJUSTMENT, "13":"SEM GRUPO",
             "14":"SEM GRUPO", "15":cond.CONSUMABLE,
@@ -62,51 +62,67 @@ class ConditionsTests(unittest.TestCase):
         self.assertEqual(tagged.loc["13", "condicao_id"], "")
         self.assertTrue(pd.isna(tagged.loc["13", "condicao_ordem"]))
 
-    def test_listed_products_520_without_op_are_consumable_before_any_cc_or_epi(self):
-        listed = sorted(cond.consumo_520_sem_op_codes())
-        self.assertEqual(len(listed), 54)
-        self.assertEqual(listed[0], "00000395")
-        self.assertIn("00703452", listed)
-        self.assertIn("70010033", listed)
-        self.assertEqual(self.data["condicoes"][0]["regra"], "consumo_lista_520_sem_op")
+    def test_520_without_op_is_stock_adjustment_before_every_other_condition(self):
+        """Corrige 00703452 e os demais lançamentos 520 sem OP, inclusive tipo II."""
+        self.assertEqual(self.data["condicoes"][0]["regra"], "ajuste_520_sem_op")
         samples = pd.DataFrame([
-            row("cc_diferente", "520", code=listed[0], cc="123456", qty=2),
-            row("tipo_mp", "520", code=listed[1], kind="MP", cc="600307", qty=3),
-            row("epis", "520", code=listed[2], cc="601401", warehouse="EP", qty=4),
-            row("com_op", "520", code=listed[0], op="OP20261234", cc="123456", qty=1),
-            row("outro_codigo", "520", code="00999888", cc="123456", qty=2),
-            row("outra_tes", "550", code=listed[0], cc="123456", qty=2),
-            row("com_op_sem_saida", "520", code=listed[3], op="OP123456", qty=0),
+            row("bucha_1", "520", code="00703452", kind="II",
+                cc="600307", amount=3554.16, qty=2),
+            row("bucha_2", "520", code="00703452", kind="II",
+                cc="600307", amount=4343.97, qty=2),
+            row("bucha_3", "520", code="00703452", kind="II",
+                cc="600307", amount=1974.53, qty=2),
+            row("cc_diferente", "520", cc="123456", kind="II", qty=2),
+            row("epi_ep", "520", warehouse="EP", cc="601401", qty=3),
+            row("tc_tp", "520", group="MATERIAL USADO TC/TP", qty=1),
+            row("chapa", "520", cc="600307", code=self.sheet, qty=2),
+            row("outro_codigo", "520", code="00999888", kind="MP", cc="", qty=2),
+            row("com_op", "520", code="00703452", op="OP20261234",
+                kind="II", cc="600307", qty=1),
+            row("outra_tes", "550", cc="123456", qty=2),
+            row("com_op_sem_saida", "520", code="00703452", op="OP123456", qty=0),
         ])
+        original_total = samples["valor_saida"].sum()
         result = cond.classify(samples, self.data).set_index("id_registro")
-        for label in ("cc_diferente", "tipo_mp", "epis"):
-            self.assertEqual(result.loc[label, "subgrupo_usuario"], cond.CONSUMABLE)
-            self.assertEqual(result.loc[label, "condicao_ordem"], 1)
+        for label in (
+            "bucha_1", "bucha_2", "bucha_3", "cc_diferente",
+            "epi_ep", "tc_tp", "chapa", "outro_codigo",
+        ):
+            self.assertEqual(result.loc[label, "grupo_usuario"], "FLUXO DE ESTOQUE")
+            self.assertEqual(result.loc[label, "subgrupo_usuario"], cond.STOCK_ADJUSTMENT)
+            self.assertEqual(int(result.loc[label, "condicao_ordem"]), 1)
             self.assertEqual(result.loc[label, "condicao_id"],
-                             "kardex_cond_13_consumo_lista_520_sem_op")
+                             "kardex_cond_14_ajuste_520_sem_op")
         self.assertEqual(result.loc["com_op", "subgrupo_usuario"], cond.CONSUMPTION)
-        self.assertEqual(result.loc["outro_codigo", "subgrupo_usuario"], cond.MANAGEMENT)
         self.assertEqual(result.loc["outra_tes", "subgrupo_usuario"], cond.MANAGEMENT)
         self.assertNotEqual(result.loc["com_op_sem_saida", "condicao_ordem"], 1)
-        self.assertEqual(float(result["valor_saida"].sum()), float(samples["valor_saida"].sum()))
+        self.assertEqual(result["valor_saida"].sum(), original_total)
         self.assertEqual(len(result), len(samples))
 
-    def test_v4_migration_adds_product_list_once_without_recreating_deleted_rules(self):
+    def test_v5_migration_replaces_old_consumable_exception_once(self):
         old = cfg.empty()
-        old["versao"] = 4
-        old["condicoes"] = [
-            item for item in old["condicoes"]
-            if item["regra"] not in ("consumo_lista_520_sem_op", "consumo_epi")
-        ]
+        old["versao"] = 5
+        old["condicoes"][0] = {
+            "id": "kardex_cond_13_consumo_lista_520_sem_op",
+            "nome": "MATERIAL DE CONSUMO — LISTA 520 SEM OP",
+            "regra": "consumo_lista_520_sem_op",
+        }
+        original_groups = old["grupos"]
+        old["condicoes"] = [item for item in old["condicoes"]
+                            if item["regra"] != "consumo_epi"]
         converted = cfg.validated(old, self.known)
-        self.assertEqual(converted["versao"], 5)
-        self.assertEqual(converted["condicoes"][0]["regra"], "consumo_lista_520_sem_op")
-        self.assertNotIn("consumo_epi", [x["regra"] for x in converted["condicoes"]])
-        self.assertEqual(len(converted["condicoes"]), len(old["condicoes"]) + 1)
-        self.assertEqual(cfg.validated(converted, self.known), converted)
-        removed = cfg.delete_condition(converted, converted["condicoes"][0]["id"],
-                                       known_tes=self.known)
+        self.assertEqual(converted["versao"], 6)
+        self.assertEqual(converted["condicoes"][0]["regra"], "ajuste_520_sem_op")
+        self.assertEqual(converted["grupos"], original_groups)
         self.assertNotIn("consumo_lista_520_sem_op",
+                         [x["regra"] for x in converted["condicoes"]])
+        self.assertNotIn("consumo_epi", [x["regra"] for x in converted["condicoes"]])
+        self.assertEqual(len(converted["condicoes"]), len(old["condicoes"]))
+        self.assertEqual(cfg.validated(converted, self.known), converted)
+        removed = cfg.delete_condition(
+            converted, converted["condicoes"][0]["id"], known_tes=self.known
+        )
+        self.assertNotIn("ajuste_520_sem_op",
                          [x["regra"] for x in cfg.validated(removed, self.known)["condicoes"]])
 
     def test_reordering_priority_changes_first_match_only(self):
@@ -152,15 +168,15 @@ class ConditionsTests(unittest.TestCase):
         ])
         tagged = cond.classify(rows, self.data).set_index("id_registro")
         expected = {
-            "epi520":cond.EPI, "epi540":cond.EPI,
+            "epi520":cond.STOCK_ADJUSTMENT, "epi540":cond.EPI,
             "epi_over_op":cond.CONSUMPTION,
-            "tc_tp":cond.CONSUMABLE, "tc_tp_desc":cond.CONSUMABLE,
-            "tp_only":cond.STOCK_ADJUSTMENT, "not_epi":cond.MANAGEMENT,
+            "tc_tp":cond.STOCK_ADJUSTMENT, "tc_tp_desc":cond.STOCK_ADJUSTMENT,
+            "tp_only":cond.STOCK_ADJUSTMENT, "not_epi":cond.STOCK_ADJUSTMENT,
             "adjust_020":cond.STOCK_ADJUSTMENT, "adjust_520":cond.STOCK_ADJUSTMENT,
             "return_040":cond.PRODUCTION_RETURN,
             "production_precedes_return":cond.PRODUCTION,
             "sheet_precedes_return":cond.SHEET_BAR,
-            "original_ii":cond.CONSUMABLE,
+            "original_ii":cond.STOCK_ADJUSTMENT,
         }
         self.assertEqual(tagged["subgrupo_usuario"].to_dict(), expected)
         self.assertEqual(tagged.loc["tc_tp", "tipo_analise"], "II")
@@ -170,7 +186,7 @@ class ConditionsTests(unittest.TestCase):
         self.assertEqual(tagged["valor_entrada"].sum(), rows["valor_entrada"].sum())
         self.assertEqual(tagged["valor_saida"].sum(), rows["valor_saida"].sum())
         self.assertEqual(len(tagged), len(rows))
-        self.assertEqual(tagged.loc["epi520", "condicao_ordem"], 6)
+        self.assertEqual(tagged.loc["epi520", "condicao_ordem"], 1)
 
     def test_new_warehouse_and_sheet_rules_override_lower_priority(self):
         frame = pd.DataFrame([
@@ -188,15 +204,15 @@ class ConditionsTests(unittest.TestCase):
             row("default_547_untouched", "020", cc="", kind="MP"),
         ])
         tagged = cond.classify(frame, self.data).set_index("id_registro")
-        self.assertEqual(tagged.loc["epi_ep", "subgrupo_usuario"], cond.EPI)
+        self.assertEqual(tagged.loc["epi_ep", "subgrupo_usuario"], cond.STOCK_ADJUSTMENT)
         self.assertEqual(tagged.loc["epi_ep_with_op", "subgrupo_usuario"], cond.EPI)
-        self.assertEqual(tagged.loc["epi_ep_ii", "subgrupo_usuario"], cond.EPI)
-        self.assertEqual(tagged.loc["epi_ep_no_baixa", "subgrupo_usuario"], cond.MANAGEMENT)
-        self.assertEqual(tagged.loc["epi_s2", "subgrupo_usuario"], cond.MANAGEMENT)
+        self.assertEqual(tagged.loc["epi_ep_ii", "subgrupo_usuario"], cond.STOCK_ADJUSTMENT)
+        self.assertEqual(tagged.loc["epi_ep_no_baixa", "subgrupo_usuario"], cond.STOCK_ADJUSTMENT)
+        self.assertEqual(tagged.loc["epi_s2", "subgrupo_usuario"], cond.STOCK_ADJUSTMENT)
         self.assertEqual(tagged.loc["transfer", "subgrupo_usuario"], cond.TRANSFER)
         self.assertEqual(tagged.loc["transfer_no_saida", "subgrupo_usuario"], cond.TRANSFER)
-        self.assertEqual(tagged.loc["sheet520", "subgrupo_usuario"], cond.CONSUMPTION)
-        self.assertEqual(tagged.loc["sheet520_ii", "subgrupo_usuario"], cond.CONSUMPTION)
+        self.assertEqual(tagged.loc["sheet520", "subgrupo_usuario"], cond.STOCK_ADJUSTMENT)
+        self.assertEqual(tagged.loc["sheet520_ii", "subgrupo_usuario"], cond.STOCK_ADJUSTMENT)
         self.assertEqual(tagged.loc["sheet520_no_baixa", "subgrupo_usuario"], cond.STOCK_ADJUSTMENT)
         self.assertEqual(tagged.loc["sheet550", "subgrupo_usuario"], cond.SHEET_BAR)
         self.assertEqual(tagged.loc["default_547_untouched", "subgrupo_usuario"], cond.STOCK_ADJUSTMENT)
@@ -206,7 +222,7 @@ class ConditionsTests(unittest.TestCase):
     def test_fallback_stock_group_is_renamed_without_changing_group(self):
         active = cfg.delete_condition(self.data, "kardex_cond_09_ajuste_estoque", known_tes=self.known)
         tagged = cond.classify(pd.DataFrame([
-            row("fallback", "520", cc="600307"),
+            row("fallback", "020", cc="600307"),
             row("other_group", "999")
         ]), active).set_index("id_registro")
         self.assertEqual(tagged.loc["fallback", "grupo_usuario"], "FLUXO DE ESTOQUE")
@@ -216,12 +232,12 @@ class ConditionsTests(unittest.TestCase):
     def test_v3_migration_prepends_two_new_conditions_only_once(self):
         old = {"versao":3, "grupos": self.data["grupos"],
                "condicoes": [dict(x) for x in self.data["condicoes"]
-                            if x["regra"] not in ("consumo_epi_ep", "transferencia_armazem", "consumo_lista_520_sem_op")]}
+                            if x["regra"] not in ("consumo_epi_ep", "transferencia_armazem", "ajuste_520_sem_op")]}
         converted = cfg.validated(old, self.known)
-        self.assertEqual(converted["versao"], 5)
+        self.assertEqual(converted["versao"], 6)
         self.assertEqual(
             [x["regra"] for x in converted["condicoes"][:3]],
-            ["consumo_lista_520_sem_op", "consumo_epi_ep", "transferencia_armazem"]
+            ["ajuste_520_sem_op", "consumo_epi_ep", "transferencia_armazem"]
         )
         self.assertEqual(converted["condicoes"][3:], old["condicoes"])
         self.assertEqual(cfg.validated(converted, self.known), converted)
@@ -238,7 +254,7 @@ class ConditionsTests(unittest.TestCase):
             ],
         }
         migrated = cfg.validated(old, self.known)
-        self.assertEqual(migrated["versao"], 5)
+        self.assertEqual(migrated["versao"], 6)
         self.assertEqual(len(migrated["condicoes"]), 13)
         self.assertEqual(migrated["grupos"], old["grupos"])
         self.assertEqual(
@@ -255,7 +271,7 @@ class ConditionsTests(unittest.TestCase):
         old = {"versao":1,"grupos":[{"id":"old","nome":"TESTE","tes":["520"]}],
                "condicoes":[]}
         upgraded = cfg.validated(old,self.known)
-        self.assertEqual(upgraded["versao"],5)
+        self.assertEqual(upgraded["versao"],6)
         self.assertEqual(upgraded["grupos"][0]["nome"],"TESTE")
         self.assertEqual(len(upgraded["condicoes"]),13)
         filtered = cfg.delete_condition(upgraded,cond.TEMPLATES[0]["id"],known_tes=self.known)
