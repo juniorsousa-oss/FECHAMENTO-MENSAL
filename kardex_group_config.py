@@ -18,7 +18,7 @@ UNASSIGNED = "SEM GRUPO"
 
 def empty() -> dict:
     from kardex_conditions import TEMPLATES
-    return {"versao": 6, "grupos": [], "condicoes": [
+    return {"versao": 7, "grupos": [], "condicoes": [
         {"id": item["id"], "nome": item["nome"], "regra": item["regra"]}
         for item in TEMPLATES
     ]}
@@ -29,11 +29,11 @@ def _migrate_conditions(data: dict) -> dict:
 
     Até V4: migrações históricas. V5 -> V6: revoga a lista especial de
     consumo TES 520 sem OP e introduz o ajuste de estoque prioritário.
-    V6 não recria condições excluídas.
+    V6 não recria condições excluídas. V7 reposiciona o ajuste residual.
     """
     from kardex_conditions import TEMPLATES
     version = int(data.get("versao") or 1)
-    if version >= 6:
+    if version >= 7:
         return data
     upgraded = copy.deepcopy(data)
     if version < 4:
@@ -102,12 +102,21 @@ def _migrate_conditions(data: dict) -> dict:
         if item.get("regra") != "consumo_lista_520_sem_op"
     ]
     template = next(t for t in TEMPLATES if t["regra"] == "ajuste_520_sem_op")
-    if not any(item.get("regra") == "ajuste_520_sem_op" for item in current):
+    if version < 6 and not any(item.get("regra") == "ajuste_520_sem_op" for item in current):
         current.insert(0, {
             "id": template["id"], "nome": template["nome"], "regra": template["regra"]
         })
+    # Preservar a ordem das regras específicas e as exclusões do usuário.
+    idx = next((idx for idx, entry in enumerate(current)
+                if entry.get("regra") == "ajuste_520_sem_op"), None)
+    if idx is not None:
+        entry = current.pop(idx)
+        pos = next((idx for idx, other in enumerate(current)
+                    if other.get("regra") in ("ajuste_estoque", "retorno_producao")),
+                   len(current))
+        current.insert(pos, entry)
     upgraded["condicoes"] = current
-    upgraded["versao"] = 6
+    upgraded["versao"] = 7
     return upgraded
 
 def normalize_tes(value: object) -> str:
@@ -120,7 +129,7 @@ def validated(data: dict, known_tes: set[str] | None = None) -> dict:
     output = _migrate_conditions(copy.deepcopy(data))
     output.setdefault("grupos", [])
     output.setdefault("condicoes", [])
-    output["versao"] = 6
+    output["versao"] = 7
     if not isinstance(output["grupos"], list) or not isinstance(output["condicoes"], list):
         raise ValueError("Estrutura inválida de grupos ou condições.")
     names, owners, ids = set(), {}, set()
@@ -176,7 +185,7 @@ def validated(data: dict, known_tes: set[str] | None = None) -> dict:
                 raise ValueError("Regra executável cadastrada mais de uma vez.")
             rule_names.add(rule_id)
         ids.add(ident); condition_names[title.casefold()] = rule_id or ident; condition["nome"] = title
-    return {"versao": 6, "grupos": output["grupos"], "condicoes": output["condicoes"]}
+    return {"versao": 7, "grupos": output["grupos"], "condicoes": output["condicoes"]}
 
 def create_group(data: dict, name: str, *, known_tes: set[str]) -> dict:
     updated = validated(data, known_tes)
@@ -268,8 +277,8 @@ def load() -> dict:
     records = response.json() or []
     payload = records[0]["valor"] if records else empty()
     data = validated(payload)
-    if records and int(payload.get("versao") or 1) < 5:
-        # Migração única até V5; regras excluídas depois não reaparecem.
+    if records and int(payload.get("versao") or 1) < 7:
+        # Migração persistente V7; respeita regras excluídas.
         db.rpc("fm_salvar_configuracao", {"p_chave": CONFIG_KEY, "p_valor": data}, timeout=45)
     return data
 

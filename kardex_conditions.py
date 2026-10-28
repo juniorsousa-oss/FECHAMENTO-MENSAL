@@ -28,9 +28,6 @@ PRODUCTION_RETURN = "RETORNO DE PRODUÇÃO"
 # Identificadores estáveis. A lista persistida define a ordem e pode ser
 # reorganizada em Cadastros. Deletar uma regra remove sua aplicação.
 TEMPLATES = [
-    {"id": "kardex_cond_14_ajuste_520_sem_op", "regra": "ajuste_520_sem_op",
-     "nome": "AJUSTE DE ESTOQUE — TES 520 SEM OP", "subgrupo": STOCK_ADJUSTMENT,
-     "criterio": "TES 520 sem OP identificada na AE: AJUSTE DE ESTOQUE, independentemente do tipo ou CC"},
     {"id": "kardex_cond_11_epi_ep", "regra": "consumo_epi_ep", "nome": EPI,
      "criterio": "Toda baixa TES 520 no armazém EP, independentemente do CC ou OP"},
     {"id": "kardex_cond_12_transferencia", "regra": "transferencia_armazem", "nome": TRANSFER,
@@ -51,6 +48,9 @@ TEMPLATES = [
      "criterio": "TES 020/030/040/540/550 + CC 600307 + material de chapa/barra (520 vai para CONSUMO OP)"},
     {"id": "kardex_cond_06_adequacao_custo", "regra": "adequacao_custo", "nome": COST,
      "criterio": "TES 030/540 (quando não houver condição anterior)"},
+    {"id": "kardex_cond_14_ajuste_520_sem_op", "regra": "ajuste_520_sem_op",
+     "nome": "AJUSTE DE ESTOQUE — TES 520 SEM OP", "subgrupo": STOCK_ADJUSTMENT,
+     "criterio": "TES 520 sem OP, somente se nenhuma condição específica ativa se aplicar"},
     {"id": "kardex_cond_09_ajuste_estoque", "regra": "ajuste_estoque", "nome": STOCK_ADJUSTMENT,
      "criterio": "TES 020/520, grupo FLUXO DE ESTOQUE e sem condição anterior"},
     {"id": "kardex_cond_10_retorno_producao", "regra": "retorno_producao", "nome": PRODUCTION_RETURN,
@@ -127,9 +127,7 @@ def classify(frame: pd.DataFrame, config: dict) -> pd.DataFrame:
         | pd.to_numeric(out["valor_saida"], errors="coerce").fillna(0).ne(0)
     )
     sheets_520 = tes.eq("520") & cc_provided & cc.eq("600307") & out["codigo"].isin(sheet_bar_codes())
-    # Regra revisada: TODO lançamento TES 520 sem OP vira AJUSTE DE ESTOQUE.
-    # Corrige inclusive o código 00703452, antes capturado pela lista
-    # de 54 materiais. A presença de CC ou tipo II não muda a prioridade.
+    # Ajuste 520 sem OP é residual; regras específicas ativas prevalecem.
     ajuste_520_sem_op = tes.eq("520") & ~op
     matches = {
         "ajuste_520_sem_op": ajuste_520_sem_op,
@@ -147,6 +145,22 @@ def classify(frame: pd.DataFrame, config: dict) -> pd.DataFrame:
         "ajuste_estoque": tes.isin(["020", "520"]) & group.eq("FLUXO DE ESTOQUE"),
         "retorno_producao": tes.eq("040") & group.eq("FLUXO DE ESTOQUE"),
     }
+
+    # A regra residual nunca sobrepõe condições específicas ativas,
+    # ainda que o usuário a mova para o topo da fila de prioridade.
+    specific_rule_names = {
+        "consumo_epi_ep", "transferencia_armazem", "producao_interna",
+        "consumo_op", "consumo_epi", "tc_tp_consumo", "acerto_gerencial",
+        "material_consumo", "chapas_barras", "adequacao_custo",
+    }
+    active_specific_rules = {
+        entry.get("regra") for entry in config.get("condicoes", [])
+        if isinstance(entry, dict) and entry.get("regra") in specific_rule_names
+    }
+    specific_matches = pd.Series(False, index=out.index)
+    for specific_rule in active_specific_rules:
+        specific_matches |= matches[specific_rule]
+    matches["ajuste_520_sem_op"] &= ~specific_matches
 
     pending = pd.Series(True, index=out.index)
     for priority, item in enumerate(config.get("condicoes", []), 1):
