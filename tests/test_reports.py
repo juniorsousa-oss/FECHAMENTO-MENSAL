@@ -84,6 +84,37 @@ class ReportsTests(unittest.TestCase):
         finally:
             wb.close()
 
+    def test_quantity_formats_do_not_append_decimal_separator_to_integers(self):
+        wb = reports._Excel()
+        wb.sheet("Quantidades", ["Valor"], quantity={0})
+        for value in (100, 100.0, 0, -2, 3.25):
+            wb.add("Quantidades", [value])
+        raw = wb.save()
+        saved = load_workbook(BytesIO(raw), read_only=True, data_only=True)
+        try:
+            sheet = saved["Quantidades"]
+            self.assertEqual([sheet[f"A{n}"].value for n in range(2, 7)],
+                             [100, 100, 0, -2, 3.25])
+            for number in range(2, 6):
+                self.assertEqual(sheet[f"A{number}"].number_format,
+                                 reports.QUANTITY_INTEGER_FORMAT)
+            self.assertEqual(sheet["A6"].number_format, reports.QUANTITY_FORMAT)
+        finally:
+            saved.close()
+
+    def test_issue_report_quantity_is_formatted_as_integer(self):
+        raw = reports.export_issues(self.model)
+        saved = load_workbook(BytesIO(raw), read_only=True, data_only=True)
+        try:
+            # Coluna P: quantidade necessária. A célula deve exibir 11, não 11,.
+            self.assertEqual(saved.active["P2"].value, 11)
+            self.assertEqual(saved.active["P2"].number_format,
+                             reports.QUANTITY_INTEGER_FORMAT)
+            # Código do material continua sendo texto (zeros à esquerda).
+            self.assertEqual(saved.active["M2"].value, "00006001")
+        finally:
+            saved.close()
+
     def test_type_and_alert_filters_preserve_op_activity(self):
         rows=reports.issue_rows(self.model,date(2026,10,1),date(2026,10,10),
                                 material_types={"II"},alerts_only=True)
