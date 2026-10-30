@@ -110,7 +110,7 @@ class ReportsTests(unittest.TestCase):
         wb=load_workbook(BytesIO(raw),read_only=True,data_only=True)
         try:
             self.assertEqual(wb.sheetnames,["Resumo Geral","Por Armazém","Por Tipo","Evolução Mensal"])
-            self.assertIsNone(list(wb["Resumo Geral"].values)[1][1])
+            self.assertIsNone(list(wb["Evolução Mensal"].values)[1][1])
         finally:
             wb.close()
 
