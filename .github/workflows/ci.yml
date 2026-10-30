@@ -15,6 +15,8 @@ on:
       - 'movement_store.py'
       - 'kardex_history.py'
       - 'movement_analysis_ui.py'
+      - 'reports.py'
+      - 'reports_ui.py'
       - 'issue_check.py'
       - 'issue_check_ui.py'
       - 'issue_check_export.py'
@@ -41,9 +43,11 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
       - name: Compilar
-        run: python -m py_compile streamlit_app.py central_fechamento_data.py inventory_db.py report_parser.py cb_parser.py ui.py movements.py movement_store.py movement_analysis_ui.py issue_check.py issue_check_ui.py issue_check_export.py master_plan.py operational_status.py catalog_types.py kardex_history.py
+        run: python -m py_compile streamlit_app.py central_fechamento_data.py inventory_db.py report_parser.py cb_parser.py ui.py movements.py movement_store.py movement_analysis_ui.py issue_check.py issue_check_ui.py issue_check_export.py master_plan.py operational_status.py catalog_types.py kardex_history.py reports.py reports_ui.py
       - name: Validar análise de movimentações
         run: python -m unittest discover -s tests -p 'test_movement_analysis*.py'
+      - name: Validar relatórios centralizados
+        run: python -m unittest discover -s tests -p 'test_reports.py'
       - name: Validar conferência de baixas e telas
         run: python -m unittest discover -s tests -p 'test_issue_check*.py'
       - name: Validar integração FOR001 Plano Mestre
