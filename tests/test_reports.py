@@ -124,6 +124,10 @@ class ReportsTests(unittest.TestCase):
                                        warehouses={"S2"},types={"II"},groups={"520"})
         self.assertEqual(len(result),1)
         self.assertEqual(len(frame),3)
+        group_result=reports.filtered_kardex(
+            frame,group_names={"FLUXO DE ESTOQUE"},
+            group_config={"grupos":[{"nome":"FLUXO DE ESTOQUE","tes":["520"]}]})
+        self.assertEqual(len(group_result),2)
         with patch("movements.export_excel",return_value=b"excel") as fake:
             self.assertEqual(reports.export_kardex(result,{"condicoes":[]},summary_only=True),b"excel")
             self.assertTrue(fake.call_args.kwargs["summary_only"])
