@@ -1154,12 +1154,12 @@ def render_results(model):
     left, right = st.columns([1, 2])
     with left:
         if st.button("PREPARAR RELATÓRIO COMPLETO", use_container_width=True, key="fm_issue_prepare_report"):
-            from issue_check_export import export_complete_report
-            with st.spinner("Preparando o Excel completo com todas as OPs e evidências..."):
-                data = export_complete_report(model)
+            from reports import export_issues
+            with st.spinner("Preparando Excel único com OPs e produtos..."):
+                data = export_issues(model)
             st.session_state["fm_issue_report_ready"] = (report_key, data)
     with right:
-        st.caption("Exportação integral: todas as OPs, produtos, alertas, lotes, endereços, movimentações e fontes, sem limitar aos filtros ou à página.")
+        st.caption("Exportação integral em uma única aba: cabeçalho da OP repetido em cada produto. Para filtros por período, utilize RELATÓRIOS no menu lateral.")
     prepared = st.session_state.get("fm_issue_report_ready")
     if prepared and prepared[0] == report_key:
         st.download_button(
