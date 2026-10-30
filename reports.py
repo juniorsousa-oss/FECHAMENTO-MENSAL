@@ -243,7 +243,7 @@ def stock_data(summaries: list[dict], imports: list[dict],
                 results.append([common[0], code, initial, final, change, percent, common[5], common[6]])
         return results
     return {
-        "Resumo Geral": [entry for _, entry in entries],
+        "Resumo Geral": [entries[-1][1]] if entries else [],
         "Por Armazém": dimension_rows("ARMZ", "ARMZ:"),
         "Por Tipo": dimension_rows("TP", "TP:"),
         "Evolução Mensal": [entry for _, entry in entries],
@@ -300,7 +300,7 @@ def export_issues(model: dict, start: date | None = None, end: date | None = Non
                       material_types=material_types)
     wb = _Excel()
     wb.sheet("Conferência de Baixas", OP_COLUMNS,
-             quantity=set(range(len(OP_FIELDS) + 3, len(OP_COLUMNS) - 3)),
+             quantity=set(range(len(OP_FIELDS) + 3, len(OP_COLUMNS) - 2)),
              alert_column=len(OP_COLUMNS) - 1)
     for row in rows:
         wb.add("Conferência de Baixas", row,
@@ -311,7 +311,8 @@ def export_issues(model: dict, start: date | None = None, end: date | None = Non
 
 def filtered_kardex(frame: pd.DataFrame, start: date | None = None, end: date | None = None,
                     warehouses: set[str] | None = None, types: set[str] | None = None,
-                    groups: set[str] | None = None) -> pd.DataFrame:
+                    groups: set[str] | None = None, group_names: set[str] | None = None,
+                    group_config: dict | None = None) -> pd.DataFrame:
     _period(start, end)
     filtered = frame
     if start or end:
@@ -328,6 +329,13 @@ def filtered_kardex(frame: pd.DataFrame, start: date | None = None, end: date | 
         filtered = filtered.loc[filtered["tipo"].astype(str).str.upper().isin(types)]
     if groups:
         filtered = filtered.loc[filtered["tes"].astype(str).str.zfill(3).isin(groups)]
+    if group_names:
+        if group_config is None:
+            raise ValueError("O filtro de grupos exige o cadastro gerencial atualizado.")
+        import kardex_group_config as gc
+        owner = gc.group_owner(group_config)
+        named = filtered["tes"].astype(str).str.zfill(3).map(owner).fillna(gc.UNASSIGNED)
+        filtered = filtered.loc[named.isin(group_names)]
     return filtered.copy()
 
 
