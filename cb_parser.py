@@ -874,6 +874,25 @@ def parse_cadastros_frame(frame: pd.DataFrame, file_name: str) -> dict:
     }
 
 
+def infer_chapas_competencia(table_date: date | None) -> date | None:
+    """Sugestão conservadora de competência para o e-mail de chapas.
+
+    Dia 21 em diante: fechamento do próprio mês.
+    Até dia 10: fechamento do mês anterior.
+    Entre 11 e 20 ou sem data: operador confirma a competência selecionada.
+    A data da contagem não é alterada.
+    """
+    if table_date is None:
+        return None
+    if table_date.day >= 21:
+        return date(table_date.year, table_date.month, 1)
+    if table_date.day <= 10:
+        if table_date.month == 1:
+            return date(table_date.year - 1, 12, 1)
+        return date(table_date.year, table_date.month - 1, 1)
+    return None
+
+
 def parse_chapas_eml(raw: bytes, file_name: str) -> dict:
     message = BytesParser(policy=policy.default).parsebytes(raw)
 
@@ -997,15 +1016,11 @@ def parse_chapas_eml(raw: bytes, file_name: str) -> dict:
     )
     selected = valid_tables[0]
     table_date = selected["data"]
-    # A contagem de chapas chega no início do mês seguinte e pertence
-    # ao fechamento do mês imediatamente anterior, mesma regra do Analítico.
-    if table_date:
-        if table_date.month == 1:
-            competencia = date(table_date.year - 1, 12, 1)
-        else:
-            competencia = date(table_date.year, table_date.month - 1, 1)
-    else:
-        competencia = None
+    # Não associar cegamente toda data ao mês anterior.
+    # Contagens no final do mês pertencem ao próprio fechamento. No início
+    # do mês, podem se referir ao fechamento anterior. Datas intermediárias
+    # exigem confirmação explícita no aplicativo.
+    competencia = infer_chapas_competencia(table_date)
 
     return {
         "file_name": file_name,
