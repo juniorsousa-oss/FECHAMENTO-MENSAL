@@ -8,6 +8,7 @@ on:
       - 'central_fechamento_data.py'
       - 'report_parser.py'
       - 'cb_parser.py'
+      - 'cb_balance_math.py'
       - 'inventory_db.py'
       - 'db.py'
       - 'ui.py'
@@ -43,7 +44,7 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
       - name: Compilar
-        run: python -m py_compile streamlit_app.py central_fechamento_data.py inventory_db.py report_parser.py cb_parser.py ui.py movements.py movement_store.py movement_analysis_ui.py issue_check.py issue_check_ui.py issue_check_export.py master_plan.py operational_status.py catalog_types.py kardex_history.py reports.py reports_ui.py
+        run: python -m py_compile streamlit_app.py central_fechamento_data.py inventory_db.py report_parser.py cb_parser.py ui.py movements.py movement_store.py movement_analysis_ui.py issue_check.py issue_check_ui.py issue_check_export.py master_plan.py operational_status.py catalog_types.py kardex_history.py reports.py reports_ui.py cb_balance_math.py
       - name: Validar análise de movimentações
         run: python -m unittest discover -s tests -p 'test_movement_analysis*.py'
       - name: Validar relatórios centralizados
@@ -58,6 +59,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_catalog_types_filters.py'
       - name: Validar conexão paralela e cache da conferência
         run: python -m unittest discover -s tests -p 'test_cb_performance.py'
+      - name: Validar soma decimal de chapas e barramentos
+        run: python -m unittest discover -s tests -p 'test_cb_balance_math.py'
       - name: Validar competência de chapas por data
         run: python -m unittest discover -s tests -p 'test_cb_competencia.py'
       - name: Validar cache, carregamento sob demanda e concorrência
