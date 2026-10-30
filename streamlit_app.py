@@ -50,6 +50,7 @@ def _setta_data_editor(data, *args, **kwargs):
 
 
 from PIL import Image, ImageDraw, ImageFont
+from cb_balance_math import saldo_categoria as _sum_cb_category, numero_br as _decimal_number_br
 
 import inventory_db as db
 import central_fechamento_data as central_data
@@ -505,15 +506,8 @@ def money_br(value: object) -> str:
 
 
 def number_br(value: object, decimals: int = 3) -> str:
-    if value is None:
-        return "—"
-    try:
-        number = float(value)
-    except Exception:
-        return "—"
-    pattern = f"{{:,.{max(0, int(decimals))}f}}"
-    text = pattern.format(number)
-    return text.replace(",", "X").replace(".", ",").replace("X", ".")
+    # A exibição deve respeitar a mesma precisão decimal usada na soma.
+    return _decimal_number_br(value, decimals)
 
 
 def delta_class(value: float | None) -> str:
@@ -3022,16 +3016,12 @@ with _fm_page_surface.container():
             )
 
             def _saldo_categoria(rows, categoria, eligible_codes):
-                total = 0.0
-                for row in rows:
-                    code = normalize_code(row.get("codigo"))
-                    if code not in eligible_codes:
-                        continue
-                    item = treatment_lookup.get(code) or {}
-                    if str(item.get("categoria") or "").upper() != categoria:
-                        continue
-                    total += max(float(row.get("saldo") or 0), 0.0)
-                return total
+                # Mesma regra para posição atual e fotografia histórica:
+                # somar os saldos originais com Decimal, sem ponto flutuante.
+                return _sum_cb_category(
+                    rows, categoria, eligible_codes,
+                    treatment_lookup, normalize_code,
+                )
 
             _saldo_codes = set(final_analysis_codes)
             _chapa_atual = _saldo_categoria(
