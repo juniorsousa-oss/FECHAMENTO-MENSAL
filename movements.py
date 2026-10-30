@@ -473,7 +473,7 @@ def ledger_export(frame: pd.DataFrame) -> pd.DataFrame:
     return result.reset_index(drop=True)
 
 
-def export_excel(frame: pd.DataFrame, group_config: dict | None = None) -> bytes:
+def export_excel(frame: pd.DataFrame, group_config: dict | None = None, *, summary_only: bool = False) -> bytes:
     """Exportação SETTA: Grupos > TES, OPs > baixas e registros como na tela.
 
     As linhas detalhadas são recolhidas pelo agrupamento nativo do Excel.
@@ -610,6 +610,11 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None) -> bytes
                int(active["codigo"].nunique()), float(active["valor_entrada"].sum()),
                float(active["valor_saida"].sum()), float(active["liquido_valor"].sum())],
               style="total", money_cols=(6, 7, 8))
+
+    if summary_only:
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        return buffer.getvalue()
 
     # 02 — OP (linha visível) -> todas as saídas reais da OP (linhas recolhidas).
     op_headers = ["OP / Código", "Descrição / Situação", "TES", "Movimentos",
