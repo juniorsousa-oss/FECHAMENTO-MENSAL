@@ -561,6 +561,47 @@ def _catalog_type_records(version: int, updated: str) -> tuple[dict[str, str], d
     return types, safe_meta
 
 
+@st.cache_resource(max_entries=3, show_spinner=False)
+def _catalog_price_records(version: int, updated: str) -> tuple[dict[str, float], dict]:
+    """Lê ULT. PRECO do CADASTROS, sem limitar aos materiais de chapas."""
+    del updated
+    from cb_parser import parse_cadastros, parse_cadastros_frame
+
+    payload, meta = central.download_preferred_source("cadastros")
+    name = str(meta.get("last_file_name") or "CADASTROS.xlsx")
+    if payload["normalized"]:
+        frame = central.normalized_frame(payload["pack"])
+        parsed = parse_cadastros_frame(frame, name)
+    else:
+        parsed = parse_cadastros(payload["raw"], name)
+    actual = meta.get("source_version", meta.get("version"))
+    if actual is not None and int(actual) != version:
+        raise RuntimeError("CADASTROS alterado durante a leitura de preços.")
+    prices = {}
+    for codigo, entry in parsed["master_lookup"].items():
+        try:
+            price = float(entry.get("ult_preco") or 0)
+            if math.isfinite(price) and price > 0:
+                prices[codigo] = price
+        except (ValueError, TypeError):
+            pass
+    return prices, {key: value for key, value in meta.items()
+                    if key not in ("signed_url", "url")}
+
+
+def _optional_catalog_prices() -> tuple[dict[str, float], dict]:
+    """Não interrompe a conferência quando o preço cadastrado faltar."""
+    try:
+        state = central.source_state_for("cadastros")
+        if not state or str(state.get("status") or "").upper() != "ATUALIZADO":
+            return {}, {"erro": "CADASTROS indisponível no Monitor de APIs"}
+        return _catalog_price_records(
+            int(state["version"]), str(state.get("last_update_at") or "")
+        )
+    except Exception as exc:
+        return {}, {"erro": str(exc)}
+
+
 def _optional_catalog_types() -> tuple[dict[str, str], dict]:
     try:
         state = central.source_state_for("cadastros")
@@ -646,6 +687,7 @@ def _reload():
     _imports.clear(); _history.clear(); _audit.clear()
     _master_plan_records.clear()
     _catalog_type_records.clear()
+    _catalog_price_records.clear()
     _operational_snapshot.clear()
     central.source_state_for.clear()
 
@@ -1146,8 +1188,9 @@ def render_results(model):
         _ops(model, view, token)
 
     st.markdown("---")
+    from reports import EXPORT_SCHEMA_VERSION
     report_key = hashlib.sha256((
-        str(model.get("as_of")) + str(model.get("warehouses"))
+        EXPORT_SCHEMA_VERSION + str(model.get("as_of")) + str(model.get("warehouses"))
         + str(model.get("history_meta")) + str(model.get("source_meta"))
         + op_rules.VERSION + str(model.get("master_plan_meta"))
     ).encode()).hexdigest()
@@ -1155,8 +1198,11 @@ def render_results(model):
     with left:
         if st.button("PREPARAR RELATÓRIO COMPLETO", use_container_width=True, key="fm_issue_prepare_report"):
             from reports import export_issues
-            with st.spinner("Preparando Excel único com OPs e produtos..."):
-                data = export_issues(model)
+            with st.spinner("Preparando Excel único com OPs, produtos e previsão de baixa..."):
+                prices, price_meta = _optional_catalog_prices()
+                if price_meta.get("erro"):
+                    st.warning("CADASTROS sem preços disponíveis: os valores previstos permanecerão vazios.")
+                data = export_issues({**model, "catalog_prices": prices})
             st.session_state["fm_issue_report_ready"] = (report_key, data)
     with right:
         st.caption("Exportação integral em uma única aba: cabeçalho da OP repetido em cada produto. Para filtros por período, utilize RELATÓRIOS no menu lateral.")
@@ -1165,7 +1211,7 @@ def render_results(model):
         st.download_button(
             "BAIXAR RELATÓRIO COMPLETO · EXCEL",
             data=prepared[1],
-            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + ".xlsx",
+            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R3.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="fm_issue_download_complete", use_container_width=True,
         )
