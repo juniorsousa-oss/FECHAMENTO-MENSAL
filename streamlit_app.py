@@ -88,6 +88,7 @@ DEFAULT_CONFIG = {
         "Conferência de chapas e barramentos": "CONFERÊNCIA DE CHAPAS E BARRAMENTOS",
         "Conferência de baixas": "CONFERÊNCIA DE BAIXAS",
         "Análise de movimentações": "ANÁLISE DE MOVIMENTAÇÕES",
+        "Relatórios": "RELATÓRIOS",
         "Configurações": "CONFIGURAÇÕES",
     },
 }
@@ -97,6 +98,7 @@ PAGES = [
     "Conferência de chapas e barramentos",
     "Conferência de baixas",
     "Análise de movimentações",
+    "Relatórios",
     "Configurações",
 ]
 
@@ -2101,6 +2103,7 @@ def _refresh_fm_data() -> None:
     central_data._consumer_status_rows.clear()
     st.session_state.pop("_fm_analitico_synced", None)
     st.session_state.pop("_fm_cadastros_synced", None)
+    st.session_state.pop("fm_reports_ready", None)
     # Recarrega o KARDEX apenas quando solicitado, evitando invalidar modelos
     # de grandes históricos durante a navegação normal.
     for name, callback in (
@@ -2217,6 +2220,7 @@ _fm_page_surface = st.empty()
 _needs_inventory_core = page in {
     "Dashboard",
     "Conferência de chapas e barramentos",
+    "Relatórios",
 }
 
 central_context = {"available": False, "meta": {}}
@@ -5242,6 +5246,10 @@ with _fm_page_surface.container():
 
         render_movement_analysis()
 
+    elif page == "Relatórios":
+        from reports_ui import render_reports
+
+        render_reports(summaries=summaries, imports=imports)
 
     else:
         st.markdown(
