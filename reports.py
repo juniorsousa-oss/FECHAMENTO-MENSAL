@@ -6,7 +6,7 @@ regras de conferência ou lançamentos originais.
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 import math
 
@@ -21,8 +21,11 @@ HEADER = "17243B"
 LINE = "F2F6FB"
 WARNING = "FDE8E8"
 MONEY_FORMAT = '#,##0.00;[Red](#,##0.00)'
-QUANTITY_FORMAT = '#,##0.######;[Red](#,##0.######)'
-QUANTITY_INTEGER_FORMAT = '#,##0;[Red](#,##0)'
+# "General" respeita a configuração regional do Excel e evita o
+# separador decimal isolado que o formato #,##0.###### gerava no pt-BR.
+QUANTITY_FORMAT = "General"
+QUANTITY_INTEGER_FORMAT = "General"
+EXPORT_SCHEMA_VERSION = "2026-10-30.3"
 PERCENT_FORMAT = '0.00%;[Red](0.00%)'
 
 OP_FIELDS = [
@@ -48,6 +51,7 @@ ITEM_FIELDS = [
     ("Qtd conferida", "conferida"),
     ("Qtd baixada", "baixada"),
     ("Qtd pendente baixa", "pendente"),
+    ("Valor previsto da baixa (R$)", "valor_previsto_baixa"),
     ("Saldo no lote conferido", "saldo"),
     ("Saldo G9-PROD", "saldo_g9_prod"),
     ("Outros endereços", "outros_enderecos"),
@@ -176,13 +180,9 @@ class _Excel:
                     if i in money:
                         c.number_format = MONEY_FORMAT
                     elif i in quantities:
-                        # Excel pt-BR exibe vírgula solta (ex.: '100,') quando
-                        # as casas opcionais seguem um separador decimal.
-                        # Inteiros usam formato próprio; frações são preservadas.
-                        c.number_format = (
-                            QUANTITY_INTEGER_FORMAT if value == int(value)
-                            else QUANTITY_FORMAT
-                        )
+                        # Excel reconhece o valor numérico e determina como
+                        # exibir o separador decimal conforme o idioma local.
+                        c.number_format = QUANTITY_FORMAT
                     elif i in percents:
                         c.number_format = PERCENT_FORMAT
             row.append(c)
@@ -274,6 +274,37 @@ def export_stock(summaries: list[dict], imports: list[dict],
     return wb.save()
 
 
+def _valor_previsto_baixa(item: dict, prices: dict) -> float | None:
+    """Valor estimado somente para material com alerta e pendência positiva.
+
+    Base: preço unitário ULT. PRECO do CADASTROS x quantidade pendente.
+    Ausência de preço, divergência de dados ou histórico incompleto não
+    devem virar valores monetários artificiais.
+    """
+    if not bool(item.get("divergente")):
+        return None
+    try:
+        pendente = item.get("pendente")
+        codigo = str(item.get("codigo") or "").strip()
+        if pendente is None or not codigo:
+            return None
+        if codigo.isdecimal() and len(codigo) <= 8:
+            codigo = codigo.zfill(8)
+        preco_bruto = prices.get(codigo)
+        if preco_bruto is None or str(preco_bruto).strip() == "":
+            return None
+        quantidade = Decimal(str(pendente))
+        preco_unitario = Decimal(str(preco_bruto))
+        if not quantidade.is_finite() or not preco_unitario.is_finite():
+            return None
+        if quantidade <= 0 or preco_unitario <= 0:
+            return None
+        return float((quantidade * preco_unitario).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP))
+    except (ValueError, ArithmeticError, TypeError):
+        return None
+
+
 def issue_rows(model: dict, start: date | None = None, end: date | None = None,
                *, statuses: set[str] | None = None, alerts_only: bool = False,
                material_types: set[str] | None = None) -> list[list]:
@@ -283,6 +314,7 @@ def issue_rows(model: dict, start: date | None = None, end: date | None = None,
         for entry in model["ops"].to_dict("records")
     }
     rows = []
+    prices = model.get("catalog_prices") or {}
     for item in model["items"].to_dict("records"):
         op = str(item["op"])
         if op not in selected or op not in op_lookup:
@@ -294,8 +326,12 @@ def issue_rows(model: dict, start: date | None = None, end: date | None = None,
             continue
         if material_types and str(item.get("tipo_material") or "").upper() not in material_types:
             continue
-        rows.append([head.get(field) for _, field in OP_FIELDS]
-                    + [item.get(field) for _, field in ITEM_FIELDS])
+        values = [
+            _valor_previsto_baixa(item, prices)
+            if field == "valor_previsto_baixa" else item.get(field)
+            for _, field in ITEM_FIELDS
+        ]
+        rows.append([head.get(field) for _, field in OP_FIELDS] + values)
     return rows
 
 
@@ -307,7 +343,11 @@ def export_issues(model: dict, start: date | None = None, end: date | None = Non
                       material_types=material_types)
     wb = _Excel()
     wb.sheet("Conferência de Baixas", OP_COLUMNS,
-             quantity=set(range(len(OP_FIELDS) + 3, len(OP_COLUMNS) - 2)),
+             quantity={OP_COLUMNS.index(label) for label in (
+                 "Qtd necessária", "Qtd separada", "Qtd conferida",
+                 "Qtd baixada", "Qtd pendente baixa",
+                 "Saldo no lote conferido", "Saldo G9-PROD")},
+             money={OP_COLUMNS.index("Valor previsto da baixa (R$)")},
              alert_column=len(OP_COLUMNS) - 1)
     for row in rows:
         wb.add("Conferência de Baixas", row,
