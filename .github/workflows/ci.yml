@@ -58,6 +58,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_catalog_types_filters.py'
       - name: Validar conexão paralela e cache da conferência
         run: python -m unittest discover -s tests -p 'test_cb_performance.py'
+      - name: Validar competência de chapas por data
+        run: python -m unittest discover -s tests -p 'test_cb_competencia.py'
       - name: Validar cache, carregamento sob demanda e concorrência
         run: python -m unittest discover -s tests -p 'test_runtime_performance.py'
       - name: Validar substituição mensal dos arquivos KARDEX
@@ -163,8 +165,9 @@ jobs:
           from pathlib import Path
           parser = Path("cb_parser.py").read_text(encoding="utf-8")
           app = Path("streamlit_app.py").read_text(encoding="utf-8")
-          assert "table_date.month - 1" in parser
-          assert "Fechamento considerado em:" in app
+          assert "infer_chapas_competencia(table_date)" in parser
+          assert "Fechamento sugerido:" in app
+          assert "ALTERAR PARA " in app
           print("COMPETENCIA_CHAPAS_OK")
           PY
 
