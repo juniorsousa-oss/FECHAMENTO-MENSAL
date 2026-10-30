@@ -149,6 +149,16 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
             "TIPOS DE MATERIAL (vazio = todos)", ["EP", "II", "MP", "PA", "PI"],
             key="fm_reports_kardex_types",
         )
+        try:
+            group_cfg = movement._groups_read()
+            group_options = [entry["nome"] for entry in group_cfg.get("grupos", [])]
+            group_options.append("SEM GRUPO")
+        except Exception:
+            group_options = []
+        extra["groups"] = st.multiselect(
+            "GRUPOS GERENCIAIS (vazio = todos)", group_options,
+            key="fm_reports_groups",
+        )
         extra["tes"] = st.text_input(
             "TES (opcional, códigos separados por vírgula)", key="fm_reports_tes",
             placeholder="Ex.: 020, 520",
@@ -172,7 +182,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     if not counts["Resumo Geral"]:
                         raise ValueError("Nenhuma competência possui resumo de estoque no período escolhido.")
                     data = reports.export_stock(summaries, imports, start, end)
-                    records = len(counts["Resumo Geral"])
+                    records = len(counts["Evolução Mensal"])
                     prefix = "ESTOQUE_FECHAMENTO"
                 elif choice == REPORT_NAMES[1]:
                     model = _get_issue_model(tuple(warehouses))
@@ -199,15 +209,18 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     tokens = tuple((item["chave"], item.get("atualizado_em", ""),
                                     item.get("meta") or {}) for item in imported)
                     model = movement._model(tokens, mv.rules()["versao"] + movement.history.VERSION)
+                    group_config = movement._groups_read()
                     frame = reports.filtered_kardex(
                         model["frame"], start, end,
                         warehouses=set(warehouses) if warehouses else None,
                         types=set(extra["types"]) if extra["types"] else None,
-                        groups=set(x.strip().zfill(3) for x in extra["tes"].split(",") if x.strip()) or None)
+                        groups=set(x.strip().zfill(3) for x in extra["tes"].split(",") if x.strip()) or None,
+                        group_names=set(extra["groups"]) if extra["groups"] else None,
+                        group_config=group_config)
                     if frame.empty:
                         raise ValueError("Nenhuma movimentação KARDEX corresponde ao recorte.")
                     data = reports.export_kardex(
-                        frame, movement._groups_read(),
+                        frame, group_config,
                         summary_only=extra["summary_only"])
                     records = len(frame)
                     prefix = "KARDEX"
