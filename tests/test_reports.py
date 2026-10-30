@@ -30,6 +30,7 @@ def item(n, code, kind="MP", result="PRODUTO NÃO CONSUMIDO"):
         "baixada": 0, "pendente": 11, "saldo": 10,
         "saldo_g9_prod": 8, "outros_enderecos": "",
         "status": result, "tipo_material": kind,
+        "divergente": result.startswith("PRODUTO NÃO"),
     }
 
 
@@ -51,6 +52,11 @@ class ReportsTests(unittest.TestCase):
                 {"op":"0003", "separacao":"2026-09-01T09:00:00", "conferencia":"2026-09-02T09:00:00"},
                 {"op":"0004", "separacao":"2026-09-20T09:00:00", "conferencia":""},
             ],
+            "catalog_prices": {
+                "00006001": 3.75,
+                "00006002": 18.00,
+                "00003003": 5.00,
+            },
             "movements": [
                 {"op":"0003", "data":"2026-10-07", "natureza":"CONSUMO DE OP",
                  "qtd_saida":2, "qtd_entrada":0},
@@ -81,6 +87,9 @@ class ReportsTests(unittest.TestCase):
             self.assertEqual(values[1][12],"00006001")
             self.assertEqual(values[2][12],"00006002")
             self.assertEqual(values[1][8],"000019")
+            estimate_index = reports.OP_COLUMNS.index("Valor previsto da baixa (R$)")
+            self.assertEqual(values[1][estimate_index], 41.25)
+            self.assertIsNone(values[2][estimate_index])
         finally:
             wb.close()
 
@@ -95,10 +104,8 @@ class ReportsTests(unittest.TestCase):
             sheet = saved["Quantidades"]
             self.assertEqual([sheet[f"A{n}"].value for n in range(2, 7)],
                              [100, 100, 0, -2, 3.25])
-            for number in range(2, 6):
-                self.assertEqual(sheet[f"A{number}"].number_format,
-                                 reports.QUANTITY_INTEGER_FORMAT)
-            self.assertEqual(sheet["A6"].number_format, reports.QUANTITY_FORMAT)
+            for number in range(2, 7):
+                self.assertEqual(sheet[f"A{number}"].number_format, "General")
         finally:
             saved.close()
 
@@ -108,12 +115,48 @@ class ReportsTests(unittest.TestCase):
         try:
             # Coluna P: quantidade necessária. A célula deve exibir 11, não 11,.
             self.assertEqual(saved.active["P2"].value, 11)
-            self.assertEqual(saved.active["P2"].number_format,
-                             reports.QUANTITY_INTEGER_FORMAT)
+            self.assertEqual(saved.active["P2"].number_format, "General")
+            money_index = reports.OP_COLUMNS.index("Valor previsto da baixa (R$)") + 1
+            from openpyxl.utils import get_column_letter
+            address = get_column_letter(money_index) + "2"
+            self.assertEqual(saved.active[address].value, 41.25)
+            self.assertEqual(saved.active[address].number_format, reports.MONEY_FORMAT)
             # Código do material continua sendo texto (zeros à esquerda).
             self.assertEqual(saved.active["M2"].value, "00006001")
         finally:
             saved.close()
+
+    def test_forecast_is_only_valued_for_alert_with_known_positive_cost(self):
+        self.assertEqual(reports._valor_previsto_baixa(
+            {"codigo": "00006001", "divergente": True, "pendente": 3.5},
+            {"00006001": 2.25}), 7.88)
+        self.assertIsNone(reports._valor_previsto_baixa(
+            {"codigo": "00006001", "divergente": True, "pendente": 10},
+            {}))
+        self.assertIsNone(reports._valor_previsto_baixa(
+            {"codigo": "00006001", "divergente": False, "pendente": 10},
+            {"00006001": 3.0}))
+        self.assertIsNone(reports._valor_previsto_baixa(
+            {"codigo": "00006001", "divergente": True, "pendente": None},
+            {"00006001": 3.0}))
+        self.assertIsNone(reports._valor_previsto_baixa(
+            {"codigo": "00006001", "divergente": True, "pendente": 10},
+            {"00006001": 0}))
+        self.assertIsNone(reports._valor_previsto_baixa(
+            {"codigo": "00006001", "divergente": True, "pendente": 10},
+            {"00006001": "sem preço"}))
+
+    def test_cadastros_last_price_is_available_for_regular_material(self):
+        from cb_parser import parse_cadastros_frame
+        frame = pd.DataFrame([
+            ["", "", "", ""],
+            ["CODIGO", "DESCRICAO", "TIPO", "ULT. PRECO"],
+            ["00006001", "MATERIAL PADRÃO", "MP", 12.35],
+            ["00006002", "MATERIAL COM PREÇO AUSENTE", "II", None],
+        ])
+        parsed = parse_cadastros_frame(frame, "CADASTROS.xlsx")
+        self.assertEqual(parsed["master_lookup"]["00006001"]["ult_preco"], 12.35)
+        self.assertEqual(parsed["master_lookup"]["00006002"]["ult_preco"], 0.0)
 
     def test_type_and_alert_filters_preserve_op_activity(self):
         rows=reports.issue_rows(self.model,date(2026,10,1),date(2026,10,10),
