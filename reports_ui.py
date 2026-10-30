@@ -62,7 +62,10 @@ def _get_issue_model(selected_warehouses: tuple[str, ...] = ()) -> dict:
     enriched = issue._operational_snapshot(
         tokens, history_tokens, chosen, master_version, catalog_version,
         stages.VERSION, model, master_records, catalog_types)
-    return {**enriched, "master_plan_meta": master_meta, "catalog_meta": catalog_meta}
+    prices, price_meta = issue._optional_catalog_prices()
+    return {**enriched, "master_plan_meta": master_meta,
+            "catalog_meta": catalog_meta,
+            "catalog_prices": prices, "catalog_price_meta": price_meta}
 
 
 def _date_controls():
@@ -168,6 +171,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
     st.info(f"**{choice.upper()}** · {sheet_count} aba(s) · " +
             ("histórico completo" if start is None else f"{start:%d/%m/%Y} a {end:%d/%m/%Y}"))
     report_key = hashlib.sha256(repr((
+        reports.EXPORT_SCHEMA_VERSION,
         choice, period_key, tuple(warehouses), extra,
         [(row.get("competencia"), row.get("status"), row.get("importado_em"))
          for row in imports] if choice == REPORT_NAMES[0] else None,
@@ -188,6 +192,8 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     model = _get_issue_model(tuple(warehouses))
                     if model.get("catalog_meta", {}).get("erro"):
                         st.warning("CADASTROS indisponível: a classificação de tipo de material pode estar incompleta.")
+                    if model.get("catalog_price_meta", {}).get("erro"):
+                        st.warning("Preço ULT. PRECO indisponível: previsões de baixa ficarão em branco quando não houver custo cadastrado.")
                     if not model.get("history_available"):
                         st.warning("KARDEX indisponível: as baixas desconhecidas não serão transformadas em zero.")
                     statuses = ({extra["status"]} if extra["status"] != "Todos os status" else None)
@@ -225,7 +231,11 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     records = len(frame)
                     prefix = "KARDEX"
             st.session_state["fm_reports_ready"] = (
-                report_key, data, f"{prefix}_SETTA_{period_key}.xlsx", records
+                report_key, data,
+                f"{prefix}_SETTA_{period_key}_R3.xlsx"
+                if choice == REPORT_NAMES[1]
+                else f"{prefix}_SETTA_{period_key}.xlsx",
+                records
             )
         except Exception as exc:
             st.session_state.pop("fm_reports_ready", None)
