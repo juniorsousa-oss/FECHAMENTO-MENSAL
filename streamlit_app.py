@@ -2086,6 +2086,12 @@ def _set_fm_page(target: str) -> None:
         st.session_state["_fm_nav_collapsed"] = True
 
 
+def _select_cb_competencia(target: date) -> None:
+    """Troca a competência antes de remontar o seletor Streamlit."""
+    st.session_state["cb_month"] = target
+    st.query_params["mes_cb"] = target.strftime("%Y-%m")
+
+
 def _open_fm_menu() -> None:
     st.session_state["_fm_nav_collapsed"] = False
 
@@ -3196,26 +3202,27 @@ with _fm_page_surface.container():
                                 email_file.getvalue(), email_file.name, "chapas"
                             )
 
-                            detected_comp = parsed_email.get(
-                                "competencia"
+                            detected_comp = parsed_email.get("competencia")
+                            _data_contagem = parsed_email.get("data_contagem")
+                            _data_txt = (
+                                _data_contagem.strftime("%d/%m/%Y")
+                                if _data_contagem else "—"
                             )
                             if detected_comp:
-                                _data_contagem = parsed_email.get("data_contagem")
-                                _data_txt = (
-                                    _data_contagem.strftime("%d/%m/%Y")
-                                    if _data_contagem
-                                    else "—"
-                                )
                                 _fechamento_txt = closing_date(
                                     detected_comp
                                 ).strftime("%d/%m/%Y")
                                 st.caption(
-                                    "Data da contagem: "
-                                    + _data_txt
-                                    + " · Fechamento considerado em: "
-                                    + _fechamento_txt
-                                    + " · Competência: "
+                                    "Data da contagem: " + _data_txt
+                                    + " · Fechamento sugerido: " + _fechamento_txt
+                                    + " · Competência sugerida: "
                                     + month_label(detected_comp)
+                                    + f" · {parsed_email['tables_found']} tabela(s) de histórico encontrada(s)"
+                                )
+                            else:
+                                st.caption(
+                                    "Data da contagem: " + _data_txt
+                                    + " · Competência sem determinação automática"
                                     + f" · {parsed_email['tables_found']} tabela(s) de histórico encontrada(s)"
                                 )
 
@@ -3387,26 +3394,66 @@ with _fm_page_surface.container():
                                 )
                                 if mismatch:
                                     st.error(
-                                        "A contagem pertence a outro fechamento. "
-                                        "Selecione a competência correspondente ao último dia do mês anterior."
+                                        "COMPETÊNCIA DIFERENTE DA CONTAGEM: "
+                                        + "fechamento selecionado em "
+                                        + month_label(cb_month)
+                                        + ", mas a data " + _data_txt
+                                        + " indica " + month_label(detected_comp)
+                                        + ". Nenhum registro foi gravado."
                                     )
-                                elif st.button(
-                                    "IMPORTAR CONTAGEM DE CHAPAS",
-                                    type="primary",
-                                    use_container_width=True,
-                                    key="cb_import_email",
-                                ):
-                                    db.save_cb_counts_batch(
-                                        cb_month,
-                                        "CHAPAS_EMAIL",
-                                        email_file.name,
-                                        resolved_email["resolved"],
-                                    )
-                                    st.session_state["_cb_count_flash"] = (
-                                        "Contagem de chapas importada."
-                                    )
-                                    load_cb_page_snapshot.clear()
-                                    st.rerun()
+                                    if detected_comp in visible_months:
+                                        st.button(
+                                            "ALTERAR PARA "
+                                            + month_label(detected_comp),
+                                            type="primary",
+                                            use_container_width=True,
+                                            key="cb_change_email_month",
+                                            on_click=_select_cb_competencia,
+                                            args=(detected_comp,),
+                                        )
+                                    else:
+                                        st.warning(
+                                            "A competência sugerida não está disponível "
+                                            "na seleção. Regularize a base de estoque "
+                                            "dessa competência antes da importação."
+                                        )
+                                else:
+                                    # Para datas intermediárias, a competência é
+                                    # escolha explícita do operador, não inferência.
+                                    email_confirmed = True
+                                    if detected_comp is None:
+                                        st.warning(
+                                            "A data da contagem não permite determinar "
+                                            "com segurança a competência. Confira o "
+                                            "fechamento antes de importar."
+                                        )
+                                        email_confirmed = st.checkbox(
+                                            "CONFIRMO A IMPORTAÇÃO EM "
+                                            + month_label(cb_month)
+                                            + " (fechamento "
+                                            + closing_date(cb_month).strftime("%d/%m/%Y")
+                                            + ")",
+                                            key="cb_confirm_email_month_"
+                                            + cb_month.strftime("%Y%m"),
+                                        )
+                                    if email_confirmed and st.button(
+                                        "IMPORTAR CONTAGEM DE CHAPAS",
+                                        type="primary",
+                                        use_container_width=True,
+                                        key="cb_import_email",
+                                    ):
+                                        db.save_cb_counts_batch(
+                                            cb_month,
+                                            "CHAPAS_EMAIL",
+                                            email_file.name,
+                                            resolved_email["resolved"],
+                                        )
+                                        st.session_state["_cb_count_flash"] = (
+                                            "Contagem de chapas importada em "
+                                            + month_label(cb_month) + "."
+                                        )
+                                        load_cb_page_snapshot.clear()
+                                        st.rerun()
                         except Exception as exc:
                             st.error(
                                 f"Não foi possível ler o e-mail de chapas: {exc}"
