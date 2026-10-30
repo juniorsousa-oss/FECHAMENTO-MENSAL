@@ -22,6 +22,7 @@ LINE = "F2F6FB"
 WARNING = "FDE8E8"
 MONEY_FORMAT = '#,##0.00;[Red](#,##0.00)'
 QUANTITY_FORMAT = '#,##0.######;[Red](#,##0.######)'
+QUANTITY_INTEGER_FORMAT = '#,##0;[Red](#,##0)'
 PERCENT_FORMAT = '0.00%;[Red](0.00%)'
 
 OP_FIELDS = [
@@ -175,7 +176,13 @@ class _Excel:
                     if i in money:
                         c.number_format = MONEY_FORMAT
                     elif i in quantities:
-                        c.number_format = QUANTITY_FORMAT
+                        # Excel pt-BR exibe vírgula solta (ex.: '100,') quando
+                        # as casas opcionais seguem um separador decimal.
+                        # Inteiros usam formato próprio; frações são preservadas.
+                        c.number_format = (
+                            QUANTITY_INTEGER_FORMAT if value == int(value)
+                            else QUANTITY_FORMAT
+                        )
                     elif i in percents:
                         c.number_format = PERCENT_FORMAT
             row.append(c)
