@@ -140,6 +140,45 @@ class OpsSourceTests(unittest.TestCase):
         self.assertTrue(result["saved"])
         self.assertEqual(rpc.call_count, 1)
 
+    def test_outdated_cached_parse_cannot_be_saved_or_falsely_reported_current(self):
+        parsed = src.parse(xltx_bytes([
+            line(kind="RE1", tes="999", qty=16)
+        ]), "OPS.xltx")
+        self.assertEqual(parsed["meta"]["versao"], src.VERSION)
+        self.assertEqual(parsed["meta"]["re1_999_reconhecidos"], 1)
+        # Simula exatamente a prévia antiga que apareceu na tela:
+        # o SHA coincide, mas as regras descartavam RE1/999.
+        stale = {
+            **parsed,
+            "meta": {**parsed["meta"],
+                     "versao": "2026-11-03.1",
+                     "re1_999_reconhecidos": 0}
+        }
+        old = {**stale["meta"]}
+        with patch.object(src, "read_meta") as reader, \
+             patch.object(src.db, "rpc") as rpc:
+            with self.assertRaisesRegex(ValueError, "regras antigas"):
+                src.save(stale, current=old)
+        rpc.assert_not_called()
+        reader.assert_not_called()
+        with patch.object(src.db, "rpc") as rpc, \
+             patch.object(src, "read_meta", return_value=parsed["meta"]):
+            refreshed = src.save(parsed, current=old)
+        self.assertTrue(refreshed["saved"])
+        self.assertEqual(rpc.call_count, 1)
+
+    def test_ui_cache_key_includes_processing_rules_version(self):
+        import inspect
+        import issue_check_ui as ui
+        signature = inspect.signature(ui._parse_ops_upload)
+        self.assertIn("rules_version", signature.parameters)
+        raw = xltx_bytes([line(kind="RE1", tes="999", qty=16)])
+        with self.assertRaisesRegex(RuntimeError, "Versão das regras OPS divergente"):
+            ui._parse_ops_upload(raw, "OPS.xltx", "2026-11-03.1")
+        accepted = ui._parse_ops_upload(raw, "OPS.xltx", src.VERSION)
+        self.assertEqual(accepted["meta"]["versao"], src.VERSION)
+        self.assertEqual(accepted["meta"]["re1_999_reconhecidos"], 1)
+
     def test_multiple_days_same_op_product_lot_are_added_without_cross_lot_credit(self):
         general = general_rows()
         records = [
