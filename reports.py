@@ -25,7 +25,7 @@ MONEY_FORMAT = '#,##0.00;[Red](#,##0.00)'
 # separador decimal isolado que o formato #,##0.###### gerava no pt-BR.
 QUANTITY_FORMAT = "General"
 QUANTITY_INTEGER_FORMAT = "General"
-EXPORT_SCHEMA_VERSION = "2026-11-03.2-OPS-RE1-999"
+EXPORT_SCHEMA_VERSION = "2026-11-03.3-AUDIT-PERIOD"
 PERCENT_FORMAT = '0.00%;[Red](0.00%)'
 
 OP_FIELDS = [
@@ -60,7 +60,17 @@ ITEM_FIELDS = [
     ("Outros endereços", "outros_enderecos"),
     ("Resultado", "status"),
 ]
-OP_COLUMNS = [label for label, _ in OP_FIELDS] + [label for label, _ in ITEM_FIELDS]
+AUDIT_FIELDS = [
+    "Separados com data no Geral",
+    "Separações inferidas da conferência",
+    "Qtd separada registrada",
+    "Qtd separada operacional estimada",
+    "Qtd conferida sem separação registrada",
+    "Data última atividade no período",
+    "Motivos da inclusão",
+    "Integridade da origem",
+]
+OP_COLUMNS = [label for label, _ in OP_FIELDS] + [label for label, _ in ITEM_FIELDS] + AUDIT_FIELDS
 
 
 def _cell(value):
@@ -117,29 +127,72 @@ def _between(value, start: date | None, end: date | None) -> bool:
     return parsed is not None and (start is None or parsed >= start) and (end is None or parsed <= end)
 
 
-def ops_with_activity(model: dict, start: date | None, end: date | None) -> set[str]:
-    """Seleciona OPs com separação, conferência OU baixa no período.
-
-    Nunca usa data de faturamento como critério implícito. A OP selecionada
-    será exportada com todos os seus produtos, mesmo sem evento individual.
-    """
+def activity_evidence(model: dict, start: date | None, end: date | None) -> dict[str, list[tuple[date, str]]]:
+    """Eventos rastreáveis que justificam inclusão; respeita o corte MES."""
     _period(start, end)
-    if start is None and end is None:
-        return {str(op) for op in model["ops"]["op"].tolist()}
-    selected = set()
+    reference = _date(model.get("as_of"))
+    effective_end = min(end, reference) if end and reference else end or reference
+    if start and effective_end and start > effective_end:
+        return {}
+    events: dict[str, list[tuple[date, str]]] = {}
+    def add(op: str, value: object, kind: str):
+        when = _date(value)
+        if not when or (start and when < start) or (effective_end and when > effective_end):
+            return
+        events.setdefault(str(op), []).append((when, kind))
     for item in model.get("general") or []:
-        if any(_between(item.get(field), start, end) for field in ("separacao", "conferencia")):
-            selected.add(str(item["op"]))
+        add(item["op"], item.get("separacao"), "SEPARAÇÃO")
+        add(item["op"], item.get("conferencia"), "CONFERÊNCIA")
     for movement in model.get("movements") or []:
         if movement.get("natureza") not in ("BAIXA / DEVOLUÇÃO", "CONSUMO DE OP"):
             continue
-        if not _between(movement.get("data"), start, end):
+        if (abs(float(movement.get("qtd_saida") or 0)) == 0
+                and abs(float(movement.get("qtd_entrada") or 0)) == 0):
             continue
-        if (abs(float(movement.get("qtd_saida") or 0)) > 0
-                or abs(float(movement.get("qtd_entrada") or 0)) > 0):
-            selected.add(str(movement.get("op") or ""))
-    return selected
+        add(movement.get("op") or "", movement.get("data"), "BAIXA/DEVOLUÇÃO")
+    return events
 
+
+def selection_diagnostics(model: dict, start: date | None, end: date | None,
+                          *, include_prior_billing: bool = False) -> dict:
+    """Relata inclusões/exclusões, sem aplicar a data de faturamento às baixas."""
+    _period(start, end)
+    ops = {str(item["op"]): item for item in model["ops"].to_dict("records")}
+    events = activity_evidence(model, start, end) if start or end else {}
+    candidates = set(events) if start or end else set(ops)
+    excluded = {}
+    selected = set()
+    for op in candidates:
+        if op not in ops:
+            continue
+        billing_raw = ops[op].get("data_faturamento")
+        billing = _date(billing_raw)
+        if (start and not include_prior_billing and billing and billing < start):
+            excluded[op] = {
+                "faturamento": billing.isoformat(),
+                "motivo": "FATURAMENTO ANTERIOR AO PERÍODO",
+                "atividade": sorted(events.get(op, [])),
+            }
+            continue
+        selected.add(op)
+    return {
+        "selected": selected,
+        "excluded_prior_billing": excluded,
+        "events": events,
+        "unreadable_billing": sorted(op for op in selected if
+                                     str(ops[op].get("data_faturamento") or "").strip().upper()
+                                     not in ("", "NI", "N/I") and
+                                     _date(ops[op].get("data_faturamento")) is None),
+    }
+
+
+def ops_with_activity(model: dict, start: date | None, end: date | None,
+                      *, include_prior_billing: bool = False) -> set[str]:
+    """Atividade no período e, por padrão, exclui faturamentos anteriores."""
+    return selection_diagnostics(
+        model, start, end,
+        include_prior_billing=include_prior_billing,
+    )["selected"]
 
 class _Excel:
     """Escrita streaming com cabeçalho fixo, autofiltro e formatação de colunas."""
@@ -310,8 +363,11 @@ def _valor_previsto_baixa(item: dict, prices: dict) -> float | None:
 
 def issue_rows(model: dict, start: date | None = None, end: date | None = None,
                *, statuses: set[str] | None = None, alerts_only: bool = False,
-               material_types: set[str] | None = None) -> list[list]:
-    selected = ops_with_activity(model, start, end)
+               material_types: set[str] | None = None,
+               include_prior_billing: bool = False) -> list[list]:
+    diagnosis = selection_diagnostics(
+        model, start, end, include_prior_billing=include_prior_billing)
+    selected = diagnosis["selected"]
     op_lookup = {
         str(entry["op"]): entry
         for entry in model["ops"].to_dict("records")
@@ -334,29 +390,69 @@ def issue_rows(model: dict, start: date | None = None, end: date | None = None,
             if field == "valor_previsto_baixa" else item.get(field)
             for _, field in ITEM_FIELDS
         ]
-        rows.append([head.get(field) for _, field in OP_FIELDS] + values)
+        separated = item.get("separada")
+        confirmed = item.get("conferida")
+        from decimal import Decimal as D
+        separated_qty = D(str(separated or 0))
+        confirmed_qty = D(str(confirmed or 0))
+        unregistered = max(confirmed_qty - separated_qty, D(0))
+        events = sorted(diagnosis["events"].get(op, ()))
+        activity_date = events[-1][0].isoformat() if events else ""
+        motives = ", ".join(sorted({type_name for _, type_name in events}))
+        notes = []
+        if bool(head.get("separados_inferidos")):
+            notes.append(
+                f"{head['separados_inferidos']} produto(s) conferido(s) sem data de separação"
+            )
+        if unregistered > 0:
+            notes.append("Quantidade conferida supera separação registrada")
+        if item.get("lote_nao_informado_geral"):
+            notes.append("Lote não informado no Relatório Geral")
+        if item.get("historico_incompleto"):
+            notes.append("Cobertura de dados a conferir")
+        if str(head.get("data_faturamento") or "").strip().upper() in ("", "NI", "N/I"):
+            notes.append("Faturamento não informado")
+        rows.append(
+            [head.get(field) for _, field in OP_FIELDS] + values + [
+                head.get("separados_registrados", head.get("separados")),
+                head.get("separados_inferidos", 0),
+                separated,
+                max(separated_qty, confirmed_qty),
+                unregistered,
+                activity_date,
+                motives,
+                " | ".join(dict.fromkeys(notes)) if notes else "SEM ALERTA DE ORIGEM",
+            ]
+        )
     return rows
 
 
 def export_issues(model: dict, start: date | None = None, end: date | None = None,
                   *, statuses: set[str] | None = None, alerts_only: bool = False,
-                  material_types: set[str] | None = None) -> bytes:
+                  material_types: set[str] | None = None,
+                  include_prior_billing: bool = False) -> bytes:
     """Uma única aba, uma linha por produto/OP, dados da OP repetidos por linha."""
     rows = issue_rows(model, start, end, statuses=statuses, alerts_only=alerts_only,
-                      material_types=material_types)
+                      material_types=material_types,
+                      include_prior_billing=include_prior_billing)
     wb = _Excel()
     wb.sheet("Conferência de Baixas", OP_COLUMNS,
              quantity={OP_COLUMNS.index(label) for label in (
                  "Qtd necessária", "Qtd separada", "Qtd conferida",
                  "Qtd baixada", "Qtd pendente baixa",
                  "Baixa em outros lotes", "Baixa sem lote",
-                 "Saldo no lote conferido", "Saldo G9-PROD")},
+                 "Saldo no lote conferido", "Saldo G9-PROD",
+                 "Qtd separada registrada",
+                 "Qtd separada operacional estimada",
+                 "Qtd conferida sem separação registrada")},
              money={OP_COLUMNS.index("Valor previsto da baixa (R$)")},
              alert_column=len(OP_COLUMNS) - 1)
+    result_idx = OP_COLUMNS.index("Resultado")
     for row in rows:
+        result = str(row[result_idx]).upper()
         wb.add("Conferência de Baixas", row,
-               alert=("NÃO CONSUMIDO" in str(row[-1]).upper()
-                      or "BAIXA ACIMA" in str(row[-1]).upper()))
+               alert=("NÃO CONSUMIDO" in result or "BAIXA ACIMA" in result
+                      or "LOTE" in result))
     return wb.save()
 
 
