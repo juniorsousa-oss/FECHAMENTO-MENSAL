@@ -25,7 +25,7 @@ MONEY_FORMAT = '#,##0.00;[Red](#,##0.00)'
 # separador decimal isolado que o formato #,##0.###### gerava no pt-BR.
 QUANTITY_FORMAT = "General"
 QUANTITY_INTEGER_FORMAT = "General"
-EXPORT_SCHEMA_VERSION = "2026-11-03.1-OPS-LOTE"
+EXPORT_SCHEMA_VERSION = "2026-11-03.2-OPS-RE1-999"
 PERCENT_FORMAT = '0.00%;[Red](0.00%)'
 
 OP_FIELDS = [
