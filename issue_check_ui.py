@@ -874,29 +874,33 @@ def _details(model, item):
             st.error(message)
     st.markdown("**" + str(item["descricao"]) + "**")
     st.write(f"Conferida: **{quantity(item['conferida'])}** · Baixada líquida: **{quantity(item['baixada'])}** · Pendente: **{quantity(item['pendente'])}**")
+    if item.get("lotes_baixados_divergentes"):
+        st.warning("Baixa identificada em outro lote: " + str(item["lotes_baixados_divergentes"]))
+    if item.get("baixa_sem_lote"):
+        st.warning("Existem baixas sem lote informado; não foram atribuídas aos lotes conferidos.")
     if item["saldo_compartilhado"]:
         st.info("O saldo deste produto e lote também é consultado por outras OPs. A conferência não reserva nem distribui esse saldo automaticamente.")
-    source_tab, stock_tab, kardex_tab = st.tabs(["CONFERÊNCIA MES", "LOTES E ENDEREÇOS", "MOVIMENTOS KARDEX"])
+    source_tab, stock_tab, ops_tab = st.tabs(["CONFERÊNCIA MES", "LOTES E ENDEREÇOS", "BAIXAS RELATÓRIO OPS"])
     with source_tab:
         rows = pd.DataFrame([r for r in model["general"] if r["item_id"] == item["item_id"]])
         _table(rows, ["codigo", "lote", "necessaria", "atendida", "pendencia_mes", "separacao", "responsavel_separacao",
                       "conferencia", "responsavel_conferencia", "reportado", "reporte", "referencia", "linha_origem"])
     with stock_tab:
         lots = model["lots"].loc[model["lots"]["item_id"] == item["item_id"]]
-        st.caption("As baixas do KARDEX são comparadas uma única vez no total do produto na OP. Não há atribuição de baixa a um lote específico.")
-        _table(lots, ["lote", "conferida", "saldo", "saldo_g9_prod", "ops_com_demanda"])
+        st.caption("Cada lote possui sua própria quantidade conferida, baixada e pendente. Baixas de outros lotes não compensam este saldo.")
+        _table(lots, ["lote", "conferida", "baixada", "pendente", "saldo", "saldo_g9_prod", "ops_com_demanda"])
         allowed_lots = {r["lote"] for r in model["general"] if r["item_id"] == item["item_id"]}
         addresses = pd.DataFrame([r for r in model["stock"] if r["codigo"] == item["codigo"] and r["lote"] in allowed_lots])
         if item.get("outros_enderecos"):
             st.caption("Endereços alternativos ordenados pela cobertura da quantidade faltante no G9-PROD. Não são reservas de estoque.")
             st.info(item["outros_enderecos"])
         _table(addresses, ["codigo", "lote", "armazem", "endereco", "saldo", "empenho", "linha_origem"])
-    with kardex_tab:
+    with ops_tab:
         movements = pd.DataFrame([r for r in model["movements"] if r["op"] == item["op"] and r["codigo"] == item["codigo"]])
         if not movements.empty:
             movements = movements.sort_values(["data", "documento"], kind="stable")
-        st.caption("Consumo líquido = saídas − devoluções vinculadas à OP e ao produto; TES 999 sem compensação 499/999 conta como consumo. A nova classificação do produto depende do estágio da OP.")
-        _table(movements, ["data", "armazem", "tes", "documento", "qtd_entrada", "qtd_saida", "ae_original", "natureza", "arquivo_origem", "linha_origem"])
+        st.caption("Fonte OPS: requisições e devoluções somadas por OP, produto e lote; datas diferentes são acumuladas.")
+        _table(movements, ["data", "lote", "tipo_movimento", "tes", "documento", "qtd_entrada", "qtd_saida", "natureza", "arquivo_origem", "linha_origem"])
 
 
 
@@ -1018,10 +1022,21 @@ def _sources(model):
                      "Registros usados": len(model["general"] if key == "relatorio_geral" else model["stock"])})
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
     if model["history_meta"]:
-        st.dataframe(pd.DataFrame([{"Arquivo KARDEX": m["arquivo_nome"], "Armazém": m.get("armazem", "—"),
-                                    "Competência": m.get("competencia", "—"), "De": day(m["periodo_inicio"]), "Até": day(m["periodo_fim"]),
-                                    "Registros nesta cobertura": m["lancamentos"]} for m in model["history_meta"]]), hide_index=True, width="stretch")
-        st.caption("A conferência é acumulada desde o primeiro KARDEX disponível até a referência do MES. Cada armazém mantém cobertura própria; não é necessário que as datas dos arquivos coincidam. Versões mensais substituídas não são somadas novamente.")
+        meta = model["history_meta"][0]
+        st.dataframe(pd.DataFrame([{
+            "Fonte": "RELATÓRIO OPS · COM LOTE",
+            "Arquivo": meta["arquivo_nome"],
+            "Início": day(meta["periodo_inicio"]),
+            "Fim": day(meta["periodo_fim"]),
+            "Movimentos": meta["movimentos_validos"],
+            "Linhas sem lote": meta["movimentos_sem_lote"],
+        }]), hide_index=True, width="stretch")
+        st.caption(
+            "A fonte OPS substitui o KARDEX apenas para comprovar baixas. "
+            "Cada nova planilha OPS substitui toda a versão anterior; "
+            "não duplica lançamentos históricos. A quantidade é somada "
+            "somente quando OP, produto e lote são idênticos."
+        )
     diagnostics = model.get("diagnostico_baixas") or {}
     if diagnostics:
         st.markdown("**Diagnóstico de vínculo das baixas**")
@@ -1029,22 +1044,15 @@ def _sources(model):
             f"Movimentos no período: {count(diagnostics.get('movimentos_no_periodo', 0))} · "
             f"Com OP reconhecida: {count(diagnostics.get('movimentos_op_reconhecida', 0))} · "
             f"Saídas de consumo vinculadas: {count(diagnostics.get('consumos_vinculados', 0))} · "
-            f"TES 999 de OP não compensadas: {count(diagnostics.get('tes_999_sem_compensacao', 0))} · "
-            f"Linhas 499/999 compensadas: {count(diagnostics.get('enderecamentos_compensados', 0))}"
+            f"Movimentos sem lote: {count(diagnostics.get('movimentos_sem_lote', 0))}"
         )
     st.markdown("**Critérios da conferência**")
-    st.write("• Conferência identificada pela data de conferência do MES; a quantidade comparada é a atendida nessas linhas. Conferências parciais mantêm a necessária e a pendência visíveis.")
-    st.write("• Estoque consultado por produto e lote nos armazéns selecionados. O saldo é a coluna Quantidade; o empenho aparece separado nas evidências.")
-    st.write("• Histórico KARDEX acumulado por OP completa da AE e código do produto, desde todas as importações vigentes anteriores à referência. Saídas de meses diferentes são somadas; entradas/devoluções são descontadas. Consumo inclui TES 999 não compensada. Pares 499/999 e TES 499 isolada não comprovam consumo.")
-    st.write("• Prioridade da OP: dias de pátio numéricos → FINALIZADO EM PÁTIO; texto FINALIZADO E ENTREGUE → mesmo status; NF ou faturamento → NF EMITIDA; condição FINALIZADO → FINALIZADO; consumo líquido no KARDEX → REPORTADO; conferência → EM CONFERÊNCIA; separação → EM SEPARAÇÃO; caso contrário → AGUARDANDO INÍCIO.")
-    st.write("• OP finalizada/faturada/reportada OU com algum consumo: a análise de baixa começa após a separação do produto. Havendo pendência, verifica G9-PROD dos lotes conferidos e endereços alternativos que cubram a falta; produtos ainda não separados não geram alerta.")
-    st.write("• OP em andamento SEM nenhuma baixa: acompanha somente etapa do produto (conferido aguardando reporte, separado aguardando conferência ou aguardando separação), sem gerar alertas.")
-    st.write("• A conferência de baixas é por OP e código do produto. Saldos por endereço consideram somente lotes efetivamente conferidos; nenhum saldo é reservado automaticamente para outras OPs.")
-    st.write("• Baixa maior que a NECESSIDADE gera alerta, exceto para materiais Tipo II ou com necessidade zero e consumo positivo (FLUXO DE BARRAS).")
-    st.write("• Produtos Tipo II do CADASTROS recebem 'MATERIAL DE CONSUMO' e não geram alertas, independentemente de separação, conferência ou baixa.")
-    st.write("• Outros endereços só são exibidos se o saldo G9-PROD dos lotes conferidos não cobrir toda a quantidade separada.")
-    st.write("• Registros repetidos no MES são mantidos e somados. Sobreposição entre arquivos KARDEX é reconhecida sem duplicar movimentos.")
-    st.write("• Diferenças de até 0,000001 são tratadas como precisão numérica. Os valores originais permanecem nas evidências.")
+    st.write("• O Relatório Geral continua sendo a fonte de separação, conferência, produto e lote. Quantidade atendida em linhas conferidas compõe a comparação.")
+    st.write("• As baixas vêm exclusivamente do relatório OPS, com código D, OP B, quantidade F, data K e lote N. RE0 (TES 520/550) e RE6 (550) são requisições; DE0 (020) reduz a baixa líquida. PR0/010 e movimentações 999 de endereço não comprovam consumo.")
+    st.write("• A chave da comparação é OP + produto + lote exato. Datas diferentes da mesma chave são somadas até a data-base do MES. Quantidades de outro lote não podem compensar pendências do lote conferido.")
+    st.write("• Lotes sem informação não são atribuídos automaticamente. A conferência mostra a movimentação, sinaliza a inconsistência e preserva as quantidades originais.")
+    st.write("• O estoque por endereço e lote continua vindo da fonte ENDEREÇO. A fonte OPS não identifica armazém e não é filtrada artificialmente por armazém.")
+    st.write("• O KARDEX continua independente e permanece utilizado na análise gerencial de movimentações e TES.")
     st.caption(f"Referência da conferência: {day(model['as_of'])}. Movimentos posteriores à data da base são desconsiderados ({count(model['movimentos_apos_base'])}).")
     if model["duplicates"]:
         st.caption(f"Movimentos repetidos entre importações reconhecidos: {count(model['duplicates'])}.")
@@ -1071,27 +1079,26 @@ def render_results(model):
     frame = model["items"]
     period = model["coverage"]
     if not model["history_available"]:
-        st.warning("KARDEX não localizado para os armazéns selecionados. Baixas permanecem desconhecidas, não zeradas.")
+        st.warning("Relatório OPS ainda não importado. As baixas são desconhecidas, não zero. Importe a fonte na área acima.")
     elif not model.get("accumulated_history") and not period["fim"]:
-        st.warning("KARDEX sem cobertura de datas para os armazéns selecionados.")
+        st.warning("OPS sem cobertura histórica identificada.")
     elif (not model.get("accumulated_history") and period["fim"]
           and period["fim"] < model["as_of"]):
-        st.warning(f"KARDEX disponível até {day(period['fim'])}; bases de referência em {day(model['as_of'])}. Existem períodos sem cobertura.")
+        st.warning(f"OPS disponível até {day(period['fim'])}; bases de referência em {day(model['as_of'])}. Verifique o período exportado.")
     dates = {_source_day(meta) for meta in model["source_meta"].values()}
     if len(dates) > 1:
         st.warning("Relatório Geral e Endereço com datas diferentes. Considerada a referência mais antiga.")
     if len(period["intervalos"]) > 1 and not model.get("accumulated_history"):
-        st.warning("O histórico possui intervalos sem cobertura entre as importações KARDEX.")
+        st.warning("O relatório OPS não cobre continuamente todo o período da conferência.")
     diagnostics = model.get("diagnostico_baixas") or {}
     if model.get("catalog_meta", {}).get("erro"):
         st.warning("CADASTROS indisponível: materiais Tipo II sem separação podem continuar em classificação provisória até atualização da fonte.")
     if (model.get("history_available") and diagnostics.get("movimentos_no_periodo", 0)
             and not diagnostics.get("consumos_vinculados", 0)):
         st.warning(
-            "O KARDEX possui movimentações no período, mas nenhuma saída de consumo "
-            "foi vinculada a uma OP nesta análise. Confira o conteúdo da coluna "
-            "AE original, a data de referência e os armazéns selecionados antes "
-            "de interpretar baixas zeradas como ausência de consumo."
+            "A fonte OPS possui registros no período, mas nenhuma requisição "
+            "foi reconhecida para as OPs da base MES. Confira os códigos, "
+            "as OPs e a data de referência antes de interpretar baixa zero."
         )
 
     # Compatibilidade com filtros de texto antigos salvos na sessão Streamlit:
