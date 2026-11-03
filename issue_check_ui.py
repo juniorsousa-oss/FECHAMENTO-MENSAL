@@ -989,17 +989,6 @@ def _ops(model, view, token):
             if is_open:
                 with st.container(key="fm_issue_op_detail_" + number):
                     st.caption(f"P.A.: {context['pa'] or '—'} · {context['descricao_pa'] or 'Descrição não informada'}")
-                    inferred = int(context.get("separados_inferidos") or 0)
-                    if inferred:
-                        st.warning(
-                            f"INCONSISTÊNCIA NO RELATÓRIO GERAL: "
-                            f"{int(context.get('separados_registrados') or 0)} "
-                            f"produto(s) com separação registrada e "
-                            f"{inferred} produto(s) com separação "
-                            "inferida pela conferência, sem data de "
-                            "separação preenchida. O total operacional "
-                            "não substitui o registro original."
-                        )
                     source_lines = int(context.get("linhas_mes", total))
                     if source_lines != total:
                         st.caption(
@@ -1232,9 +1221,8 @@ def render_results(model):
             ("OPs encontradas", count(view["op"].nunique()), "Ordens no recorte"),
             ("Produtos", count(len(view)), "Códigos distintos por OP"),
             ("Separados", count(
-                (view["itens_separados"].gt(0)
-                 | view["itens_conferidos"].gt(0)).sum()
-            ), "Registrados ou inferidos pela conferência"),
+                view.loc[~view["op"].isin([]), "itens_separados"].gt(0).sum()
+            ), "Separação sem conferente registrado no Geral"),
             ("Conferidos", count(view["itens_conferidos"].gt(0).sum()), "Produtos com conferência"),
         ])
     alerts = view.loc[view["divergente"]]
