@@ -402,7 +402,7 @@ def issue_rows(model: dict, start: date | None = None, end: date | None = None,
         notes = []
         if bool(head.get("separados_inferidos")):
             notes.append(
-                f"{head['separados_inferidos']} produto(s) conferido(s) sem data de separação"
+                f"{int(head['separados_inferidos'])} produto(s) conferido(s) sem data de separação"
             )
         if unregistered > 0:
             notes.append("Quantidade conferida supera separação registrada")
