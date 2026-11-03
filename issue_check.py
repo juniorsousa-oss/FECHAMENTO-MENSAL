@@ -10,7 +10,7 @@ import pandas as pd
 
 import movements as mv
 
-VERSION = "2026-11-03.3"
+VERSION = "2026-11-03.4"
 EPSILON = Decimal("0.000001")
 ZERO = Decimal(0)
 MISSING = "CONFERIDO SEM SALDO E SEM BAIXA SUFICIENTE"
@@ -276,10 +276,11 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
         if not row["codigo"]:
             continue
         key = row["op"], row["codigo"], ops_source.lot(row["lote"])
-        if row["separacao"]:
-            necessary_by_lot[key][0] += row["atendida"]
-        if row["conferencia"]:
+        # No OPS o MES usa o conferente informado, não datas inferidas.
+        if text(row.get("responsavel_conferencia")):
             necessary_by_lot[key][1] += row["atendida"]
+        else:
+            necessary_by_lot[key][0] += row["atendida"]
 
     changes = {name: [] for name in (
         "saida_bruta", "devolvida", "baixada", "pendente",
@@ -287,6 +288,7 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
         "baixa_sem_lote", "lote_nao_informado_geral",
         "sem_saldo", "em_g9_prod",
         "op_possui_baixa", "historico_incompleto",
+        "separada", "conferida", "itens_separados", "itens_conferidos",
     )}
     lot_index = defaultdict(list)
     for row in base["lots"].to_dict("records"):
@@ -308,6 +310,10 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
         total_returns = ZERO
         total_matching = ZERO
         total_pending = ZERO
+        total_separated = ZERO
+        total_confirmed = ZERO
+        count_separated = 0
+        count_confirmed = 0
         for lot_line in existing:
             lote = ops_source.lot(lot_line["lote"])
             key = (op, code, lote)
@@ -315,8 +321,13 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
             returned = incoming[key]
             net = max(totals[key], ZERO)
             separated, confirmed = necessary_by_lot[key]
-            expected = max(separated, confirmed)
-            # O identificador de lote vazio nunca comprova consumo.
+            # Separado sem conferente NÃO é conferido. Comparar o OPS
+            # com a parcela efetivamente conferida, sem fabricar etapas.
+            expected = confirmed
+            total_separated += separated
+            total_confirmed += confirmed
+            count_separated += int(separated > EPSILON)
+            count_confirmed += int(confirmed > EPSILON)
             matching = net if lote else ZERO
             pending = positive(expected - matching)
             total_issued += issued if lote else ZERO
@@ -325,6 +336,8 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
             total_pending += pending
             lot_line["baixada"] = matching
             lot_line["pendente"] = pending
+            lot_line["separada"] = separated
+            lot_line["conferida"] = confirmed
             lot_line["saida_bruta"] = issued
             lot_line["devolvida"] = returned
             lot_line["pendente_minima"] = pending
@@ -340,6 +353,10 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
         other_qty = sum((max(all_by_product[op, code][lote], ZERO)
                          for lote in other_lots), ZERO)
         # Nenhum lote diferente compensa a pendência do lote conferido.
+        changes["separada"].append(total_separated)
+        changes["conferida"].append(total_confirmed)
+        changes["itens_separados"].append(count_separated)
+        changes["itens_conferidos"].append(count_confirmed)
         changes["saida_bruta"].append(total_issued)
         changes["devolvida"].append(total_returns)
         changes["baixada"].append(total_matching)
@@ -378,6 +395,29 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
     for name, values in changes.items():
         updated[name] = values
     base["items"] = updated
+    # Cabeçalho da Conferência OPS usa as mesmas linhas do Geral,
+    # sem alterar a contagem dos outros módulos que usam reconcile().
+    for row_index, header in base["ops"].iterrows():
+        op = header["op"]
+        source_rows = [r for r in general if r["op"] == op]
+        confirmed_codes = {
+            r["codigo"] for r in source_rows
+            if text(r.get("responsavel_conferencia"))
+        }
+        separated_codes = {
+            r["codigo"] for r in source_rows
+            if not text(r.get("responsavel_conferencia"))
+            and r["atendida"] > EPSILON
+        } - confirmed_codes
+        base["ops"].at[row_index, "separados"] = len(separated_codes)
+        base["ops"].at[row_index, "conferidos"] = len(confirmed_codes)
+        base["ops"].at[row_index, "linhas_separadas_mes"] = sum(
+            not text(r.get("responsavel_conferencia"))
+            and r["atendida"] > EPSILON for r in source_rows
+        )
+        base["ops"].at[row_index, "linhas_conferidas_mes"] = sum(
+            bool(text(r.get("responsavel_conferencia"))) for r in source_rows
+        )
 
     global_pending_ops = defaultdict(set)
     for lot_line in lots_updated:
