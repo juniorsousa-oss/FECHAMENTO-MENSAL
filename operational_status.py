@@ -11,7 +11,7 @@ import re
 
 import pandas as pd
 
-VERSION = "2026-11-03.2"
+VERSION = "2026-11-03.3"
 EPS = Decimal("0.000001")
 ZERO = Decimal(0)
 
@@ -255,6 +255,14 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
             status, alert = AGUARDANDO_SEPARACAO, False
         elif net - necessidade > EPS:
             status, alert = BAIXA_ACIMA_NECESSIDADE, True
+        elif (model.get("baixas_fonte") == "OPS"
+              and bool(item.get("divergencia_lotes"))
+              and confirmed > EPS
+              and model.get("history_available")):
+            # Cinco conferidas e cinco baixadas podem ocultar troca de
+            # lotes (2/3 versus 3/2). A pendência total permanece zero;
+            # a divergência de lote continua exigindo conferência.
+            status, alert = BAIXA_LOTE_DIVERGENTE, True
         elif not group["exige_baixa"]:
             if confirmed > EPS:
                 status = CONFERIDO_AGUARDANDO_REPORTE
