@@ -8,6 +8,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from io import BytesIO
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 from openpyxl import Workbook
@@ -145,7 +146,7 @@ class OpsSourceTests(unittest.TestCase):
     def test_no_duplicate_when_same_file_is_reimported(self):
         parsed = src.parse(xltx_bytes([line()]), "ops.xlsx")
         old = {**parsed["meta"], "atualizado_em": "2026-11-03T15:00:00Z"}
-        with unittest.mock.patch.object(src.db, "rpc") as rpc:
+        with patch.object(src.db, "rpc") as rpc:
             result = src.save(parsed, current=old)
         self.assertFalse(result["saved"])
         rpc.assert_not_called()
