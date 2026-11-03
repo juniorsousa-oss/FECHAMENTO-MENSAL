@@ -11,7 +11,7 @@ import re
 
 import pandas as pd
 
-VERSION = "2026-11-03.3"
+VERSION = "2026-11-03.4"
 EPS = Decimal("0.000001")
 ZERO = Decimal(0)
 
@@ -256,12 +256,18 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
         elif net - necessidade > EPS:
             status, alert = BAIXA_ACIMA_NECESSIDADE, True
         elif (model.get("baixas_fonte") == "OPS"
+              and confirmed > EPS and model.get("history_available")
+              and bool(item.get("lote_nao_informado_geral"))):
+            status, alert = LOTE_AUSENTE_GERAL, True
+        elif (model.get("baixas_fonte") == "OPS"
+              and confirmed > EPS and model.get("history_available")
+              and decimal(item.get("baixa_sem_lote")) > EPS):
+            status, alert = LOTE_AUSENTE_OPS, True
+        elif (model.get("baixas_fonte") == "OPS"
               and bool(item.get("divergencia_lotes"))
-              and confirmed > EPS
-              and model.get("history_available")):
-            # Cinco conferidas e cinco baixadas podem ocultar troca de
-            # lotes (2/3 versus 3/2). A pendência total permanece zero;
-            # a divergência de lote continua exigindo conferência.
+              and confirmed > EPS and model.get("history_available")):
+            # O total confere, mas o consumo de um lote pode estar lançado
+            # no outro. Não converter inconsistência de lote em falta geral.
             status, alert = BAIXA_LOTE_DIVERGENTE, True
         elif not group["exige_baixa"]:
             if confirmed > EPS:
