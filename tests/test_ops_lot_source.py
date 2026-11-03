@@ -136,6 +136,33 @@ class OpsSourceTests(unittest.TestCase):
         self.assertEqual(stages.apply(model)["items"].iloc[0].status,
                          stages.BAIXA_LOTE_DIVERGENTE)
 
+    def test_missing_mes_lot_is_not_misreported_as_wrong_consumed_lot(self):
+        general = issue_check.parse_general(pd.DataFrame([{
+            "Projeto": OP, "Código": CODE, "Lote": "",
+            "Qtd. necessária": 10, "Qtd. atendida": 10,
+            "Data de separação": "02/10/26 08:00",
+            "Data de conferência": "03/10/26 08:00",
+            "Descrição": "MATERIAL SEM LOTE NO GERAL",
+        }]))
+        model = issue_check.reconcile_ops(
+            general, [], [ops_record(lot=LOT_A, qty="10")],
+            ops_meta=META, as_of="2026-11-03")
+        item = model["items"].iloc[0]
+        self.assertTrue(item.lote_nao_informado_geral)
+        self.assertEqual(item.baixada, Decimal("0"))
+        self.assertEqual(item.pendente, Decimal("10"))
+        resolved = stages.apply(model)["items"].iloc[0]
+        self.assertEqual(resolved.status, stages.LOTE_AUSENTE_GERAL)
+
+    def test_missing_ops_lot_is_not_misreported_as_wrong_consumed_lot(self):
+        model = issue_check.reconcile_ops(
+            general_rows(), [], [ops_record(lot="", qty="10")],
+            ops_meta=META, as_of="2026-11-03")
+        item = stages.apply(model)["items"].iloc[0]
+        self.assertEqual(item.status, stages.LOTE_AUSENTE_OPS)
+        self.assertEqual(item.pendente, Decimal("20"))
+        self.assertEqual(item.baixa_sem_lote, Decimal("10"))
+
     def test_missing_source_does_not_turn_unknown_issue_into_zero(self):
         model = issue_check.reconcile_ops(
             general_rows(), [], [], ops_meta=None, as_of="2026-11-03")
