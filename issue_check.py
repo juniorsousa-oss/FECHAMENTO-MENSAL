@@ -10,7 +10,7 @@ import pandas as pd
 
 import movements as mv
 
-VERSION = "2026-10-21.3"
+VERSION = "2026-11-03.1"
 EPSILON = Decimal("0.000001")
 ZERO = Decimal(0)
 MISSING = "CONFERIDO SEM SALDO E SEM BAIXA SUFICIENTE"
@@ -216,6 +216,188 @@ def coverage(metas: list[dict], warehouses=None) -> dict:
 
 def _covered(intervals: list[list[str]], start: str, end: str) -> bool:
     return start <= end and any(first <= start and last >= end for first, last in intervals)
+
+
+
+def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict], *,
+                  ops_meta: dict | None, as_of: str,
+                  warehouses: tuple[str, ...] = ("S2",),
+                  sources_same_day: bool = True) -> dict:
+    """Reconciliador por lote exato sem usar KARDEX para comprovar baixas.
+
+    Agrupa todas as requisições/devoluções pela chave (OP, produto, lote);
+    datas diferentes são somadas. A data só limita a fotografia de
+    referência. Baixas de outro lote não quitam a quantidade confirmada.
+    """
+    import ops_lot_source as ops_source
+
+    history_meta = []
+    if ops_meta:
+        history_meta = [{
+            "arquivo_nome": ops_meta["arquivo_nome"],
+            "periodo_inicio": ops_meta["periodo_inicio"],
+            "periodo_fim": ops_meta["periodo_fim"],
+            "lancamentos": ops_meta.get("movimentos_validos", 0),
+        }]
+    # Reutiliza a conferência MES, endereço e saldo compartilhado.
+    # O vetor vazio impede a atribuição antiga por produto sem lote.
+    base = reconcile(
+        general, stock, [], history_metas=history_meta, as_of=as_of,
+        warehouses=warehouses, sources_same_day=sources_same_day,
+        accumulated_history=True,
+    )
+    base["baixas_fonte"] = "OPS"
+    base["ops_meta"] = dict(ops_meta or {})
+    base["history_meta"] = history_meta
+    if not ops_meta:
+        base["diagnostico_baixas"] = {
+            "movimentos_no_periodo": 0, "movimentos_op_reconhecida": 0,
+            "consumos_vinculados": 0,
+        }
+        return base
+
+    general_ops = {r["op"] for r in general}
+    evidence, future = ops_source.movements_as_of(ops_records, as_of, ops=general_ops)
+    totals = defaultdict(Decimal)
+    outgoing = defaultdict(Decimal)
+    incoming = defaultdict(Decimal)
+    all_by_product = defaultdict(dict)
+    for row in evidence:
+        key = (row["op"], row["codigo"], row["lote"])
+        delta = mv.decimal(row["qtd_saida"]) - mv.decimal(row["qtd_entrada"])
+        totals[key] += delta
+        outgoing[key] += mv.decimal(row["qtd_saida"])
+        incoming[key] += mv.decimal(row["qtd_entrada"])
+    for (op, code, lote), amount in totals.items():
+        all_by_product[op, code][lote] = amount
+
+    necessary_by_lot = defaultdict(lambda: [ZERO, ZERO])
+    for row in general:
+        if not row["codigo"]:
+            continue
+        key = row["op"], row["codigo"], ops_source.lot(row["lote"])
+        if row["separacao"]:
+            necessary_by_lot[key][0] += row["atendida"]
+        if row["conferencia"]:
+            necessary_by_lot[key][1] += row["atendida"]
+
+    changes = {name: [] for name in (
+        "saida_bruta", "devolvida", "baixada", "pendente",
+        "baixa_outros_lotes", "lotes_baixados_divergentes",
+        "baixa_sem_lote", "sem_saldo", "em_g9_prod",
+        "op_possui_baixa", "historico_incompleto",
+    )}
+    lot_index = defaultdict(list)
+    for row in base["lots"].to_dict("records"):
+        lot_index[(row["op"], row["codigo"])].append(row)
+
+    lots_updated = []
+    pending_by_stock = defaultdict(Decimal)
+    pending_ops = defaultdict(set)
+    active_by_op = set()
+    for (op, code, lote), qty in totals.items():
+        if qty > EPSILON:
+            active_by_op.add(op)
+
+    for item in base["items"].to_dict("records"):
+        op, code = item["op"], item["codigo"]
+        existing = lot_index.get((op, code), ())
+        seen_lots = {ops_source.lot(line["lote"]) for line in existing}
+        total_issued = ZERO
+        total_returns = ZERO
+        total_matching = ZERO
+        total_pending = ZERO
+        for lot_line in existing:
+            lote = ops_source.lot(lot_line["lote"])
+            key = (op, code, lote)
+            issued = outgoing[key]
+            returned = incoming[key]
+            net = max(totals[key], ZERO)
+            separated, confirmed = necessary_by_lot[key]
+            expected = max(separated, confirmed)
+            # O identificador de lote vazio nunca comprova consumo.
+            matching = net if lote else ZERO
+            pending = positive(expected - matching)
+            total_issued += issued if lote else ZERO
+            total_returns += returned if lote else ZERO
+            total_matching += matching
+            total_pending += pending
+            lot_line["baixada"] = matching
+            lot_line["pendente"] = pending
+            lot_line["saida_bruta"] = issued
+            lot_line["devolvida"] = returned
+            lot_line["pendente_minima"] = pending
+            lot_line["pendente_maxima"] = pending
+            lots_updated.append(lot_line)
+            if lote and pending > EPSILON:
+                pending_by_stock[code, lote] += pending
+                pending_ops[code, lote].add(op)
+
+        other_lots = sorted(lote for lote, amt in all_by_product.get((op, code), {}).items()
+                            if amt > EPSILON and lote not in seen_lots and lote)
+        unknown_lot_qty = max(all_by_product.get((op, code), {}).get("", ZERO), ZERO)
+        other_qty = sum((max(all_by_product[op, code][lote], ZERO)
+                         for lote in other_lots), ZERO)
+        # Nenhum lote diferente compensa a pendência do lote conferido.
+        changes["saida_bruta"].append(total_issued)
+        changes["devolvida"].append(total_returns)
+        changes["baixada"].append(total_matching)
+        changes["pendente"].append(total_pending)
+        changes["baixa_outros_lotes"].append(other_qty)
+        changes["lotes_baixados_divergentes"].append(", ".join(other_lots))
+        changes["baixa_sem_lote"].append(unknown_lot_qty)
+        changes["op_possui_baixa"].append(op in active_by_op)
+        changes["historico_incompleto"].append(
+            bool(item["itens_conferidos"]) and (
+                not sources_same_day
+                or ops_meta["periodo_fim"] < item["primeira_conferencia"]
+            )
+        )
+        allowed = sum(
+            (min(max(pending_by_stock[code, lot["lote"]], ZERO),
+                 max(lot["saldo"], ZERO))
+             for lot in existing if lot["lote"]), ZERO
+        )
+        # A identificação da falta permanece lastreada no mesmo lote.
+        remaining_stock = sum(
+            (min(max(lot["pendente"], ZERO), max(lot["saldo"], ZERO))
+             for lot in existing if lot["lote"]), ZERO
+        )
+        remaining_g9 = sum(
+            (min(max(lot["pendente"], ZERO), max(lot["saldo_g9_prod"], ZERO))
+             for lot in existing if lot["lote"]), ZERO
+        )
+        changes["sem_saldo"].append(positive(total_pending - remaining_stock))
+        changes["em_g9_prod"].append(min(total_pending, remaining_g9))
+
+    updated = base["items"].copy()
+    for name, values in changes.items():
+        updated[name] = values
+    base["items"] = updated
+
+    global_pending_ops = defaultdict(set)
+    for lot_line in lots_updated:
+        if lot_line["lote"] and lot_line["pendente"] > EPSILON:
+            global_pending_ops[lot_line["codigo"], lot_line["lote"]].add(lot_line["op"])
+    for lot_line in lots_updated:
+        key = (lot_line["codigo"], lot_line["lote"])
+        lot_line["ops_com_demanda"] = len(global_pending_ops[key])
+        lot_line["demanda_compartilhada_minima"] = pending_by_stock[key]
+        lot_line["demanda_compartilhada_maxima"] = pending_by_stock[key]
+        lot_line["saldo_compartilhado"] = len(global_pending_ops[key]) > 1
+    base["lots"] = pd.DataFrame(lots_updated)
+    base["movements"] = evidence
+    base["movimentos_apos_base"] = future
+    base["diagnostico_baixas"] = {
+        "movimentos_no_periodo": len(evidence),
+        "movimentos_op_reconhecida": len(evidence),
+        "consumos_vinculados": sum(mv.decimal(m["qtd_saida"]) > ZERO for m in evidence),
+        "movimentos_sem_lote": sum(not m["lote"] for m in evidence),
+        "tes_999_sem_compensacao": 0, "enderecamentos_compensados": 0,
+    }
+    base["history_available"] = True
+    return base
+
 
 
 def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
