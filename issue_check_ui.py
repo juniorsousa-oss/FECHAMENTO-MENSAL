@@ -1270,6 +1270,74 @@ def _history_warehouses(imports: list[dict]) -> set[str]:
 
 def render_issue_check():
     _band()
+    st.markdown("#### FONTE DAS BAIXAS · RELATÓRIO OPS")
+    try:
+        current_ops = _ops_meta()
+    except Exception as exc:
+        current_ops = {}
+        st.error("Não foi possível consultar a fonte OPS salva: " + str(exc))
+    if current_ops:
+        st.caption(
+            f"Fonte ativa: {current_ops.get('arquivo_nome') or 'OPS'} · "
+            f"{count(current_ops.get('movimentos_validos', 0))} movimentações · "
+            f"até {day(current_ops.get('periodo_fim'))}. "
+            "Substituir a fonte não soma movimentos antigos novamente."
+        )
+    else:
+        st.warning(
+            "Nenhum Relatório OPS foi importado para esta conferência. "
+            "Sem esta fonte, nenhuma baixa será considerada comprovada."
+        )
+    with st.expander("IMPORTAR / SUBSTITUIR RELATÓRIO OPS COM LOTE",
+                     expanded=not bool(current_ops)):
+        st.caption(
+            "Arquivo XLSX/XLTX com OP na coluna B, produto em D, quantidade "
+            "em F, data em K e lote em N. Importação de fotografia completa: "
+            "a nova versão substitui a anterior. Não altera o KARDEX gerencial."
+        )
+        uploaded = st.file_uploader(
+            "Relatório OPS", type=["xlsx", "xltx"],
+            key="fm_issue_ops_file",
+        )
+        if uploaded is not None:
+            try:
+                with st.spinner("Lendo movimentações e consolidando OP, produto, lote e data..."):
+                    parsed_ops = _parse_ops_upload(uploaded.getvalue(), uploaded.name)
+                metadata = parsed_ops["meta"]
+                st.write(
+                    f"**{count(metadata['movimentos_validos'])} movimentos válidos** · "
+                    f"{count(metadata['registros_consolidados_por_dia'])} registros consolidados "
+                    f"· {count(metadata['movimentos_sem_lote'])} sem lote · "
+                    f"{count(metadata['outros_movimentos_ignorados'])} movimentos não elegíveis "
+                    f"· período {day(metadata['periodo_inicio'])} a "
+                    f"{day(metadata['periodo_fim'])}."
+                )
+                if metadata["movimentos_sem_lote"]:
+                    st.warning(
+                        "Movimentos sem lote permanecem rastreáveis, mas não "
+                        "comprovam baixas de lotes específicos."
+                    )
+                if st.button(
+                    "CONFIRMAR SUBSTITUIÇÃO DA FONTE OPS", type="primary",
+                    key="fm_issue_ops_save", use_container_width=True,
+                ):
+                    with st.spinner("Salvando fotografia OPS e conferindo versão..."):
+                        saved_ops = ops_lot_source.save(parsed_ops, current=current_ops)
+                    _ops_meta.clear(); _ops_snapshot.clear(); _audit.clear()
+                    _operational_snapshot.clear()
+                    st.session_state.pop("fm_issue_report_ready", None)
+                    st.session_state.pop("fm_reports_ready", None)
+                    st.session_state["_fm_issue_ops_flash"] = (
+                        "Relatório OPS atualizado."
+                        if saved_ops["saved"]
+                        else "Essa versão do relatório OPS já estava cadastrada."
+                    )
+                    st.rerun()
+            except Exception as exc:
+                st.error("Não foi possível importar o relatório OPS: " + str(exc))
+    flash = st.session_state.pop("_fm_issue_ops_flash", None)
+    if flash:
+        st.success(flash)
     try:
         states = _states()
         for key in SOURCE_KEYS:
@@ -1280,15 +1348,16 @@ def render_issue_check():
         # armazém adicional já cadastrado no histórico KARDEX. Sem restringir
         # silenciosamente a conferência ao antigo padrão S2.
         options = _warehouse_options(next(t for t in tokens if t[0] == "endereco"))
-        imports = _imports()
-        import_warehouses = _history_warehouses(imports)
+        # A fonte OPS não informa armazém: os armazéns válidos vêm somente
+        # do ENDEREÇO. O KARDEX permanece isolado na análise de movimentações.
+        import_warehouses = set()
         chosen = tuple(sorted(set(options) | import_warehouses))
         if not chosen:
-            st.warning("Ainda não existem armazéns disponíveis nas fontes ENDEREÇO ou KARDEX.")
+            st.warning("Nenhum armazém foi encontrado na fonte ENDEREÇO.")
             return
-        history_tokens = tuple(
-            (i["chave"], str(i.get("atualizado_em") or ""), i.get("meta") or {})
-            for i in imports
+        history_tokens = (
+            (str(current_ops["sha256"]), str(current_ops.get("atualizado_em") or ""))
+            if current_ops else ()
         )
         with st.spinner("Conferindo as OPs, os saldos por lote e as baixas registradas..."):
             model = _audit(tokens, history_tokens, tuple(sorted(chosen)), check.VERSION)
