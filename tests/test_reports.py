@@ -158,6 +158,96 @@ class ReportsTests(unittest.TestCase):
         self.assertEqual(parsed["master_lookup"]["00006001"]["ult_preco"], 12.35)
         self.assertEqual(parsed["master_lookup"]["00006002"]["ult_preco"], 0.0)
 
+    def test_prior_faturamento_excluded_even_with_later_activity(self):
+        """OP faturada em maio não entra no relatório iniciado em agosto."""
+        number = "25027101001"
+        sample = {
+            "ops": pd.DataFrame([
+                op(number, data_faturamento="19/05/2026", itens=24,
+                   separados=23, conferidos=23, separados_registrados=3,
+                   separados_inferidos=20),
+                op("26000101001", data_faturamento="20/09/2026"),
+            ]),
+            "items": pd.DataFrame([
+                item(number, "06050123"),
+                item("26000101001", "06050189"),
+            ]),
+            "general": [
+                {"op": number, "separacao": "2026-08-17T08:00:00",
+                 "conferencia": "2026-08-20T08:00:00"},
+                {"op": "26000101001", "separacao": "2026-09-10T08:00:00",
+                 "conferencia": "2026-09-12T08:00:00"},
+            ],
+            "movements": [],
+            "as_of": "2026-10-21",
+        }
+        start, end = date(2026, 8, 1), date(2026, 10, 31)
+        diag = reports.selection_diagnostics(sample, start, end)
+        self.assertNotIn(number, diag["selected"])
+        self.assertIn(number, diag["excluded_prior_billing"])
+        self.assertEqual(diag["excluded_prior_billing"][number]["faturamento"],
+                         "2026-05-19")
+        rows = reports.issue_rows(sample, start, end)
+        self.assertEqual([r[0] for r in rows], ["26000101001"])
+        selected = reports.issue_rows(sample, start, end,
+                                      include_prior_billing=True)
+        self.assertEqual({r[0] for r in selected},
+                         {number, "26000101001"})
+        mine = next(r for r in selected if r[0] == number)
+        self.assertEqual(mine[reports.OP_COLUMNS.index(
+            "Separações inferidas da conferência")], 20)
+        self.assertEqual(mine[reports.OP_COLUMNS.index(
+            "Separados com data no Geral")], 3)
+        self.assertEqual(mine[reports.OP_COLUMNS.index(
+            "Motivos da inclusão")], "CONFERÊNCIA, SEPARAÇÃO")
+        self.assertIn("20 produto(s) conferido(s)", mine[
+            reports.OP_COLUMNS.index("Integridade da origem")])
+
+    def test_future_activities_after_mes_cutoff_do_not_select_op(self):
+        sample = {
+            "ops": pd.DataFrame([op("26000101001", data_faturamento="NI")]),
+            "items": pd.DataFrame([item("26000101001", "00006001")]),
+            "general": [{
+                "op": "26000101001", "separacao": "2026-11-02",
+                "conferencia": "2026-11-02",
+            }],
+            "movements": [],
+            "as_of": "2026-10-21",
+        }
+        events = reports.activity_evidence(sample, date(2026, 8, 1),
+                                          date(2026, 11, 3))
+        self.assertEqual(events, {})
+        self.assertEqual(reports.issue_rows(
+            sample, date(2026, 8, 1), date(2026, 11, 3)), [])
+
+    def test_raw_separation_is_not_fabricated_in_operational_export(self):
+        sample = {
+            "ops": pd.DataFrame([
+                op("26000101001", separados=1, conferidos=1,
+                   separados_registrados=0, separados_inferidos=1)
+            ]),
+            "items": pd.DataFrame([{
+                **item("26000101001", "06050080"),
+                "separada": 0, "conferida": 16, "necessaria": 16,
+            }]),
+            "general": [], "movements": [],
+        }
+        row = reports.issue_rows(sample)[0]
+        self.assertEqual(row[reports.OP_COLUMNS.index("Qtd separada")], 0)
+        self.assertEqual(row[reports.OP_COLUMNS.index(
+            "Qtd separada operacional estimada")], 16)
+        self.assertEqual(row[reports.OP_COLUMNS.index(
+            "Qtd conferida sem separação registrada")], 16)
+        self.assertIn("Quantidade conferida supera", row[
+            reports.OP_COLUMNS.index("Integridade da origem")])
+        wb = load_workbook(BytesIO(reports.export_issues(sample)),
+                           read_only=True, data_only=True)
+        try:
+            self.assertEqual(list(wb.active.values)[0],
+                             tuple(reports.OP_COLUMNS))
+        finally:
+            wb.close()
+
     def test_type_and_alert_filters_preserve_op_activity(self):
         rows=reports.issue_rows(self.model,date(2026,10,1),date(2026,10,10),
                                 material_types={"II"},alerts_only=True)
