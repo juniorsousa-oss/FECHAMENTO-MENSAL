@@ -1257,7 +1257,7 @@ def render_results(model):
         st.download_button(
             "BAIXAR RELATÓRIO COMPLETO · EXCEL",
             data=prepared[1],
-            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R3.xlsx",
+            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R4.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="fm_issue_download_complete", use_container_width=True,
         )
