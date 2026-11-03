@@ -44,16 +44,18 @@ def _get_issue_model(selected_warehouses: tuple[str, ...] = ()) -> dict:
             raise RuntimeError(f"Fonte {key} indisponível ou desatualizada no Monitor de APIs.")
     tokens = tuple((key, int(states[key]["version"]), str(states[key].get("last_update_at") or ""))
                    for key in issue.SOURCE_KEYS)
+    # O relatório OPS informa OP/produto/lote, mas não informa armazém.
     registered = tuple(sorted(
         set(issue._warehouse_options(next(token for token in tokens if token[0] == "endereco")))
-        | issue._history_warehouses(issue._imports())
     ))
     chosen = tuple(x for x in registered if not selected_warehouses or x in selected_warehouses)
     if not chosen:
-        raise ValueError("Nenhum armazém selecionado possui fonte ENDEREÇO ou KARDEX.")
-    imports = issue._imports()
-    history_tokens = tuple((entry["chave"], str(entry.get("atualizado_em") or ""),
-                            entry.get("meta") or {}) for entry in imports)
+        raise ValueError("Nenhum armazém selecionado possui fonte ENDEREÇO.")
+    meta = issue._ops_meta()
+    history_tokens = ((str(meta["sha256"]), str(meta.get("atualizado_em") or "")),) if False else (
+        (str(meta["sha256"]), str(meta.get("atualizado_em") or ""))
+        if meta else ()
+    )
     model = issue._audit(tokens, history_tokens, chosen, issue.check.VERSION)
     master_records, master_meta = issue._optional_master_plan()
     catalog_types, catalog_meta = issue._optional_catalog_types()
@@ -122,7 +124,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
             return
         sheet_count = 4
     elif choice == REPORT_NAMES[1]:
-        st.caption("Uma linha por OP/produto. O filtro de período seleciona a OP quando houver SEPARAÇÃO, CONFERÊNCIA ou BAIXA entre as datas. Os demais produtos da OP são preservados.")
+        st.caption("Uma linha por OP/produto. O período inclui OPs com separação, conferência ou baixa no OPS; lotes são confrontados individualmente, e o detalhamento da OP inteira é preservado.")
         available_statuses = [
             stages.FINALIZADO_PATIO, stages.FINALIZADO_ENTREGUE,
             stages.NF_EMITIDA, stages.FINALIZADO, stages.REPORTADO,
@@ -195,7 +197,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     if model.get("catalog_price_meta", {}).get("erro"):
                         st.warning("Preço ULT. PRECO indisponível: previsões de baixa ficarão em branco quando não houver custo cadastrado.")
                     if not model.get("history_available"):
-                        st.warning("KARDEX indisponível: as baixas desconhecidas não serão transformadas em zero.")
+                        st.warning("Relatório OPS indisponível: as baixas desconhecidas não serão transformadas em zero.")
                     statuses = ({extra["status"]} if extra["status"] != "Todos os status" else None)
                     types = set(extra["types"]) if extra["types"] else None
                     rows = reports.issue_rows(
