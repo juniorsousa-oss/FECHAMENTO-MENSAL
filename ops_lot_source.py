@@ -196,6 +196,18 @@ def save(parsed: dict, *, current: dict | None = None) -> dict:
     old = current if current is not None else read_meta()
     if old.get("sha256") == parsed["meta"]["sha256"]:
         return {"saved": False, "meta": old}
+    # A fonte OPS é uma fotografia histórica completa: não deixar que
+    # uma exportação parcial substitua o histórico e pareça ausência de baixa.
+    if old.get("periodo_inicio") and parsed["meta"]["periodo_inicio"] > str(old["periodo_inicio"]):
+        raise ValueError(
+            "A nova planilha OPS começa depois da fonte vigente. "
+            "Exporte o histórico completo antes de substituí-la."
+        )
+    if old.get("periodo_fim") and parsed["meta"]["periodo_fim"] < str(old["periodo_fim"]):
+        raise ValueError(
+            "A nova planilha OPS termina antes da fonte vigente. "
+            "Confira se a exportação é acumulada e atualizada."
+        )
     db.rpc("fm_salvar_configuracao",
            {"p_chave": KEY, "p_valor": _pack(parsed)}, timeout=120)
     actual = read_meta()
