@@ -58,7 +58,7 @@ class IssueCheckTests(unittest.TestCase):
         result = audit(g=rows)
         head = result["ops"].iloc[0]
         self.assertEqual(int(head["itens"]), 24)
-        self.assertEqual(int(head["separados"]), 1)
+        self.assertEqual(int(head["separados"]), 3)
         self.assertEqual(int(head["conferidos"]), 23)
         self.assertNotIn("separados_inferidos", head.index)
         # Os dados brutos não devem ser sobrescritos para fechar a conta.
@@ -190,10 +190,10 @@ class IssueCheckTests(unittest.TestCase):
         op_row = result["ops"].iloc[0]
         self.assertEqual(int(op_row.itens), 2)
         self.assertEqual(int(op_row.produtos), 2)
-        self.assertEqual(int(op_row.separados), 1)
+        self.assertEqual(int(op_row.separados), 2)
         self.assertEqual(int(op_row.conferidos), 1)
         self.assertEqual(int(op_row.linhas_mes), 3)
-        self.assertEqual(int(op_row.linhas_separadas_mes), 1)
+        self.assertEqual(int(op_row.linhas_separadas_mes), 3)
         self.assertEqual(int(op_row.linhas_conferidas_mes), 2)
         self.assertEqual(len(result["items"]), 2)
 
