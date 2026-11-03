@@ -72,7 +72,7 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertEqual(len([b for b in app.button if "OP 2600" in b.label]), 1)
         self.assertTrue(any("ORDEM OK" in b.label for b in app.button))
-        self.assertTrue(any("PREPARAR RELATÓRIO COMPLETO" in b.label for b in app.button))
+        self.assertTrue(any("PREPARAR EXCEL ENXUTO" in b.label for b in app.button))
 
 
     def test_responsive_filters_cards_and_all_warehouses_without_manual_controls(self):
