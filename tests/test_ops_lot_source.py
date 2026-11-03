@@ -56,11 +56,13 @@ def general_rows():
         {"Projeto": OP, "Código": CODE, "Lote": LOT_A,
          "Qtd. necessária": 10, "Qtd. atendida": 10,
          "Data de separação": "02/10/26 08:00",
-         "Data de conferência": "03/10/26 08:00", "Descrição": "MATERIAL TESTE"},
+         "Data de conferência": "03/10/26 08:00",
+         "Resp. Conferencia": "CONFERENTE", "Descrição": "MATERIAL TESTE"},
         {"Projeto": OP, "Código": CODE, "Lote": LOT_B,
          "Qtd. necessária": 10, "Qtd. atendida": 10,
          "Data de separação": "02/10/26 08:00",
-         "Data de conferência": "03/10/26 08:00", "Descrição": "MATERIAL TESTE"},
+         "Data de conferência": "03/10/26 08:00",
+         "Resp. Conferencia": "CONFERENTE", "Descrição": "MATERIAL TESTE"},
     ]))
 
 
@@ -120,6 +122,7 @@ class OpsSourceTests(unittest.TestCase):
             "Qtd. necessária": 16, "Qtd. atendida": 16,
             "Data de separação": "19/10/26 08:00",
             "Data de conferência": "20/10/26 10:00",
+            "Resp. Conferencia": "CONFERENTE",
             "Descrição": "PUXADOR PLANO GRANDE 168X28 MM PRETO",
         }]))
         model = issue_check.reconcile_ops(
@@ -228,6 +231,7 @@ class OpsSourceTests(unittest.TestCase):
             "Qtd. necessária": 10, "Qtd. atendida": 10,
             "Data de separação": "02/10/26 08:00",
             "Data de conferência": "03/10/26 08:00",
+            "Resp. Conferencia": "CONFERENTE",
             "Descrição": "MATERIAL SEM LOTE NO GERAL",
         }]))
         model = issue_check.reconcile_ops(
