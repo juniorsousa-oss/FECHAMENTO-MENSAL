@@ -10,7 +10,7 @@ import pandas as pd
 
 import movements as mv
 
-VERSION = "2026-11-03.1"
+VERSION = "2026-11-03.2"
 EPSILON = Decimal("0.000001")
 ZERO = Decimal(0)
 MISSING = "CONFERIDO SEM SALDO E SEM BAIXA SUFICIENTE"
@@ -616,7 +616,20 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
                     # tabela: código de produto por OP, não linhas duplicadas
                     # de lote/fonte no Relatório Geral.
                     "produtos": len(group), "itens": len(group),
-                    "separados": sum(bool(item["itens_separados"]) for item in group),
+                    # Conferência sem data de separação comprova avanço
+                    # operacional, mas NÃO comprova o registro da data.
+                    # Os números inferidos são divulgados separadamente.
+                    "separados": sum(
+                        bool(item["itens_separados"] or item["itens_conferidos"])
+                        for item in group
+                    ),
+                    "separados_registrados": sum(
+                        bool(item["itens_separados"]) for item in group
+                    ),
+                    "separados_inferidos": sum(
+                        not bool(item["itens_separados"]) and bool(item["itens_conferidos"])
+                        for item in group
+                    ),
                     "conferidos": sum(bool(item["itens_conferidos"]) for item in group),
                     "linhas_mes": len(rows),
                     "linhas_separadas_mes": sum(bool(r["separacao"]) for r in rows),
