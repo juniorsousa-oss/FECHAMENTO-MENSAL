@@ -25,7 +25,7 @@ MONEY_FORMAT = '#,##0.00;[Red](#,##0.00)'
 # separador decimal isolado que o formato #,##0.###### gerava no pt-BR.
 QUANTITY_FORMAT = "General"
 QUANTITY_INTEGER_FORMAT = "General"
-EXPORT_SCHEMA_VERSION = "2026-10-30.3"
+EXPORT_SCHEMA_VERSION = "2026-11-03.1-OPS-LOTE"
 PERCENT_FORMAT = '0.00%;[Red](0.00%)'
 
 OP_FIELDS = [
@@ -51,6 +51,9 @@ ITEM_FIELDS = [
     ("Qtd conferida", "conferida"),
     ("Qtd baixada", "baixada"),
     ("Qtd pendente baixa", "pendente"),
+    ("Baixa em outros lotes", "baixa_outros_lotes"),
+    ("Lotes baixados divergentes", "lotes_baixados_divergentes"),
+    ("Baixa sem lote", "baixa_sem_lote"),
     ("Valor previsto da baixa (R$)", "valor_previsto_baixa"),
     ("Saldo no lote conferido", "saldo"),
     ("Saldo G9-PROD", "saldo_g9_prod"),
@@ -346,6 +349,7 @@ def export_issues(model: dict, start: date | None = None, end: date | None = Non
              quantity={OP_COLUMNS.index(label) for label in (
                  "Qtd necessária", "Qtd separada", "Qtd conferida",
                  "Qtd baixada", "Qtd pendente baixa",
+                 "Baixa em outros lotes", "Baixa sem lote",
                  "Saldo no lote conferido", "Saldo G9-PROD")},
              money={OP_COLUMNS.index("Valor previsto da baixa (R$)")},
              alert_column=len(OP_COLUMNS) - 1)
