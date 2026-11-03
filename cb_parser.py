@@ -1051,12 +1051,26 @@ def parse_barramentos_excel(raw: bytes, file_name: str) -> dict:
             values = set(headers.values())
 
             has_code = "CODIGO" in values
+            # Relatório de contagem outubro/2026:
+            # CÓDIGO | MODELO DE BARRA | TOTAL
+            # Exigir o identificador da barra impede confundir a coluna
+            # genérica TOTAL de planilhas financeiras/gerenciais.
+            has_bar_model = any(
+                value == "MODELO DE BARRA" or value.startswith("MODELO DE BARRA ")
+                for value in values
+            )
 
-            # Novo modelo: CODIGO + TOTAL FECHAMENTO <MÊS>
+            # Modelos aceitos:
+            # 1) CODIGO + TOTAL FECHAMENTO <MÊS>
+            # 2) CODIGO + MODELO DE BARRA + TOTAL [MT/METROS]
             total_col = next(
                 (
                     col for col, value in headers.items()
                     if value.startswith("TOTAL FECHAMENTO")
+                    or (
+                        has_bar_model
+                        and value in {"TOTAL", "TOTAL MT", "TOTAL METROS"}
+                    )
                 ),
                 None,
             )
@@ -1100,7 +1114,8 @@ def parse_barramentos_excel(raw: bytes, file_name: str) -> dict:
     if not chosen:
         raise ValueError(
             "Não encontrei uma estrutura válida de barramentos. "
-            "É necessário CODIGO + TOTAL FECHAMENTO ou "
+            "É necessário CODIGO + TOTAL FECHAMENTO, "
+            "CODIGO + MODELO DE BARRA + TOTAL ou "
             "CODIGO + BARRAS + PROCESSADO."
         )
 
@@ -1134,6 +1149,13 @@ def parse_barramentos_excel(raw: bytes, file_name: str) -> dict:
     )
 
     aggregated: dict[str, dict] = {}
+    total_criteria = (
+        "TOTAL · MODELO DE BARRA"
+        if total_col is not None and headers.get(total_col) in {
+            "TOTAL", "TOTAL MT", "TOTAL METROS"
+        }
+        else "TOTAL FECHAMENTO"
+    )
 
     for row_index in range(header_row + 1, ws.max_row + 1):
         codigo = normalize_code(
@@ -1165,7 +1187,7 @@ def parse_barramentos_excel(raw: bytes, file_name: str) -> dict:
             )
             barras = 0.0
             processado = 0.0
-            criterio = "TOTAL FECHAMENTO"
+            criterio = total_criteria
         else:
             barras = to_number(
                 ws.cell(row_index, bars_col).value
@@ -1222,7 +1244,7 @@ def parse_barramentos_excel(raw: bytes, file_name: str) -> dict:
         ),
         "consumo_disponivel": consumption_col is not None,
         "criterio": (
-            "TOTAL FECHAMENTO"
+            total_criteria
             if total_col is not None
             else "BARRAS + PROCESSADO"
         ),
