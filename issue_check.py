@@ -616,30 +616,14 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
                     # tabela: código de produto por OP, não linhas duplicadas
                     # de lote/fonte no Relatório Geral.
                     "produtos": len(group), "itens": len(group),
-                    # Cabeçalho também usa o critério original do MES:
-                    # com conferente = conferido; sem conferente = separado.
-                    # Uma mesma linha nunca pertence aos dois estágios.
-                    "separados": len({
-                        r["codigo"] for r in rows
-                        if r["codigo"] not in {
-                            x["codigo"] for x in rows
-                            if text(x.get("responsavel_conferencia"))
-                        }
-                        and not text(r.get("responsavel_conferencia"))
-                        and r["atendida"] > EPSILON
-                    }),
-                    "conferidos": len({
-                        r["codigo"] for r in rows
-                        if text(r.get("responsavel_conferencia"))
-                    }),
+                    # Lógica convencional do reconciliador preservada para
+                    # os demais usos históricos. A regra de conferente
+                    # pertence exclusivamente ao reconciliador OPS.
+                    "separados": sum(bool(item["itens_separados"]) for item in group),
+                    "conferidos": sum(bool(item["itens_conferidos"]) for item in group),
                     "linhas_mes": len(rows),
-                    "linhas_separadas_mes": sum(
-                        not text(r.get("responsavel_conferencia"))
-                        and r["atendida"] > EPSILON for r in rows
-                    ),
-                    "linhas_conferidas_mes": sum(
-                        bool(text(r.get("responsavel_conferencia"))) for r in rows
-                    ),
+                    "linhas_separadas_mes": sum(bool(r["separacao"]) for r in rows),
+                    "linhas_conferidas_mes": sum(bool(r["conferencia"]) for r in rows),
                     "baixados": sum(
                         r["itens_conferidos"] for r in group
                         if r["conferida"] > EPSILON and r["baixada"] is not None
