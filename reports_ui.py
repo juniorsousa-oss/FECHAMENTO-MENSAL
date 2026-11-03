@@ -134,10 +134,11 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
         sheet_count = 4
     elif choice == REPORT_NAMES[1]:
         st.caption(
-            "Filtro por atividade: separação, conferência ou baixa OPS no período, "
-            "até a data-base do MES. A OP selecionada traz todos os seus produtos. "
-            "Por padrão, OPs faturadas antes do início não entram, mesmo quando "
-            "há movimentações posteriores."
+            "Relatório Geral preservado linha a linha (OP + produto + lote). "
+            "Quantidade atendida com conferente = conferida; sem conferente = separada. "
+            "O OPS acrescenta exclusivamente a baixa da mesma chave. "
+            "O período seleciona OPs com atividade e exclui, por padrão, "
+            "faturamentos anteriores à data inicial."
         )
         extra["include_prior_billing"] = st.checkbox(
             "Incluir excepcionalmente OPs faturadas antes da data inicial, "
@@ -213,8 +214,6 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     model = _get_issue_model(tuple(warehouses))
                     if model.get("catalog_meta", {}).get("erro"):
                         st.warning("CADASTROS indisponível: a classificação de tipo de material pode estar incompleta.")
-                    if model.get("catalog_price_meta", {}).get("erro"):
-                        st.warning("Preço ULT. PRECO indisponível: previsões de baixa ficarão em branco quando não houver custo cadastrado.")
                     if not model.get("history_available"):
                         raise ValueError(
                             "Relatório OPS obrigatório: sem fonte confiável não "
@@ -237,21 +236,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                             "faturamento não reconhecida; o Excel sinalizará "
                             "a necessidade de verificação."
                         )
-                    audited_ops = model["ops"].loc[
-                        model["ops"]["op"].astype(str).isin(audit["selected"])
-                    ]
-                    if "separados_inferidos" in audited_ops.columns:
-                        affected = int(
-                            audited_ops["separados_inferidos"].fillna(0).gt(0).sum()
-                        )
-                        if affected:
-                            st.warning(
-                                f"{affected} OP(s) selecionadas apresentam conferências "
-                                "sem data de separação no Relatório Geral. "
-                                "A exportação preserva as quantidades originais "
-                                "e discrimina a separação inferida; é necessário "
-                                "regularizar a origem para afirmar a data real."
-                            )
+                    # O Relatório Geral é a base linha a linha. O OPS só informa baixas.
                     if end and model.get("as_of"):
                         reference = reports._date(model["as_of"])
                         if reference and end > reference:
@@ -298,7 +283,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     prefix = "KARDEX"
             st.session_state["fm_reports_ready"] = (
                 report_key, data,
-                f"{prefix}_SETTA_{period_key}_R5.xlsx"
+                f"{prefix}_SETTA_{period_key}_R6.xlsx"
                 if choice == REPORT_NAMES[1]
                 else f"{prefix}_SETTA_{period_key}.xlsx",
                 records
