@@ -237,6 +237,29 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                             "faturamento não reconhecida; o Excel sinalizará "
                             "a necessidade de verificação."
                         )
+                    audited_ops = model["ops"].loc[
+                        model["ops"]["op"].astype(str).isin(audit["selected"])
+                    ]
+                    if "separados_inferidos" in audited_ops.columns:
+                        affected = int(
+                            audited_ops["separados_inferidos"].fillna(0).gt(0).sum()
+                        )
+                        if affected:
+                            st.warning(
+                                f"{affected} OP(s) selecionadas apresentam conferências "
+                                "sem data de separação no Relatório Geral. "
+                                "A exportação preserva as quantidades originais "
+                                "e discrimina a separação inferida; é necessário "
+                                "regularizar a origem para afirmar a data real."
+                            )
+                    if end and model.get("as_of"):
+                        reference = reports._date(model["as_of"])
+                        if reference and end > reference:
+                            st.info(
+                                f"A fonte de conferência está posicionada em "
+                                f"{reference:%d/%m/%Y}. Nenhum evento posterior "
+                                "a essa data será usado para selecionar OPs."
+                            )
                     statuses = ({extra["status"]} if extra["status"] != "Todos os status" else None)
                     types = set(extra["types"]) if extra["types"] else None
                     rows = reports.issue_rows(
