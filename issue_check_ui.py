@@ -1017,7 +1017,10 @@ def _ops(model, view, token):
                         "Marque o checkbox à esquerda do material para consultar "
                         "suas evidências. Selecione outra linha para trocar o produto."
                     )
-                    with st.expander("PRÉVIA DO EXCEL ENXUTO · OP + PRODUTO + LOTE"):
+                    if st.toggle(
+                        "PRÉVIA DO EXCEL ENXUTO · OP + PRODUTO + LOTE",
+                        key="fm_issue_excel_preview_" + number, value=False,
+                    ):
                         from issue_line_report import COLUMNS, build_rows
                         preview = build_rows(model, {number})
                         st.dataframe(
@@ -1025,9 +1028,9 @@ def _ops(model, view, token):
                             hide_index=True, use_container_width=True,
                         )
                         st.caption(
-                            "Estes são exatamente os campos exportados no Excel. "
-                            "Quando o total da baixa está correto, uma troca entre "
-                            "lotes é sinalizada no Resultado, sem criar falta de quantidade."
+                            "Estes são os dez campos exportados no Excel. "
+                            "A soma baixada do produto pode estar correta "
+                            "mesmo quando os lotes apresentam divergência."
                         )
                     st.markdown(
                         '<div class="fm-issue-mobile-hint">Deslize a tabela horizontalmente para consultar todas as colunas.</div>',
