@@ -10,7 +10,7 @@ import pandas as pd
 
 import movements as mv
 
-VERSION = "2026-11-03.2"
+VERSION = "2026-11-03.3"
 EPSILON = Decimal("0.000001")
 ZERO = Decimal(0)
 MISSING = "CONFERIDO SEM SALDO E SEM BAIXA SUFICIENTE"
@@ -616,24 +616,30 @@ def reconcile(general: list[dict], stock: list[dict], movements: list[dict], *,
                     # tabela: código de produto por OP, não linhas duplicadas
                     # de lote/fonte no Relatório Geral.
                     "produtos": len(group), "itens": len(group),
-                    # Conferência sem data de separação comprova avanço
-                    # operacional, mas NÃO comprova o registro da data.
-                    # Os números inferidos são divulgados separadamente.
-                    "separados": sum(
-                        bool(item["itens_separados"] or item["itens_conferidos"])
-                        for item in group
-                    ),
-                    "separados_registrados": sum(
-                        bool(item["itens_separados"]) for item in group
-                    ),
-                    "separados_inferidos": sum(
-                        not bool(item["itens_separados"]) and bool(item["itens_conferidos"])
-                        for item in group
-                    ),
-                    "conferidos": sum(bool(item["itens_conferidos"]) for item in group),
+                    # Cabeçalho também usa o critério original do MES:
+                    # com conferente = conferido; sem conferente = separado.
+                    # Uma mesma linha nunca pertence aos dois estágios.
+                    "separados": len({
+                        r["codigo"] for r in rows
+                        if r["codigo"] not in {
+                            x["codigo"] for x in rows
+                            if text(x.get("responsavel_conferencia"))
+                        }
+                        and not text(r.get("responsavel_conferencia"))
+                        and r["atendida"] > EPSILON
+                    }),
+                    "conferidos": len({
+                        r["codigo"] for r in rows
+                        if text(r.get("responsavel_conferencia"))
+                    }),
                     "linhas_mes": len(rows),
-                    "linhas_separadas_mes": sum(bool(r["separacao"]) for r in rows),
-                    "linhas_conferidas_mes": sum(bool(r["conferencia"]) for r in rows),
+                    "linhas_separadas_mes": sum(
+                        not text(r.get("responsavel_conferencia"))
+                        and r["atendida"] > EPSILON for r in rows
+                    ),
+                    "linhas_conferidas_mes": sum(
+                        bool(text(r.get("responsavel_conferencia"))) for r in rows
+                    ),
                     "baixados": sum(
                         r["itens_conferidos"] for r in group
                         if r["conferida"] > EPSILON and r["baixada"] is not None
