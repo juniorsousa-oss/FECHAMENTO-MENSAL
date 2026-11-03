@@ -15,6 +15,7 @@ import central_fechamento_data as central
 import issue_check as check
 import movement_store
 import movements as mv
+import ops_lot_source
 import master_plan
 import operational_status as op_rules
 import catalog_types
@@ -32,12 +33,18 @@ FILTERS = {
     "Separado aguardando conferência": op_rules.SEPARADO_SEM_CONFERENCIA,
     "Aguardando separação": op_rules.AGUARDANDO_SEPARACAO,
     "Baixa maior que a necessidade": op_rules.BAIXA_ACIMA_NECESSIDADE,
+    "Baixa em lote divergente": op_rules.BAIXA_LOTE_DIVERGENTE,
 }
 
 LABELS = {"op": "OP", "codigo": "Produto", "descricao": "Descrição", "lotes": "Lotes",
           "necessaria": "Qtd necessária", "atendida": "Qtd atendida MES", "separada": "Qtd separada", "conferida": "Qtd conferida",
           "baixada": "Qtd baixada", "saida_bruta": "Saídas", "devolvida": "Entradas / devoluções",
-          "pendente": "Qtd pendente baixa", "saldo": "Saldo no lote conferido",
+          "pendente": "Qtd pendente baixa",
+          "baixa_outros_lotes": "Baixa em outros lotes",
+          "lotes_baixados_divergentes": "Lotes com baixa divergente",
+          "baixa_sem_lote": "Baixa sem lote",
+          "tipo_movimento": "Tipo movimento",
+          "saldo": "Saldo no lote conferido",
           "saldo_g9_prod": "Saldo G9-PROD", "outros_enderecos": "Outros endereços", "sem_saldo": "Sem cobertura de saldo ou baixa",
           "em_g9_prod": "Pendente com saldo G9-PROD", "status": "Resultado",
           "historico_incompleto": "Histórico incompleto", "saldo_compartilhado": "Saldo compartilhado",
@@ -55,7 +62,7 @@ LABELS = {"op": "OP", "codigo": "Produto", "descricao": "Descrição", "lotes": 
           "data": "Data", "tes": "TES", "documento": "Documento", "qtd_entrada": "Entrada", "qtd_saida": "Saída",
           "ae_original": "AE original", "natureza": "Natureza", "arquivo_origem": "Arquivo de origem"}
 QUANTITIES = {"necessaria", "atendida", "separada", "conferida", "baixada", "saida_bruta", "devolvida", "pendente", "saldo",
-              "saldo_g9_prod", "sem_saldo", "em_g9_prod", "empenho", "pendente_minima", "pendente_maxima",
+              "saldo_g9_prod", "sem_saldo", "em_g9_prod", "baixa_outros_lotes", "baixa_sem_lote", "empenho", "pendente_minima", "pendente_maxima",
               "demanda_compartilhada_minima", "demanda_compartilhada_maxima", "pendencia_mes", "qtd_entrada", "qtd_saida"}
 
 
@@ -80,7 +87,7 @@ def day(value) -> str:
 def _band():
     st.markdown('<div class="section-band"><div class="section-band-kicker">CONFERÊNCIAS</div>'
                 '<div class="section-band-title">CONFERÊNCIA DE BAIXAS</div>'
-                '<div class="section-band-note">Consulte OPs, confira o consumo do KARDEX e identifique pendências por produto e endereço.</div></div>',
+                '<div class="section-band-note">Consulte OPs, confronte as baixas do relatório OPS por produto e lote e identifique pendências por endereço.</div></div>',
                 unsafe_allow_html=True)
     st.markdown("""
     <style>
@@ -657,21 +664,41 @@ def _source_day(meta: dict) -> str:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(TZ).date().isoformat()
 
 
+@st.cache_data(ttl=30, show_spinner=False, max_entries=2)
+def _ops_meta() -> dict:
+    return ops_lot_source.read_meta()
+
+
+@st.cache_data(show_spinner=False, max_entries=1)
+def _parse_ops_upload(raw: bytes, name: str) -> dict:
+    return ops_lot_source.parse(raw, name)
+
+
+@st.cache_resource(max_entries=2, show_spinner=False)
+def _ops_snapshot(token: tuple) -> dict:
+    snapshot = ops_lot_source.load()
+    if snapshot and snapshot["meta"].get("sha256") != token[0]:
+        raise RuntimeError("Relatório OPS alterado durante o carregamento. Atualize a página.")
+    return snapshot
+
+
 @st.cache_resource(max_entries=2, show_spinner=False)
 def _audit(source_tokens: tuple, history_tokens: tuple, warehouses: tuple, version: str):
     del version
     sources, metas = {}, {}
     for key, source_version, updated in source_tokens:
         sources[key], metas[key] = _source(key, source_version, updated)
-    rows, history_metas, duplicates = _history(history_tokens)
     as_of = min(_source_day(metas[key]) for key in SOURCE_KEYS)
-    model = check.reconcile(sources["relatorio_geral"], sources["endereco"], rows,
-                            history_metas=history_metas, as_of=as_of, warehouses=warehouses,
-                            sources_same_day=len({_source_day(meta) for meta in metas.values()}) == 1,
-                            accumulated_history=True)
+    snapshot = _ops_snapshot(history_tokens) if history_tokens else {}
+    model = check.reconcile_ops(
+        sources["relatorio_geral"], sources["endereco"],
+        snapshot.get("rows") or [], ops_meta=snapshot.get("meta"),
+        as_of=as_of, warehouses=warehouses,
+        sources_same_day=len({_source_day(meta) for meta in metas.values()}) == 1,
+    )
     model["source_meta"] = metas
-    model["history_meta"] = history_metas
-    model["duplicates"] = duplicates
+    model["history_meta"] = [snapshot["meta"]] if snapshot else []
+    model["duplicates"] = 0
     return model
 
 
@@ -685,6 +712,7 @@ def _operational_snapshot(source_tokens, history_tokens, warehouses,
 def _reload():
     _states.clear(); _source.clear(); _warehouse_options.clear()
     _imports.clear(); _history.clear(); _audit.clear()
+    _ops_meta.clear(); _ops_snapshot.clear(); _parse_ops_upload.clear()
     _master_plan_records.clear()
     _catalog_type_records.clear()
     _catalog_price_records.clear()
