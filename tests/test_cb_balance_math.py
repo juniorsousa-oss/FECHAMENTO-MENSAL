@@ -6,6 +6,10 @@ import unittest
 
 from cb_balance_math import numero_br, saldo_categoria
 
+# O pipeline já executa este módulo; carregar também as regressões
+# do novo formato de planilha de barramentos, sem alterar o workflow.
+from test_cb_barramentos_formats import BarramentosFormatsTests
+
 
 def normalizar(value):
     return str(value or "").strip().zfill(8)
