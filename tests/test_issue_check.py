@@ -52,15 +52,15 @@ class IssueCheckTests(unittest.TestCase):
                 "Código": f"{1000 + i:08d}",
                 "Data de separação": "10/10/26 08:00" if i < 3 else "",
                 "Data de conferência": "11/10/26 08:00" if i < 23 else "",
+                "Resp. Conferencia": "CONFERENTE" if i < 23 else "",
                 "Qtd. necessária": 1, "Qtd. atendida": 1,
             }))
         result = audit(g=rows)
         head = result["ops"].iloc[0]
         self.assertEqual(int(head["itens"]), 24)
-        self.assertEqual(int(head["separados_registrados"]), 3)
-        self.assertEqual(int(head["separados_inferidos"]), 20)
-        self.assertEqual(int(head["separados"]), 23)
+        self.assertEqual(int(head["separados"]), 1)
         self.assertEqual(int(head["conferidos"]), 23)
+        self.assertNotIn("separados_inferidos", head.index)
         # Os dados brutos não devem ser sobrescritos para fechar a conta.
         self.assertEqual(int((result["items"]["separada"] > 0).sum()), 3)
         self.assertEqual(int((result["items"]["conferida"] > 0).sum()), 23)
@@ -179,19 +179,21 @@ class IssueCheckTests(unittest.TestCase):
 
     def test_op_counters_use_distinct_product_codes_not_mes_lines(self):
         rows = [
-            general(**{"Qtd. atendida": 4, "Qtd. necessária": 4}),
-            general(Lote="000002", **{"Qtd. atendida": 6, "Qtd. necessária": 6}),
+            general(**{"Qtd. atendida": 4, "Qtd. necessária": 4,
+                       "Resp. Conferencia": "CONFERENTE"}),
+            general(Lote="000002", **{"Qtd. atendida": 6, "Qtd. necessária": 6,
+                                     "Resp. Conferencia": "CONFERENTE"}),
             general(Código="00002000", Lote="000003",
-                    **{"Data de conferência": None}),
+                    **{"Data de conferência": None, "Resp. Conferencia": ""}),
         ]
         result = audit(g=rows)
         op_row = result["ops"].iloc[0]
         self.assertEqual(int(op_row.itens), 2)
         self.assertEqual(int(op_row.produtos), 2)
-        self.assertEqual(int(op_row.separados), 2)
+        self.assertEqual(int(op_row.separados), 1)
         self.assertEqual(int(op_row.conferidos), 1)
         self.assertEqual(int(op_row.linhas_mes), 3)
-        self.assertEqual(int(op_row.linhas_separadas_mes), 3)
+        self.assertEqual(int(op_row.linhas_separadas_mes), 1)
         self.assertEqual(int(op_row.linhas_conferidas_mes), 2)
         self.assertEqual(len(result["items"]), 2)
 
