@@ -284,7 +284,8 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
     changes = {name: [] for name in (
         "saida_bruta", "devolvida", "baixada", "pendente",
         "baixa_outros_lotes", "lotes_baixados_divergentes",
-        "baixa_sem_lote", "sem_saldo", "em_g9_prod",
+        "baixa_sem_lote", "lote_nao_informado_geral",
+        "sem_saldo", "em_g9_prod",
         "op_possui_baixa", "historico_incompleto",
     )}
     lot_index = defaultdict(list)
@@ -346,6 +347,9 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
         changes["baixa_outros_lotes"].append(other_qty)
         changes["lotes_baixados_divergentes"].append(", ".join(other_lots))
         changes["baixa_sem_lote"].append(unknown_lot_qty)
+        changes["lote_nao_informado_geral"].append(
+            max(necessary_by_lot[op, code, ""]) > EPSILON
+        )
         changes["op_possui_baixa"].append(op in active_by_op)
         changes["historico_incompleto"].append(
             bool(item["itens_conferidos"]) and (
