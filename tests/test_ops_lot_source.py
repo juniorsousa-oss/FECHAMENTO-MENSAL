@@ -178,6 +178,18 @@ class OpsSourceTests(unittest.TestCase):
         self.assertFalse(result["saved"])
         rpc.assert_not_called()
 
+    def test_partial_new_export_cannot_replace_previous_complete_history(self):
+        parsed = src.parse(xltx_bytes([line()]), "ops.xlsx")
+        meta = parsed["meta"]
+        older = {
+            "sha256": "outro-arquivo", "periodo_inicio": "2014-01-01",
+            "periodo_fim": meta["periodo_fim"],
+        }
+        with patch.object(src.db, "rpc") as rpc:
+            with self.assertRaisesRegex(ValueError, "histórico completo"):
+                src.save(parsed, current=older)
+        rpc.assert_not_called()
+
     def test_invalid_negative_request_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "quantidade negativa"):
             src.parse(xltx_bytes([line(qty=-4)]), "ops.xlsx")
