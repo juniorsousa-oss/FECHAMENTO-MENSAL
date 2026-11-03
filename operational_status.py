@@ -34,6 +34,8 @@ CONFERIDO_AGUARDANDO_REPORTE = "PRODUTO CONFERIDO AGUARDANDO REPORTE"
 AGUARDANDO_KARDEX = "AGUARDANDO KARDEX"
 AGUARDANDO_OPS = "AGUARDANDO RELATÓRIO OPS"
 BAIXA_LOTE_DIVERGENTE = "BAIXA REALIZADA EM LOTE DIFERENTE DO CONFERIDO"
+LOTE_AUSENTE_GERAL = "LOTE NÃO INFORMADO NO RELATÓRIO GERAL"
+LOTE_AUSENTE_OPS = "BAIXA SEM LOTE NO RELATÓRIO OPS"
 BAIXA_ACIMA_NECESSIDADE = "PRODUTO COM BAIXA MAIOR QUE A NECESSIDADE"
 MATERIAL_CONSUMO = "MATERIAL DE CONSUMO"
 FLUXO_BARRAS = "FLUXO DE BARRAS"
@@ -43,7 +45,7 @@ ALERT_RESULTS = frozenset({
     NAO_CONSUMIDO_G9, NAO_CONSUMIDO_OUTRO, NAO_CONSUMIDO_SEM,
     SEPARADO_SEM_CONFERENCIA, AGUARDANDO_SEPARACAO,
     BAIXA_ACIMA_NECESSIDADE,
-    BAIXA_LOTE_DIVERGENTE,
+    BAIXA_LOTE_DIVERGENTE, LOTE_AUSENTE_GERAL, LOTE_AUSENTE_OPS,
 })
 
 
@@ -266,8 +268,17 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
             alert = False
         elif (model.get("baixas_fonte") == "OPS"
               and outstanding > EPS
-              and (decimal(item.get("baixa_outros_lotes")) > EPS
-                   or decimal(item.get("baixa_sem_lote")) > EPS)):
+              and bool(item.get("lote_nao_informado_geral"))):
+            # O Relatório Geral não tem lote: não afirmar consumo errado.
+            status, alert = LOTE_AUSENTE_GERAL, True
+        elif (model.get("baixas_fonte") == "OPS"
+              and outstanding > EPS
+              and decimal(item.get("baixa_sem_lote")) > EPS):
+            # A OP tem consumo, mas o arquivo OPS não identifica o lote.
+            status, alert = LOTE_AUSENTE_OPS, True
+        elif (model.get("baixas_fonte") == "OPS"
+              and outstanding > EPS
+              and decimal(item.get("baixa_outros_lotes")) > EPS):
             status, alert = BAIXA_LOTE_DIVERGENTE, True
         elif outstanding <= EPS:
             status, alert = PRODUTO_CONSUMIDO, False
