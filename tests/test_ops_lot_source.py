@@ -196,9 +196,12 @@ class OpsSourceTests(unittest.TestCase):
         model = issue_check.reconcile_ops(
             general, [], records, ops_meta=META, as_of="2026-11-03")
         product = model["items"].iloc[0]
-        # Lot A: 5+3-1=7; lot B: 4 -> 9 remaining.
-        self.assertEqual(product.baixada, Decimal("11"))
-        self.assertEqual(product.pendente, Decimal("9"))
+        # 7 do lote A + 4 do B + 6 de C + 2 sem lote = 19,
+        # frente a 20 conferidas. Há 1 baixa pendente no produto,
+        # com 9 unidades distribuídas incorretamente entre lotes.
+        self.assertEqual(product.baixada, Decimal("19"))
+        self.assertEqual(product.pendente, Decimal("1"))
+        self.assertEqual(product.pendente_lotes, Decimal("9"))
         self.assertEqual(product.baixa_outros_lotes, Decimal("6"))
         self.assertEqual(product.baixa_sem_lote, Decimal("2"))
         self.assertEqual(product.lotes_baixados_divergentes, LOT_C)
@@ -209,19 +212,63 @@ class OpsSourceTests(unittest.TestCase):
         self.assertEqual(lots.loc[LOT_A, "pendente_minima"], Decimal("3"))
         self.assertEqual(lots.loc[LOT_B, "pendente_maxima"], Decimal("6"))
         final = stages.apply(model)
-        self.assertEqual(final["items"].iloc[0].qtd_faltante_operacional, Decimal("9"))
+        self.assertEqual(final["items"].iloc[0].qtd_faltante_operacional, Decimal("1"))
         self.assertEqual(final["items"].iloc[0].status, stages.BAIXA_LOTE_DIVERGENTE)
         self.assertTrue(final["items"].iloc[0].divergente)
 
-    def test_same_quantity_wrong_lot_must_remain_pending(self):
+    def test_project_lot_swap_2_vs_3_keeps_total_pending_zero(self):
+        source = issue_check.parse_general(pd.DataFrame([
+            {"Projeto": OP, "Código": CODE, "Lote": LOT_A,
+             "Qtd. necessária": 2, "Qtd. atendida": 2,
+             "Data de separação": "02/10/26 08:00",
+             "Data de conferência": "03/10/26 08:00",
+             "Resp. Conferencia": "CONFERENTE"},
+            {"Projeto": OP, "Código": CODE, "Lote": LOT_B,
+             "Qtd. necessária": 3, "Qtd. atendida": 3,
+             "Data de separação": "02/10/26 08:00",
+             "Data de conferência": "03/10/26 08:00",
+             "Resp. Conferencia": "CONFERENTE"},
+        ]))
+        snapshot = issue_check.reconcile_ops(
+            source, [],
+            [ops_record(lot=LOT_A, qty="3"),
+             ops_record(lot=LOT_B, qty="2")],
+            ops_meta=META, as_of="2026-11-03")
+        item = snapshot["items"].iloc[0]
+        self.assertEqual((item.conferida, item.baixada, item.pendente),
+                         (Decimal("5"), Decimal("5"), Decimal("0")))
+        self.assertEqual(item.pendente_lotes, Decimal("1"))
+        self.assertEqual(item.excesso_lotes, Decimal("1"))
+        self.assertIn(LOT_A, item.divergencia_lotes)
+        self.assertIn(LOT_B, item.divergencia_lotes)
+        lot = snapshot["lots"].set_index("lote")
+        self.assertEqual(lot.loc[LOT_A, "excesso"], Decimal("1"))
+        self.assertEqual(lot.loc[LOT_B, "pendente"], Decimal("1"))
+        final = stages.apply(snapshot)
+        self.assertEqual(final["items"].iloc[0].qtd_faltante_operacional,
+                         Decimal("0"))
+        self.assertEqual(final["items"].iloc[0].status,
+                         stages.BAIXA_LOTE_DIVERGENTE)
+        self.assertTrue(final["items"].iloc[0].divergente)
+        import reports
+        rows = reports.issue_rows(final)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(sum(r[6] for r in rows), 5)
+        self.assertEqual(sum(r[7] for r in rows), 5)
+        self.assertEqual(sum((r[8] or 0) for r in rows), 0)
+        self.assertTrue(all("DIVERGÊNCIA ENTRE LOTES" in r[-1]
+                            for r in rows))
+
+    def test_same_total_wrong_lot_is_divergence_not_unpaid_quantity(self):
         model = issue_check.reconcile_ops(
             general_rows(), [],
             [ops_record(lot=LOT_A, qty="10"),
              ops_record(lot=LOT_C, qty="10")],
             ops_meta=META, as_of="2026-11-03")
         product = model["items"].iloc[0]
-        self.assertEqual(product.baixada, Decimal("10"))
-        self.assertEqual(product.pendente, Decimal("10"))
+        self.assertEqual(product.baixada, Decimal("20"))
+        self.assertEqual(product.pendente, Decimal("0"))
+        self.assertEqual(product.pendente_lotes, Decimal("10"))
         self.assertEqual(stages.apply(model)["items"].iloc[0].status,
                          stages.BAIXA_LOTE_DIVERGENTE)
 
@@ -239,8 +286,8 @@ class OpsSourceTests(unittest.TestCase):
             ops_meta=META, as_of="2026-11-03")
         item = model["items"].iloc[0]
         self.assertTrue(item.lote_nao_informado_geral)
-        self.assertEqual(item.baixada, Decimal("0"))
-        self.assertEqual(item.pendente, Decimal("10"))
+        self.assertEqual(item.baixada, Decimal("10"))
+        self.assertEqual(item.pendente, Decimal("0"))
         resolved = stages.apply(model)["items"].iloc[0]
         self.assertEqual(resolved.status, stages.LOTE_AUSENTE_GERAL)
 
@@ -250,7 +297,7 @@ class OpsSourceTests(unittest.TestCase):
             ops_meta=META, as_of="2026-11-03")
         item = stages.apply(model)["items"].iloc[0]
         self.assertEqual(item.status, stages.LOTE_AUSENTE_OPS)
-        self.assertEqual(item.pendente, Decimal("20"))
+        self.assertEqual(item.pendente, Decimal("10"))
         self.assertEqual(item.baixa_sem_lote, Decimal("10"))
 
     def test_missing_source_does_not_turn_unknown_issue_into_zero(self):
