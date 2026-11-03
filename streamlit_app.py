@@ -51,6 +51,7 @@ def _setta_data_editor(data, *args, **kwargs):
 
 from PIL import Image, ImageDraw, ImageFont
 from cb_balance_math import saldo_categoria as _sum_cb_category, numero_br as _decimal_number_br
+from competence_calendar import selectable_months
 
 import inventory_db as db
 import central_fechamento_data as central_data
@@ -2239,6 +2240,7 @@ imports_by_month = {}
 summary_map = {}
 available_months = []
 visible_months = []
+history_months = []
 
 if _needs_inventory_core:
     _force_central_fm = bool(
@@ -2336,9 +2338,18 @@ if _needs_inventory_core:
         ]
     )
 
-    visible_months = [
-        competencia
-        for competencia in available_months
+    # Competências em análise não dependem de uma importação fechada.
+    # Outubro continua selecionável enquanto a conferência/contagem ocorre,
+    # sem gerar registros fictícios em fm_importacoes.
+    visible_months = selectable_months(
+        available_months,
+        live_competencia,
+        current_competencia,
+    )
+    # O histórico mostra apenas bases realmente carregadas (e prévia vigente);
+    # meses abertos sem estoque consolidado não aparecem como fechados.
+    history_months = [
+        competencia for competencia in available_months
         if competencia >= date(2026, 1, 1)
     ]
 
@@ -2376,7 +2387,11 @@ with _fm_page_surface.container():
                 except Exception:
                     query_date = None
 
-            default_month = query_date if query_date in visible_months else visible_months[-1]
+            default_month = (
+                query_date
+                if query_date in visible_months
+                else (current_competencia if current_competencia in visible_months else visible_months[-1])
+            )
 
             selected_month = st.selectbox(
                 "Competência analisada",
@@ -2527,7 +2542,16 @@ with _fm_page_surface.container():
                 previous.isoformat() in _dashboard_imports_by_month
             )
 
-            if status != "VALIDO":
+            _has_selected_snapshot = bool(import_info)
+            if not _has_selected_snapshot:
+                st.info(
+                    f"{month_label(selected_month)} está disponível para acompanhamento, "
+                    "mas ainda não possui uma fotografia de estoque consolidada. "
+                    "As conferências e contagens da competência continuam acessíveis. "
+                    "Se houver uma carga manual do último dia, selecione-a acima "
+                    "para visualizar os saldos dessa competência."
+                )
+            elif status != "VALIDO":
                 st.warning(
                     f"{month_label(selected_month)} possui pendência de qualidade no relatório "
                     f"({int(import_info.get('linhas_invalidas') or 0)} item(ns)). "
@@ -2566,7 +2590,10 @@ with _fm_page_surface.container():
                 "Compara o valor total do estoque do mês selecionado com o fechamento do mês imediatamente anterior.",
             )
 
-            final_total = dimension_value(_dashboard_summary_map, selected_month, "TOTAL", "TOTAL")
+            final_total = (
+                dimension_value(_dashboard_summary_map, selected_month, "TOTAL", "TOTAL")
+                if _has_selected_snapshot else None
+            )
             initial_total = (
                 dimension_value(_dashboard_summary_map, previous, "TOTAL", "TOTAL")
                 if previous_exists
@@ -2598,7 +2625,7 @@ with _fm_page_surface.container():
                     str(row.get("armz") or "")
                     for row in dimension_rows(_dashboard_summaries, previous, "ARMZ")
                 }
-                if previous_exists
+                if previous_exists and _has_selected_snapshot
                 else set()
             )
             warehouses = sorted(current_warehouses | previous_warehouses)
@@ -2650,7 +2677,7 @@ with _fm_page_surface.container():
                     str(row.get("tp") or "")
                     for row in dimension_rows(_dashboard_summaries, previous, "TP")
                 }
-                if previous_exists
+                if previous_exists and _has_selected_snapshot
                 else set()
             )
             product_types = sorted(current_types | previous_types)
@@ -2700,7 +2727,7 @@ with _fm_page_surface.container():
 
             st.markdown(
                 history_table_html(
-                    visible_months,
+                    history_months,
                     _dashboard_summary_map,
                     _dashboard_imports_by_month,
                 ),
@@ -2802,7 +2829,7 @@ with _fm_page_surface.container():
             cb_default_month = (
                 cb_query_date
                 if cb_query_date in visible_months
-                else visible_months[-1]
+                else (current_competencia if current_competencia in visible_months else visible_months[-1])
             )
 
             st.markdown(
