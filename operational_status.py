@@ -11,7 +11,7 @@ import re
 
 import pandas as pd
 
-VERSION = "2026-10-21.7"
+VERSION = "2026-11-03.1"
 EPS = Decimal("0.000001")
 ZERO = Decimal(0)
 
@@ -32,6 +32,8 @@ SEPARADO_SEM_CONFERENCIA = "PRODUTO SEPARADO AGUARDANDO CONFERÊNCIA"
 AGUARDANDO_SEPARACAO = "PRODUTO AGUARDANDO SEPARAÇÃO"
 CONFERIDO_AGUARDANDO_REPORTE = "PRODUTO CONFERIDO AGUARDANDO REPORTE"
 AGUARDANDO_KARDEX = "AGUARDANDO KARDEX"
+AGUARDANDO_OPS = "AGUARDANDO RELATÓRIO OPS"
+BAIXA_LOTE_DIVERGENTE = "BAIXA REALIZADA EM LOTE DIFERENTE DO CONFERIDO"
 BAIXA_ACIMA_NECESSIDADE = "PRODUTO COM BAIXA MAIOR QUE A NECESSIDADE"
 MATERIAL_CONSUMO = "MATERIAL DE CONSUMO"
 FLUXO_BARRAS = "FLUXO DE BARRAS"
@@ -41,6 +43,7 @@ ALERT_RESULTS = frozenset({
     NAO_CONSUMIDO_G9, NAO_CONSUMIDO_OUTRO, NAO_CONSUMIDO_SEM,
     SEPARADO_SEM_CONFERENCIA, AGUARDANDO_SEPARACAO,
     BAIXA_ACIMA_NECESSIDADE,
+    BAIXA_LOTE_DIVERGENTE,
 })
 
 
@@ -200,7 +203,11 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
         separated, confirmed = decimal(item.get("separada")), decimal(item.get("conferida"))
         net = max(decimal(item.get("baixada")), ZERO)
         expected = max(separated, confirmed)
-        outstanding = max(expected - net, ZERO)
+        outstanding = (
+            max(decimal(item.get("pendente")), ZERO)
+            if model.get("baixas_fonte") == "OPS" and model.get("history_available")
+            else max(expected - net, ZERO)
+        )
         tipo = _normalized(types.get(_text(item.get("codigo")), "NI"))
         item_lots = lots.get(item["item_id"], set())
         # Endereços alternativos só aparecem quando o G9-PROD não consegue
@@ -254,8 +261,14 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
             status = SEPARADO_SEM_CONFERENCIA if separated > EPS else AGUARDANDO_SEPARACAO
             alert = True
         elif not model.get("history_available"):
-            # Sem KARDEX não é possível afirmar falta de baixa.
-            status, alert = AGUARDANDO_KARDEX, False
+            # Sem relatório OPS não assumir baixa zero.
+            status = AGUARDANDO_OPS if model.get("baixas_fonte") == "OPS" else AGUARDANDO_KARDEX
+            alert = False
+        elif (model.get("baixas_fonte") == "OPS"
+              and outstanding > EPS
+              and (decimal(item.get("baixa_outros_lotes")) > EPS
+                   or decimal(item.get("baixa_sem_lote")) > EPS)):
+            status, alert = BAIXA_LOTE_DIVERGENTE, True
         elif outstanding <= EPS:
             status, alert = PRODUTO_CONSUMIDO, False
         else:
