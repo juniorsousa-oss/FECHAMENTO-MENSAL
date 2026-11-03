@@ -83,11 +83,11 @@ class GeneralBaseTests(unittest.TestCase):
         self.assertEqual(sum(r[8] for r in result), 0)
         self.assertEqual([r[7] for r in result], [5, 11])
 
-    def test_same_product_different_lot_never_compensates(self):
+    def test_same_product_wrong_lot_is_flagged_without_false_pending_total(self):
         m = model([row(lot="001")], [movement(16, "2026-10-20", lot="002")])
         result = build_rows(m, {"26017801001"})
-        self.assertEqual(result[0][7:9], [0, 16])
-        self.assertIn("PENDENTE", result[0][-1])
+        self.assertEqual(result[0][7:9], [0, 0])
+        self.assertIn("DIVERGÊNCIA ENTRE LOTES", result[0][-1])
 
     def test_quantity_excess_is_not_hidden(self):
         m = model([row()], [movement(18, "2026-10-20")])
