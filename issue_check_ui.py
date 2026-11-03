@@ -49,6 +49,8 @@ LABELS = {"op": "OP", "codigo": "Produto", "descricao": "Descrição", "lotes": 
           "excesso": "Excesso baixado no lote",
           "divergencia_lotes": "Divergência entre lotes",
           "pendente_lotes": "Faltas individuais por lote",
+          "falta_no_lote": "Diferença a menor no lote",
+          "excesso_no_lote": "Diferença a maior no lote",
           "tipo_movimento": "Tipo movimento",
           "saldo": "Saldo no lote conferido",
           "saldo_g9_prod": "Saldo G9-PROD", "outros_enderecos": "Outros endereços", "sem_saldo": "Sem cobertura de saldo ou baixa",
@@ -920,7 +922,13 @@ def _details(model, item):
             "Ela não representa necessariamente quantidade faltante no produto. "
             "A pendência total considera a soma de todas as baixas da OP e produto."
         )
-        _table(lots, ["lote", "conferida", "baixada", "pendente", "excesso", "saldo", "saldo_g9_prod", "ops_com_demanda"])
+        lots_view = lots.rename(columns={
+            "pendente": "falta_no_lote",
+            "excesso": "excesso_no_lote",
+        })
+        _table(lots_view, ["lote", "conferida", "baixada",
+                           "falta_no_lote", "excesso_no_lote",
+                           "saldo", "saldo_g9_prod", "ops_com_demanda"])
         allowed_lots = {r["lote"] for r in model["general"] if r["item_id"] == item["item_id"]}
         addresses = pd.DataFrame([r for r in model["stock"] if r["codigo"] == item["codigo"] and r["lote"] in allowed_lots])
         if item.get("outros_enderecos"):
