@@ -11,7 +11,7 @@ import re
 
 import pandas as pd
 
-VERSION = "2026-11-03.1"
+VERSION = "2026-11-03.2"
 EPS = Decimal("0.000001")
 ZERO = Decimal(0)
 
@@ -203,8 +203,12 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
     for item in products.to_dict("records"):
         group = op_info[item["op"]]
         separated, confirmed = decimal(item.get("separada")), decimal(item.get("conferida"))
+        # Conferência sem separação registrada indica avanço operacional.
+        # Conserva a quantidade original em "separada" para auditoria;
+        # usa evidência inferida apenas para avaliar o estágio/status.
+        separated_operational = max(separated, confirmed)
         net = max(decimal(item.get("baixada")), ZERO)
-        expected = max(separated, confirmed)
+        expected = separated_operational
         outstanding = (
             max(decimal(item.get("pendente")), ZERO)
             if model.get("baixas_fonte") == "OPS" and model.get("history_available")
@@ -217,9 +221,9 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
         lot_prod = sum(
             (g9_by_lot[(item.get("codigo"), lot)] for lot in item_lots), ZERO
         )
-        faltante_endereco = max(separated - max(lot_prod, ZERO), ZERO)
+        faltante_endereco = max(separated_operational - max(lot_prod, ZERO), ZERO)
         alternatives = []
-        if (separated > EPS and confirmed > EPS and outstanding > EPS
+        if (separated_operational > EPS and confirmed > EPS and outstanding > EPS
                 and faltante_endereco > EPS and group["exige_baixa"]):
             for lot in item_lots:
                 alternatives.extend(addresses_by_lot.get((item.get("codigo"), lot), ()))
@@ -247,20 +251,20 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
             status, alert = MATERIAL_CONSUMO, False
         elif necessidade <= EPS and net > EPS:
             status, alert = FLUXO_BARRAS, False
-        elif separated <= EPS:
+        elif separated_operational <= EPS:
             status, alert = AGUARDANDO_SEPARACAO, False
         elif net - necessidade > EPS:
             status, alert = BAIXA_ACIMA_NECESSIDADE, True
         elif not group["exige_baixa"]:
             if confirmed > EPS:
                 status = CONFERIDO_AGUARDANDO_REPORTE
-            elif separated > EPS:
+            elif separated_operational > EPS:
                 status = SEPARADO_SEM_CONFERENCIA
             else:
                 status = AGUARDANDO_SEPARACAO
             alert = False
         elif confirmed <= EPS:
-            status = SEPARADO_SEM_CONFERENCIA if separated > EPS else AGUARDANDO_SEPARACAO
+            status = SEPARADO_SEM_CONFERENCIA if separated_operational > EPS else AGUARDANDO_SEPARACAO
             alert = True
         elif not model.get("history_available"):
             # Sem relatório OPS não assumir baixa zero.
