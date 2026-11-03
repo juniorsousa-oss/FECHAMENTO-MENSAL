@@ -1216,14 +1216,23 @@ def render_results(model):
     view = _filter_op_status_invoice(
         _filter(frame, query, choice), model["ops"], selected_status, invoice_period
     )
+    selected_pairs = set(zip(view["op"].astype(str), view["codigo"].astype(str)))
+    confirmed_pairs = {
+        (r["op"], r["codigo"]) for r in model["general"]
+        if str(r.get("responsavel_conferencia") or "").strip()
+    } & selected_pairs
+    separated_pairs = {
+        (r["op"], r["codigo"]) for r in model["general"]
+        if not str(r.get("responsavel_conferencia") or "").strip()
+        and r["atendida"] > check.EPSILON
+    } & selected_pairs
+    separated_pairs -= confirmed_pairs
     with st.container(key="fm_issue_summary"):
         _cards([
             ("OPs encontradas", count(view["op"].nunique()), "Ordens no recorte"),
             ("Produtos", count(len(view)), "Códigos distintos por OP"),
-            ("Separados", count(
-                view.loc[~view["op"].isin([]), "itens_separados"].gt(0).sum()
-            ), "Separação sem conferente registrado no Geral"),
-            ("Conferidos", count(view["itens_conferidos"].gt(0).sum()), "Produtos com conferência"),
+            ("Separados", count(len(separated_pairs)), "Atendidos sem conferente no Relatório Geral"),
+            ("Conferidos", count(len(confirmed_pairs)), "Atendidos com conferente no Relatório Geral"),
         ])
     alerts = view.loc[view["divergente"]]
     st.markdown(
