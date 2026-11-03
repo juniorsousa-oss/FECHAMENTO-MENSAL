@@ -34,6 +34,8 @@ FILTERS = {
     "Aguardando separação": op_rules.AGUARDANDO_SEPARACAO,
     "Baixa maior que a necessidade": op_rules.BAIXA_ACIMA_NECESSIDADE,
     "Baixa em lote divergente": op_rules.BAIXA_LOTE_DIVERGENTE,
+    "Lote ausente no Relatório Geral": op_rules.LOTE_AUSENTE_GERAL,
+    "Baixa sem lote no OPS": op_rules.LOTE_AUSENTE_OPS,
 }
 
 LABELS = {"op": "OP", "codigo": "Produto", "descricao": "Descrição", "lotes": "Lotes",
@@ -43,6 +45,7 @@ LABELS = {"op": "OP", "codigo": "Produto", "descricao": "Descrição", "lotes": 
           "baixa_outros_lotes": "Baixa em outros lotes",
           "lotes_baixados_divergentes": "Lotes com baixa divergente",
           "baixa_sem_lote": "Baixa sem lote",
+          "lote_nao_informado_geral": "Lote não informado no Geral",
           "tipo_movimento": "Tipo movimento",
           "saldo": "Saldo no lote conferido",
           "saldo_g9_prod": "Saldo G9-PROD", "outros_enderecos": "Outros endereços", "sem_saldo": "Sem cobertura de saldo ou baixa",
@@ -874,6 +877,8 @@ def _details(model, item):
             st.error(message)
     st.markdown("**" + str(item["descricao"]) + "**")
     st.write(f"Conferida: **{quantity(item['conferida'])}** · Baixada líquida: **{quantity(item['baixada'])}** · Pendente: **{quantity(item['pendente'])}**")
+    if item.get("lote_nao_informado_geral"):
+        st.warning("O Relatório Geral não informa lote para parte do material; não é possível comprovar essa baixa por lote.")
     if item.get("lotes_baixados_divergentes"):
         st.warning("Baixa identificada em outro lote: " + str(item["lotes_baixados_divergentes"]))
     if item.get("baixa_sem_lote"):
