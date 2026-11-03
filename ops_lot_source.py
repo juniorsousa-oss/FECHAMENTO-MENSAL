@@ -202,6 +202,13 @@ def load() -> dict:
 
 
 def save(parsed: dict, *, current: dict | None = None) -> dict:
+    # Nunca gravar uma prévia antiga resgatada pelo cache do Streamlit.
+    expected = parsed.get("meta") or {}
+    if expected.get("versao") != VERSION:
+        raise ValueError(
+            "A prévia OPS foi calculada com regras antigas. "
+            "Atualize a aplicação e reprocese o arquivo."
+        )
     old = current if current is not None else read_meta()
     if (old.get("sha256") == parsed["meta"]["sha256"]
             and old.get("versao") == parsed["meta"]["versao"]):
