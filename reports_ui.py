@@ -133,7 +133,17 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
             return
         sheet_count = 4
     elif choice == REPORT_NAMES[1]:
-        st.caption("Uma linha por OP/produto. O período inclui OPs com separação, conferência ou baixa no OPS; lotes são confrontados individualmente, e o detalhamento da OP inteira é preservado.")
+        st.caption(
+            "Filtro por atividade: separação, conferência ou baixa OPS no período, "
+            "até a data-base do MES. A OP selecionada traz todos os seus produtos. "
+            "Por padrão, OPs faturadas antes do início não entram, mesmo quando "
+            "há movimentações posteriores."
+        )
+        extra["include_prior_billing"] = st.checkbox(
+            "Incluir excepcionalmente OPs faturadas antes da data inicial, "
+            "quando tiverem atividade no período",
+            value=False, key="fm_reports_prior_billing",
+        )
         available_statuses = [
             stages.FINALIZADO_PATIO, stages.FINALIZADO_ENTREGUE,
             stages.NF_EMITIDA, stages.FINALIZADO, stages.REPORTADO,
@@ -206,17 +216,39 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     if model.get("catalog_price_meta", {}).get("erro"):
                         st.warning("Preço ULT. PRECO indisponível: previsões de baixa ficarão em branco quando não houver custo cadastrado.")
                     if not model.get("history_available"):
-                        st.warning("Relatório OPS indisponível: as baixas desconhecidas não serão transformadas em zero.")
+                        raise ValueError(
+                            "Relatório OPS obrigatório: sem fonte confiável não "
+                            "é permitido exportar as baixas como zero."
+                        )
+                    audit = reports.selection_diagnostics(
+                        model, start, end,
+                        include_prior_billing=extra["include_prior_billing"],
+                    )
+                    excluded = len(audit["excluded_prior_billing"])
+                    if excluded:
+                        st.info(
+                            f"{excluded} OP(s) com atividade no período foram excluídas "
+                            "por faturamento anterior à data inicial. "
+                            "Isso não significa que não houve movimentação."
+                        )
+                    if audit["unreadable_billing"]:
+                        st.warning(
+                            f"{len(audit['unreadable_billing'])} OP(s) têm data de "
+                            "faturamento não reconhecida; o Excel sinalizará "
+                            "a necessidade de verificação."
+                        )
                     statuses = ({extra["status"]} if extra["status"] != "Todos os status" else None)
                     types = set(extra["types"]) if extra["types"] else None
                     rows = reports.issue_rows(
                         model, start, end, statuses=statuses,
-                        alerts_only=extra["alerts"], material_types=types)
+                        alerts_only=extra["alerts"], material_types=types,
+                        include_prior_billing=extra["include_prior_billing"])
                     if not rows:
                         raise ValueError("Nenhuma OP com atividade ou produto corresponde ao recorte selecionado.")
                     data = reports.export_issues(
                         model, start, end, statuses=statuses,
-                        alerts_only=extra["alerts"], material_types=types)
+                        alerts_only=extra["alerts"], material_types=types,
+                        include_prior_billing=extra["include_prior_billing"])
                     records = len(rows)
                     prefix = "CONFERENCIA_BAIXAS"
                 else:
@@ -243,7 +275,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     prefix = "KARDEX"
             st.session_state["fm_reports_ready"] = (
                 report_key, data,
-                f"{prefix}_SETTA_{period_key}_R4.xlsx"
+                f"{prefix}_SETTA_{period_key}_R5.xlsx"
                 if choice == REPORT_NAMES[1]
                 else f"{prefix}_SETTA_{period_key}.xlsx",
                 records
