@@ -682,6 +682,12 @@ def _ops_snapshot(token: tuple) -> dict:
     snapshot = ops_lot_source.load()
     if snapshot and snapshot["meta"].get("sha256") != token[0]:
         raise RuntimeError("Relatório OPS alterado durante o carregamento. Atualize a página.")
+    if snapshot and snapshot["meta"].get("versao") != ops_lot_source.VERSION:
+        raise RuntimeError(
+            "A fonte OPS foi processada por regras anteriores que excluíam "
+            "RE1/TES 999. Reimporte o MESMO arquivo OPS para refazer a "
+            "conferência com as regras atualizadas."
+        )
     return snapshot
 
 
@@ -1053,7 +1059,7 @@ def _sources(model):
         )
     st.markdown("**Critérios da conferência**")
     st.write("• O Relatório Geral continua sendo a fonte de separação, conferência, produto e lote. Quantidade atendida em linhas conferidas compõe a comparação.")
-    st.write("• As baixas vêm exclusivamente do relatório OPS, com código D, OP B, quantidade F, data K e lote N. RE0 (TES 520/550) e RE6 (550) são requisições; DE0 (020) reduz a baixa líquida. PR0/010 e movimentações 999 de endereço não comprovam consumo.")
+    st.write("• As baixas vêm exclusivamente do relatório OPS, com OP B, produto D, quantidade F, data K e lote N. São reconhecidas RE0 (TES 520/550), RE6 (550) e RE1 (999); DE0 (020) reduz a baixa líquida. PR0/010 continua fora. RE5/999 exige validação específica.")
     st.write("• A chave da comparação é OP + produto + lote exato. Datas diferentes da mesma chave são somadas até a data-base do MES. Quantidades de outro lote não podem compensar pendências do lote conferido.")
     st.write("• Lotes sem informação não são atribuídos automaticamente. A conferência mostra a movimentação, sinaliza a inconsistência e preserva as quantidades originais.")
     st.write("• O estoque por endereço e lote continua vindo da fonte ENDEREÇO. A fonte OPS não identifica armazém e não é filtrada artificialmente por armazém.")
@@ -1288,6 +1294,14 @@ def render_issue_check():
             f"até {day(current_ops.get('periodo_fim'))}. "
             "Substituir a fonte não soma movimentos antigos novamente."
         )
+        if current_ops.get("versao") != ops_lot_source.VERSION:
+            st.error(
+                "ESTA VERSÃO DA FONTE OPS PRECISA SER REPROCESSADA. "
+                "As regras anteriores descartavam RE1/TES 999 (inclusive a "
+                "baixa de 16 unidades do produto 06050080). "
+                "Abra a importação abaixo, carregue o MESMO OPS.xltx "
+                "e confirme a substituição para recalcular as baixas."
+            )
     else:
         st.warning(
             "Nenhum Relatório OPS foi importado para esta conferência. "
@@ -1313,6 +1327,7 @@ def render_issue_check():
                     f"**{count(metadata['movimentos_validos'])} movimentos válidos** · "
                     f"{count(metadata['registros_consolidados_por_dia'])} registros consolidados "
                     f"· {count(metadata['movimentos_sem_lote'])} sem lote · "
+                    f"{count(metadata.get('re1_999_reconhecidos', 0))} RE1/999 reconhecidos · "
                     f"{count(metadata['outros_movimentos_ignorados'])} movimentos não elegíveis "
                     f"· período {day(metadata['periodo_inicio'])} a "
                     f"{day(metadata['periodo_fim'])}."
