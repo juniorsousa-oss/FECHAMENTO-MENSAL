@@ -88,17 +88,19 @@ def _ops_by_key(model: dict) -> dict[tuple[str, str, str], Decimal]:
 
 
 def _outcome(conferido: bool, separados: Decimal, conferidos: Decimal,
-             baixados: Decimal, lote: str) -> tuple[Decimal | None, str]:
+             baixados: Decimal, lote: str, *, pending_product: Decimal,
+             lot_mismatch: bool) -> tuple[Decimal | None, str]:
     if not lote and (conferidos > EPS or baixados != ZERO):
         return None, "LOTE NÃO INFORMADO — CONFERIR ORIGEM"
     if baixados < -EPS:
         return None, "DEVOLUÇÃO SUPERIOR À BAIXA — CONFERIR"
     if conferido:
-        pending = max(conferidos - baixados, ZERO)
-        if baixados > conferidos + EPS:
-            return ZERO, "BAIXA SUPERIOR AO CONFERIDO"
-        if pending > EPS:
-            return pending, "CONFERIDO — BAIXA PENDENTE"
+        if lot_mismatch:
+            if pending_product > EPS:
+                return pending_product, "BAIXA PENDENTE — DIVERGÊNCIA ENTRE LOTES"
+            return ZERO, "DIVERGÊNCIA ENTRE LOTES — TOTAL BAIXADO CORRETO"
+        if pending_product > EPS:
+            return pending_product, "CONFERIDO — BAIXA PENDENTE"
         return ZERO, "CONFERIDO — BAIXA CORRESPONDENTE"
     if baixados > EPS:
         return None, "BAIXA SEM CONFERENTE — VERIFICAR"
@@ -141,6 +143,57 @@ def build_rows(model: dict, selected_ops: set[str],
             last_index = ordered[-1][0]
             allocated[last_index] += available
 
+    # Pendência de quantidade pertence à OP/produto, não à soma das
+    # faltas positivas de cada lote. Excesso e falta de lotes diferentes
+    # são uma DIVERGÊNCIA DE LOTE, não uma baixa faltante fictícia.
+    products = defaultdict(list)
+    for index, key, row in indexed:
+        products[key[:2]].append((index, key, row))
+    pending_by_line: dict[int, Decimal] = {}
+    mismatches: set[tuple[str, str, str]] = set()
+    for product, group in products.items():
+        total_confirmed = sum(
+            (_amount(row.get("atendida")) for _, _, row in group
+             if _is_confirmed(row)), ZERO
+        )
+        issued_by_lot = {
+            lot: qty for (op, code, lot), qty in credits.items()
+            if (op, code) == product
+        }
+        total_issued = sum(issued_by_lot.values(), ZERO)
+        remaining = max(total_confirmed - total_issued, ZERO)
+        confirmed_by_lot = defaultdict(lambda: ZERO)
+        for _, key, row in group:
+            if _is_confirmed(row):
+                confirmed_by_lot[key[2]] += _amount(row.get("atendida"))
+        excess_lots = {
+            lot for lot, issued in issued_by_lot.items()
+            if issued > confirmed_by_lot[lot] + EPS
+        }
+        missing_lots = {
+            lot for lot, confirmed_qty in confirmed_by_lot.items()
+            if issued_by_lot.get(lot, ZERO) + EPS < confirmed_qty
+        }
+        if excess_lots:
+            mismatches.update(
+                key for _, key, _ in group
+                if key[2] in excess_lots | missing_lots
+            )
+            # Baixas em lotes ausentes também precisam sinalizar as
+            # linhas de origem, sem criar colunas extras.
+            if excess_lots - set(confirmed_by_lot):
+                mismatches.update(key for _, key, _ in group)
+        pending_lines = [
+            (index, key, row) for index, key, row in group if _is_confirmed(row)
+        ]
+        for index, key, row in pending_lines:
+            deficit = max(_amount(row.get("atendida")) - allocated[index], ZERO)
+            share = min(deficit, remaining)
+            pending_by_line[index] = share
+            remaining -= share
+        if remaining > EPS and pending_lines:
+            pending_by_line[pending_lines[-1][0]] += remaining
+
     output = []
     for index, key, source in indexed:
         op, code, lote = key
@@ -152,7 +205,11 @@ def build_rows(model: dict, selected_ops: set[str],
         separated = ZERO if confirmed else attended
         conferred = attended if confirmed else ZERO
         issued = allocated[index]
-        pending, result = _outcome(confirmed, separated, conferred, issued, lote)
+        pending, result = _outcome(
+            confirmed, separated, conferred, issued, lote,
+            pending_product=pending_by_line.get(index, ZERO),
+            lot_mismatch=key in mismatches,
+        )
         output.append([
             op, code, source.get("descricao") or "", lote,
             float(requested), float(separated), float(conferred),
