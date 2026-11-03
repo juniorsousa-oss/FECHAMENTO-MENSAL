@@ -25,54 +25,11 @@ MONEY_FORMAT = '#,##0.00;[Red](#,##0.00)'
 # separador decimal isolado que o formato #,##0.###### gerava no pt-BR.
 QUANTITY_FORMAT = "General"
 QUANTITY_INTEGER_FORMAT = "General"
-EXPORT_SCHEMA_VERSION = "2026-11-03.3-AUDIT-PERIOD"
+EXPORT_SCHEMA_VERSION = "2026-11-03.4-GERAL-LINHA-OPS"
 PERCENT_FORMAT = '0.00%;[Red](0.00%)'
 
-OP_FIELDS = [
-    ("OP", "op"),
-    ("Produtos totais", "itens"),
-    ("Produtos separados", "separados"),
-    ("Produtos conferidos", "conferidos"),
-    ("Produtos baixados", "baixados"),
-    ("Produtos com alerta", "divergencias"),
-    ("Cliente", "cliente"),
-    ("Condição", "condicao"),
-    ("Nota fiscal", "nota_fiscal"),
-    ("Faturamento", "data_faturamento"),
-    ("Pátio", "dias_patio"),
-    ("Status da OP", "status_op"),
-]
-ITEM_FIELDS = [
-    ("Produto", "codigo"),
-    ("Descrição", "descricao"),
-    ("Lotes", "lotes"),
-    ("Qtd necessária", "necessaria"),
-    ("Qtd separada", "separada"),
-    ("Qtd conferida", "conferida"),
-    ("Qtd baixada", "baixada"),
-    ("Qtd pendente baixa", "pendente"),
-    ("Baixa em outros lotes", "baixa_outros_lotes"),
-    ("Lotes baixados divergentes", "lotes_baixados_divergentes"),
-    ("Baixa sem lote", "baixa_sem_lote"),
-    ("Valor previsto da baixa (R$)", "valor_previsto_baixa"),
-    ("Saldo no lote conferido", "saldo"),
-    ("Saldo G9-PROD", "saldo_g9_prod"),
-    ("Outros endereços", "outros_enderecos"),
-    ("Resultado", "status"),
-]
-AUDIT_FIELDS = [
-    "Separados com data no Geral",
-    "Separações inferidas da conferência",
-    "Qtd separada registrada",
-    "Qtd separada operacional estimada",
-    "Qtd conferida sem separação registrada",
-    "Data última atividade no período",
-    "Motivos da inclusão",
-    "Data-base da conferência",
-    "Integridade da origem",
-]
-OP_COLUMNS = [label for label, _ in OP_FIELDS] + [label for label, _ in ITEM_FIELDS] + AUDIT_FIELDS
-
+# Mantém somente as colunas essenciais da base Geral + confronto OPS.
+from issue_line_report import COLUMNS as OP_COLUMNS
 
 def _cell(value):
     if value is None:
@@ -366,108 +323,58 @@ def issue_rows(model: dict, start: date | None = None, end: date | None = None,
                *, statuses: set[str] | None = None, alerts_only: bool = False,
                material_types: set[str] | None = None,
                include_prior_billing: bool = False) -> list[list]:
+    """Uma linha por registro do Geral; OPS compara pela mesma OP/produto/lote."""
+    from issue_line_report import build_rows
     diagnosis = selection_diagnostics(
-        model, start, end, include_prior_billing=include_prior_billing)
-    selected = diagnosis["selected"]
-    op_lookup = {
-        str(entry["op"]): entry
-        for entry in model["ops"].to_dict("records")
-    }
-    rows = []
-    prices = model.get("catalog_prices") or {}
-    for item in model["items"].to_dict("records"):
-        op = str(item["op"])
-        if op not in selected or op not in op_lookup:
-            continue
-        head = op_lookup[op]
-        if statuses and str(head.get("status_op") or "") not in statuses:
-            continue
-        if alerts_only and not bool(head.get("divergencias")):
-            continue
-        if material_types and str(item.get("tipo_material") or "").upper() not in material_types:
-            continue
-        values = [
-            _valor_previsto_baixa(item, prices)
-            if field == "valor_previsto_baixa" else item.get(field)
-            for _, field in ITEM_FIELDS
-        ]
-        separated = item.get("separada")
-        confirmed = item.get("conferida")
-        from decimal import Decimal as D
-        separated_qty = D(str(separated or 0))
-        confirmed_qty = D(str(confirmed or 0))
-        unregistered = max(confirmed_qty - separated_qty, D(0))
-        events = sorted(diagnosis["events"].get(op, ()))
-        activity_date = events[-1][0].isoformat() if events else ""
-        motives = (
-            ", ".join(sorted({type_name for _, type_name in events}))
-            if events else "HISTÓRICO COMPLETO"
-        )
-        notes = []
-        raw_inferred = head.get("separados_inferidos")
-        raw_recorded = head.get("separados_registrados")
-        inferred_count = int(raw_inferred) if pd.notna(raw_inferred) else 0
-        recorded_count = (
-            int(raw_recorded) if pd.notna(raw_recorded)
-            else int(head.get("separados") or 0)
-        )
-        if inferred_count:
-            notes.append(
-                f"{inferred_count} produto(s) conferido(s) sem data de separação"
+        model, start, end, include_prior_billing=include_prior_billing
+    )
+    selected = set(diagnosis["selected"])
+    ops = model.get("ops")
+    if ops is not None and not ops.empty:
+        if statuses:
+            selected &= set(
+                ops.loc[ops["status_op"].astype(str).isin(statuses), "op"].astype(str)
             )
-        if unregistered > 0:
-            notes.append("Quantidade conferida supera separação registrada")
-        if item.get("lote_nao_informado_geral"):
-            notes.append("Lote não informado no Relatório Geral")
-        billing = _date(head.get("data_faturamento"))
-        if start and billing and billing < start:
-            notes.append("FATURAMENTO ANTERIOR AO PERÍODO: INCLUSÃO EXCEPCIONAL")
-        if item.get("historico_incompleto"):
-            notes.append("Cobertura de dados a conferir")
-        if str(head.get("data_faturamento") or "").strip().upper() in ("", "NI", "N/I"):
-            notes.append("Faturamento não informado")
-        rows.append(
-            [head.get(field) for _, field in OP_FIELDS] + values + [
-                recorded_count,
-                inferred_count,
-                separated,
-                max(separated_qty, confirmed_qty),
-                unregistered,
-                activity_date,
-                motives,
-                str(model.get("as_of") or ""),
-                " | ".join(dict.fromkeys(notes)) if notes else "SEM ALERTA DE ORIGEM",
-            ]
+        if alerts_only:
+            selected &= set(
+                ops.loc[ops["divergencias"].fillna(0).gt(0), "op"].astype(str)
+            )
+    selected_codes = None
+    if material_types:
+        items = model.get("items")
+        if items is None or items.empty or "tipo_material" not in items:
+            return []
+        selected_codes = set(
+            zip(items.loc[items["tipo_material"].astype(str).str.upper().isin(material_types), "op"].astype(str),
+                items.loc[items["tipo_material"].astype(str).str.upper().isin(material_types), "codigo"].astype(str))
         )
-    return rows
+    return build_rows(model, selected, selected_codes=selected_codes)
 
 
 def export_issues(model: dict, start: date | None = None, end: date | None = None,
                   *, statuses: set[str] | None = None, alerts_only: bool = False,
                   material_types: set[str] | None = None,
                   include_prior_billing: bool = False) -> bytes:
-    """Uma única aba, uma linha por produto/OP, dados da OP repetidos por linha."""
-    rows = issue_rows(model, start, end, statuses=statuses, alerts_only=alerts_only,
-                      material_types=material_types,
-                      include_prior_billing=include_prior_billing)
+    """Somente 10 colunas, sem indicadores ou inferências extras."""
+    rows = issue_rows(
+        model, start, end, statuses=statuses, alerts_only=alerts_only,
+        material_types=material_types, include_prior_billing=include_prior_billing,
+    )
     wb = _Excel()
-    wb.sheet("Conferência de Baixas", OP_COLUMNS,
-             quantity={OP_COLUMNS.index(label) for label in (
-                 "Qtd necessária", "Qtd separada", "Qtd conferida",
-                 "Qtd baixada", "Qtd pendente baixa",
-                 "Baixa em outros lotes", "Baixa sem lote",
-                 "Saldo no lote conferido", "Saldo G9-PROD",
-                 "Qtd separada registrada",
-                 "Qtd separada operacional estimada",
-                 "Qtd conferida sem separação registrada")},
-             money={OP_COLUMNS.index("Valor previsto da baixa (R$)")},
-             alert_column=len(OP_COLUMNS) - 1)
-    result_idx = OP_COLUMNS.index("Resultado")
+    wb.sheet(
+        "Conferência de Baixas", OP_COLUMNS,
+        quantity={OP_COLUMNS.index(field) for field in (
+            "Qtd necessária", "Qtd separada", "Qtd conferida",
+            "Qtd baixada", "Qtd pendente baixa",
+        )},
+        alert_column=OP_COLUMNS.index("Resultado"),
+    )
     for row in rows:
-        result = str(row[result_idx]).upper()
-        wb.add("Conferência de Baixas", row,
-               alert=("NÃO CONSUMIDO" in result or "BAIXA ACIMA" in result
-                      or "LOTE" in result))
+        outcome = str(row[-1])
+        wb.add("Conferência de Baixas", row, alert=(
+            "PENDENTE" in outcome or "VERIFICAR" in outcome
+            or "SUPERIOR" in outcome
+        ))
     return wb.save()
 
 
