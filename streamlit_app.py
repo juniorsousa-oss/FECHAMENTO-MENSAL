@@ -4648,6 +4648,48 @@ with _fm_page_surface.container():
                         '<div class="cb-subsection-label">02 · CONFERÊNCIA DOS REGISTROS</div>',
                         unsafe_allow_html=True,
                     )
+
+                    # Exportação da conferência ativa da competência, não apenas
+                    # das linhas exibidas pelos filtros da tabela. Mantém as
+                    # exclusões manuais e a tolerância automática dos barramentos.
+                    if not cb_adjustment_snapshot.empty:
+                        from cb_divergence_export import export_divergences
+
+                        try:
+                            divergence_excel = export_divergences(
+                                cb_adjustment_snapshot, cb_month
+                            )
+                        except Exception as exc:
+                            st.error(
+                                "Não foi possível preparar a exportação de divergências: "
+                                + str(exc)
+                            )
+                        else:
+                            st.download_button(
+                                f"EXPORTAR TODAS AS DIVERGÊNCIAS "
+                                f"({len(cb_adjustment_snapshot)}) · EXCEL",
+                                data=divergence_excel,
+                                file_name=(
+                                    "DIVERGENCIAS_CHAPAS_BARRAMENTOS_SETTA_"
+                                    + cb_month.strftime("%Y-%m")
+                                    + ".xlsx"
+                                ),
+                                mime=(
+                                    "application/vnd.openxmlformats-officedocument."
+                                    "spreadsheetml.sheet"
+                                ),
+                                type="secondary",
+                                use_container_width=True,
+                                key="cb_export_divergencias_excel",
+                            )
+                            st.caption(
+                                "Exporta todos os materiais com status DIVERGÊNCIA "
+                                "na competência, independentemente dos filtros da tela. "
+                                "Inclui saldos, quantidades, valores e armazéns para "
+                                "conferência e ajuste manual no ERP. "
+                                "Não movimenta estoque automaticamente."
+                            )
+
                     shown_display = shown.copy()
 
                     # Mantém os dados auxiliares no cálculo, mas não ocupa a
