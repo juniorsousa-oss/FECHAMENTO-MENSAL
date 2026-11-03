@@ -68,6 +68,7 @@ AUDIT_FIELDS = [
     "Qtd conferida sem separação registrada",
     "Data última atividade no período",
     "Motivos da inclusão",
+    "Data-base da conferência",
     "Integridade da origem",
 ]
 OP_COLUMNS = [label for label, _ in OP_FIELDS] + [label for label, _ in ITEM_FIELDS] + AUDIT_FIELDS
@@ -398,7 +399,10 @@ def issue_rows(model: dict, start: date | None = None, end: date | None = None,
         unregistered = max(confirmed_qty - separated_qty, D(0))
         events = sorted(diagnosis["events"].get(op, ()))
         activity_date = events[-1][0].isoformat() if events else ""
-        motives = ", ".join(sorted({type_name for _, type_name in events}))
+        motives = (
+            ", ".join(sorted({type_name for _, type_name in events}))
+            if events else "HISTÓRICO COMPLETO"
+        )
         notes = []
         raw_inferred = head.get("separados_inferidos")
         raw_recorded = head.get("separados_registrados")
@@ -415,6 +419,9 @@ def issue_rows(model: dict, start: date | None = None, end: date | None = None,
             notes.append("Quantidade conferida supera separação registrada")
         if item.get("lote_nao_informado_geral"):
             notes.append("Lote não informado no Relatório Geral")
+        billing = _date(head.get("data_faturamento"))
+        if start and billing and billing < start:
+            notes.append("FATURAMENTO ANTERIOR AO PERÍODO: INCLUSÃO EXCEPCIONAL")
         if item.get("historico_incompleto"):
             notes.append("Cobertura de dados a conferir")
         if str(head.get("data_faturamento") or "").strip().upper() in ("", "NI", "N/I"):
@@ -428,6 +435,7 @@ def issue_rows(model: dict, start: date | None = None, end: date | None = None,
                 unregistered,
                 activity_date,
                 motives,
+                str(model.get("as_of") or ""),
                 " | ".join(dict.fromkeys(notes)) if notes else "SEM ALERTA DE ORIGEM",
             ]
         )
