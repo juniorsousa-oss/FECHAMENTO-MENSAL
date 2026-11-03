@@ -52,7 +52,7 @@ def _get_issue_model(selected_warehouses: tuple[str, ...] = ()) -> dict:
     if not chosen:
         raise ValueError("Nenhum armazém selecionado possui fonte ENDEREÇO.")
     meta = issue._ops_meta()
-    history_tokens = ((str(meta["sha256"]), str(meta.get("atualizado_em") or "")),) if False else (
+    history_tokens = (
         (str(meta["sha256"]), str(meta.get("atualizado_em") or ""))
         if meta else ()
     )
