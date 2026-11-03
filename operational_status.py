@@ -273,13 +273,15 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
             status, alert = LOTE_AUSENTE_GERAL, True
         elif (model.get("baixas_fonte") == "OPS"
               and outstanding > EPS
+              and decimal(item.get("baixa_outros_lotes")) > EPS):
+            # Quando há falta de lote e lote comprovadamente diferente,
+            # priorizar o lote divergente; ambas as evidências permanecem.
+            status, alert = BAIXA_LOTE_DIVERGENTE, True
+        elif (model.get("baixas_fonte") == "OPS"
+              and outstanding > EPS
               and decimal(item.get("baixa_sem_lote")) > EPS):
             # A OP tem consumo, mas o arquivo OPS não identifica o lote.
             status, alert = LOTE_AUSENTE_OPS, True
-        elif (model.get("baixas_fonte") == "OPS"
-              and outstanding > EPS
-              and decimal(item.get("baixa_outros_lotes")) > EPS):
-            status, alert = BAIXA_LOTE_DIVERGENTE, True
         elif outstanding <= EPS:
             status, alert = PRODUTO_CONSUMIDO, False
         else:
