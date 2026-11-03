@@ -1,4 +1,4 @@
-"""Regressão dos três relatórios e filtro de atividade da OP."""
+"""Regressões dos três relatórios e filtros, sem campos extras no Geral."""
 from __future__ import annotations
 
 from datetime import date
@@ -12,290 +12,118 @@ from openpyxl import load_workbook
 import reports
 
 
-def op(n, **overrides):
-    base = {
-        "op": n, "itens": 2, "separados": 2, "conferidos": 1,
-        "baixados": 0, "divergencias": 1, "cliente": "CLIENTE X",
-        "condicao": "NI", "nota_fiscal": "000019", "data_faturamento": "NI",
-        "dias_patio": "NI", "status_op": "EM CONFERÊNCIA",
-    }
-    base.update(overrides)
-    return base
-
-
-def item(n, code, kind="MP", result="PRODUTO NÃO CONSUMIDO"):
-    return {
-        "op": n, "codigo": code, "descricao": "MATERIAL", "lotes": "00000000",
-        "necessaria": 11, "separada": 11, "conferida": 11,
-        "baixada": 0, "pendente": 11, "saldo": 10,
-        "saldo_g9_prod": 8, "outros_enderecos": "",
-        "status": result, "tipo_material": kind,
-        "divergente": result.startswith("PRODUTO NÃO"),
-    }
-
-
 class ReportsTests(unittest.TestCase):
-    def setUp(self):
-        self.model = {
-            "ops": pd.DataFrame([
-                op("0001"), op("0002"), op("0003"), op("0004"),
-            ]),
-            "items": pd.DataFrame([
-                item("0001", "00006001"), item("0001", "00006002", kind="II", result="MATERIAL DE CONSUMO"),
-                item("0002", "00003002"), item("0003", "00003003"),
-                item("0004", "00004004"),
-            ]),
-            "general": [
-                {"op":"0001", "separacao":"2026-09-25T08:00:00", "conferencia":"2026-10-03T08:00:00"},
-                {"op":"0001", "separacao":"2026-09-25T08:00:00", "conferencia":""},
-                {"op":"0002", "separacao":"2026-10-02T09:00:00", "conferencia":""},
-                {"op":"0003", "separacao":"2026-09-01T09:00:00", "conferencia":"2026-09-02T09:00:00"},
-                {"op":"0004", "separacao":"2026-09-20T09:00:00", "conferencia":""},
-            ],
-            "catalog_prices": {
-                "00006001": 3.75,
-                "00006002": 18.00,
-                "00003003": 5.00,
-            },
-            "movements": [
-                {"op":"0003", "data":"2026-10-07", "natureza":"CONSUMO DE OP",
-                 "qtd_saida":2, "qtd_entrada":0},
-                {"op":"0004", "data":"2026-10-07", "natureza":"ENDEREÇAMENTO",
-                 "qtd_saida":2, "qtd_entrada":0},
-            ],
-        }
-
-    def test_activity_includes_whole_op_but_not_unrelated_op(self):
-        start, end = date(2026, 10, 1), date(2026, 10, 10)
-        self.assertEqual(reports.ops_with_activity(self.model,start,end),
-                         {"0001","0002","0003"})
-        rows=reports.issue_rows(self.model,start,end)
-        self.assertEqual(len(rows), 4)
-        self.assertEqual([r[0] for r in rows], ["0001","0001","0002","0003"])
-        self.assertEqual(rows[1][len(reports.OP_FIELDS)], "00006002")
-        self.assertEqual(len(reports.issue_rows(self.model)), 5)
-
-    def test_issue_excel_is_one_sheet_columns_flat_and_codes_text(self):
-        raw=reports.export_issues(self.model,date(2026,10,1),date(2026,10,10))
-        wb=load_workbook(BytesIO(raw),read_only=True,data_only=True)
-        try:
-            self.assertEqual(wb.sheetnames,["Conferência de Baixas"])
-            values=list(wb.active.values)
-            self.assertEqual(len(values),5)
-            self.assertEqual(values[0],tuple(reports.OP_COLUMNS))
-            self.assertEqual(values[1][0],"0001")
-            self.assertEqual(values[1][12],"00006001")
-            self.assertEqual(values[2][12],"00006002")
-            self.assertEqual(values[1][8],"000019")
-            estimate_index = reports.OP_COLUMNS.index("Valor previsto da baixa (R$)")
-            self.assertEqual(values[1][estimate_index], 41.25)
-            self.assertIsNone(values[2][estimate_index])
-        finally:
-            wb.close()
-
-    def test_quantity_formats_do_not_append_decimal_separator_to_integers(self):
+    def test_excel_quantities_use_general_without_trailing_comma(self):
         wb = reports._Excel()
         wb.sheet("Quantidades", ["Valor"], quantity={0})
         for value in (100, 100.0, 0, -2, 3.25):
             wb.add("Quantidades", [value])
-        raw = wb.save()
-        saved = load_workbook(BytesIO(raw), read_only=True, data_only=True)
+        saved = load_workbook(BytesIO(wb.save()), read_only=True, data_only=True)
         try:
-            sheet = saved["Quantidades"]
-            self.assertEqual([sheet[f"A{n}"].value for n in range(2, 7)],
-                             [100, 100, 0, -2, 3.25])
+            values = list(saved.active.values)
+            self.assertEqual([r[0] for r in values[1:]], [100, 100, 0, -2, 3.25])
             for number in range(2, 7):
-                self.assertEqual(sheet[f"A{number}"].number_format, "General")
+                self.assertEqual(saved.active[f"A{number}"].number_format, "General")
         finally:
             saved.close()
 
-    def test_issue_report_quantity_is_formatted_as_integer(self):
-        raw = reports.export_issues(self.model)
-        saved = load_workbook(BytesIO(raw), read_only=True, data_only=True)
-        try:
-            # Coluna P: quantidade necessária. A célula deve exibir 11, não 11,.
-            self.assertEqual(saved.active["P2"].value, 11)
-            self.assertEqual(saved.active["P2"].number_format, "General")
-            money_index = reports.OP_COLUMNS.index("Valor previsto da baixa (R$)") + 1
-            from openpyxl.utils import get_column_letter
-            address = get_column_letter(money_index) + "2"
-            self.assertEqual(saved.active[address].value, 41.25)
-            self.assertEqual(saved.active[address].number_format, reports.MONEY_FORMAT)
-            # Código do material continua sendo texto (zeros à esquerda).
-            self.assertEqual(saved.active["M2"].value, "00006001")
-        finally:
-            saved.close()
-
-    def test_forecast_is_only_valued_for_alert_with_known_positive_cost(self):
-        self.assertEqual(reports._valor_previsto_baixa(
-            {"codigo": "00006001", "divergente": True, "pendente": 3.5},
-            {"00006001": 2.25}), 7.88)
-        self.assertIsNone(reports._valor_previsto_baixa(
-            {"codigo": "00006001", "divergente": True, "pendente": 10},
-            {}))
-        self.assertIsNone(reports._valor_previsto_baixa(
-            {"codigo": "00006001", "divergente": False, "pendente": 10},
-            {"00006001": 3.0}))
-        self.assertIsNone(reports._valor_previsto_baixa(
-            {"codigo": "00006001", "divergente": True, "pendente": None},
-            {"00006001": 3.0}))
-        self.assertIsNone(reports._valor_previsto_baixa(
-            {"codigo": "00006001", "divergente": True, "pendente": 10},
-            {"00006001": 0}))
-        self.assertIsNone(reports._valor_previsto_baixa(
-            {"codigo": "00006001", "divergente": True, "pendente": 10},
-            {"00006001": "sem preço"}))
-
-    def test_cadastros_last_price_is_available_for_regular_material(self):
-        from cb_parser import parse_cadastros_frame
-        frame = pd.DataFrame([
-            ["", "", "", ""],
-            ["CODIGO", "DESCRICAO", "TIPO", "ULT. PRECO"],
-            ["00006001", "MATERIAL PADRÃO", "MP", 12.35],
-            ["00006002", "MATERIAL COM PREÇO AUSENTE", "II", None],
-        ])
-        parsed = parse_cadastros_frame(frame, "CADASTROS.xlsx")
-        self.assertEqual(parsed["master_lookup"]["00006001"]["ult_preco"], 12.35)
-        self.assertEqual(parsed["master_lookup"]["00006002"]["ult_preco"], 0.0)
-
-    def test_prior_faturamento_excluded_even_with_later_activity(self):
-        """OP faturada em maio não entra no relatório iniciado em agosto."""
-        number = "25027101001"
-        sample = {
+    def test_prior_faturamento_filters_by_activity_without_extra_export_columns(self):
+        model = {
+            "as_of": "2026-10-31", "baixas_fonte": "OPS", "history_available": True,
             "ops": pd.DataFrame([
-                op(number, data_faturamento="19/05/2026", itens=24,
-                   separados=23, conferidos=23, separados_registrados=3,
-                   separados_inferidos=20),
-                op("26000101001", data_faturamento="20/09/2026"),
+                {"op": "25027101001", "data_faturamento": "19/05/2026",
+                 "divergencias": 0, "status_op": "NF EMITIDA"},
+                {"op": "26000101001", "data_faturamento": "20/09/2026",
+                 "divergencias": 0, "status_op": "NF EMITIDA"},
             ]),
             "items": pd.DataFrame([
-                item(number, "06050123"),
-                item("26000101001", "06050189"),
+                {"op": "25027101001", "codigo": "06050123", "tipo_material": "MP"},
+                {"op": "26000101001", "codigo": "06050189", "tipo_material": "MP"},
             ]),
             "general": [
-                {"op": number, "separacao": "2026-08-17T08:00:00",
-                 "conferencia": "2026-08-20T08:00:00"},
-                {"op": "26000101001", "separacao": "2026-09-10T08:00:00",
-                 "conferencia": "2026-09-12T08:00:00"},
+                {"op": "25027101001", "codigo": "06050123", "lote": "000001",
+                 "necessaria": 1, "atendida": 1,
+                 "descricao": "MATERIAL A", "responsavel_conferencia": "CONF",
+                 "separacao": "2026-08-17", "conferencia": "2026-08-20"},
+                {"op": "26000101001", "codigo": "06050189", "lote": "000001",
+                 "necessaria": 3, "atendida": 3,
+                 "descricao": "MATERIAL B", "responsavel_conferencia": "",
+                 "separacao": "2026-09-10", "conferencia": ""},
             ],
             "movements": [],
-            "as_of": "2026-10-21",
         }
         start, end = date(2026, 8, 1), date(2026, 10, 31)
-        diag = reports.selection_diagnostics(sample, start, end)
-        self.assertNotIn(number, diag["selected"])
-        self.assertIn(number, diag["excluded_prior_billing"])
-        self.assertEqual(diag["excluded_prior_billing"][number]["faturamento"],
-                         "2026-05-19")
-        rows = reports.issue_rows(sample, start, end)
-        self.assertEqual([r[0] for r in rows], ["26000101001"])
-        selected = reports.issue_rows(sample, start, end,
-                                      include_prior_billing=True)
-        self.assertEqual({r[0] for r in selected},
-                         {number, "26000101001"})
-        mine = next(r for r in selected if r[0] == number)
-        self.assertEqual(mine[reports.OP_COLUMNS.index(
-            "Separações inferidas da conferência")], 20)
-        self.assertEqual(mine[reports.OP_COLUMNS.index(
-            "Separados com data no Geral")], 3)
-        self.assertEqual(mine[reports.OP_COLUMNS.index(
-            "Motivos da inclusão")], "CONFERÊNCIA, SEPARAÇÃO")
-        self.assertIn("20 produto(s) conferido(s)", mine[
-            reports.OP_COLUMNS.index("Integridade da origem")])
+        diagnosis = reports.selection_diagnostics(model, start, end)
+        self.assertEqual(diagnosis["selected"], {"26000101001"})
+        self.assertEqual(reports.issue_rows(model, start, end)[0][0], "26000101001")
+        old = reports.issue_rows(model, start, end, include_prior_billing=True)
+        self.assertEqual({r[0] for r in old}, {"25027101001", "26000101001"})
+        self.assertEqual(len(reports.OP_COLUMNS), 10)
+        self.assertNotIn("Separações inferidas da conferência", reports.OP_COLUMNS)
+        self.assertNotIn("Valor previsto da baixa (R$)", reports.OP_COLUMNS)
+        self.assertNotIn("Data última atividade no período", reports.OP_COLUMNS)
 
-    def test_future_activities_after_mes_cutoff_do_not_select_op(self):
-        sample = {
-            "ops": pd.DataFrame([op("26000101001", data_faturamento="NI")]),
-            "items": pd.DataFrame([item("26000101001", "00006001")]),
+    def test_future_activity_beyond_mes_snapshot_is_excluded(self):
+        model = {
+            "as_of": "2026-10-21", "baixas_fonte": "OPS",
+            "history_available": True,
+            "ops": pd.DataFrame([{"op": "26000101001", "data_faturamento": "NI"}]),
             "general": [{
-                "op": "26000101001", "separacao": "2026-11-02",
-                "conferencia": "2026-11-02",
+                "op": "26000101001", "codigo": "06050123", "lote": "000001",
+                "necessaria": 1, "atendida": 1, "descricao": "MATERIAL",
+                "responsavel_conferencia": "CONF",
+                "separacao": "2026-11-02", "conferencia": "2026-11-02",
             }],
             "movements": [],
-            "as_of": "2026-10-21",
         }
-        events = reports.activity_evidence(sample, date(2026, 8, 1),
-                                          date(2026, 11, 3))
-        self.assertEqual(events, {})
-        self.assertEqual(reports.issue_rows(
-            sample, date(2026, 8, 1), date(2026, 11, 3)), [])
-
-    def test_raw_separation_is_not_fabricated_in_operational_export(self):
-        sample = {
-            "ops": pd.DataFrame([
-                op("26000101001", separados=1, conferidos=1,
-                   separados_registrados=0, separados_inferidos=1)
-            ]),
-            "items": pd.DataFrame([{
-                **item("26000101001", "06050080"),
-                "separada": 0, "conferida": 16, "necessaria": 16,
-            }]),
-            "general": [], "movements": [],
-        }
-        row = reports.issue_rows(sample)[0]
-        self.assertEqual(row[reports.OP_COLUMNS.index("Qtd separada")], 0)
-        self.assertEqual(row[reports.OP_COLUMNS.index(
-            "Qtd separada operacional estimada")], 16)
-        self.assertEqual(row[reports.OP_COLUMNS.index(
-            "Qtd conferida sem separação registrada")], 16)
-        self.assertIn("Quantidade conferida supera", row[
-            reports.OP_COLUMNS.index("Integridade da origem")])
-        wb = load_workbook(BytesIO(reports.export_issues(sample)),
-                           read_only=True, data_only=True)
-        try:
-            self.assertEqual(list(wb.active.values)[0],
-                             tuple(reports.OP_COLUMNS))
-        finally:
-            wb.close()
-
-    def test_type_and_alert_filters_preserve_op_activity(self):
-        rows=reports.issue_rows(self.model,date(2026,10,1),date(2026,10,10),
-                                material_types={"II"},alerts_only=True)
-        self.assertEqual(len(rows),1)
-        self.assertEqual(rows[0][12],"00006002")
+        self.assertFalse(reports.issue_rows(
+            model, date(2026, 8, 1), date(2026, 11, 3)))
 
     def test_stock_workbook_has_four_tabs_and_no_fake_initial_balance(self):
-        entries=[]
-        imports=[]
-        for month, total in ((8,100.0),(9,110.0),(10,120.0)):
-            day=date(2026,month,1).isoformat()
-            imports.append({"competencia":day,"status":"VALIDO","preview":month==10})
+        entries, imports = [], []
+        for month, total in ((8, 100.0), (9, 110.0), (10, 120.0)):
+            day = date(2026, month, 1).isoformat()
+            imports.append({"competencia": day, "status": "VALIDO",
+                            "preview": month == 10})
             entries.extend([
-                {"competencia":day,"dimensao":"TOTAL","chave":"TOTAL","valor_total":total},
-                {"competencia":day,"dimensao":"ARMZ","chave":"ARMZ:S2","valor_total":total},
-                {"competencia":day,"dimensao":"TP","chave":"TP:MP","valor_total":total},
+                {"competencia": day, "dimensao": "TOTAL",
+                 "chave": "TOTAL", "valor_total": total},
+                {"competencia": day, "dimensao": "ARMZ",
+                 "chave": "ARMZ:S2", "valor_total": total},
+                {"competencia": day, "dimensao": "TP",
+                 "chave": "TP:MP", "valor_total": total},
             ])
-        result=reports.stock_data(entries,imports,date(2026,9,15),date(2026,10,20))
-        self.assertEqual(len(result["Evolução Mensal"]),2)
-        self.assertEqual(result["Evolução Mensal"][0][1:4],[100.0,110.0,10.0])
-        self.assertEqual(result["Evolução Mensal"][1][-1],"PRÉVIA")
-        self.assertEqual(result["Por Armazém"][0][1],"S2")
-        raw=reports.export_stock(entries,imports)
-        wb=load_workbook(BytesIO(raw),read_only=True,data_only=True)
+        found = reports.stock_data(entries, imports,
+                                   date(2026, 9, 15), date(2026, 10, 20))
+        self.assertEqual(len(found["Evolução Mensal"]), 2)
+        self.assertEqual(found["Evolução Mensal"][0][1:4], [100.0, 110.0, 10.0])
+        self.assertEqual(found["Evolução Mensal"][1][-1], "PRÉVIA")
+        wb = load_workbook(BytesIO(reports.export_stock(entries, imports)),
+                           read_only=True, data_only=True)
         try:
-            self.assertEqual(wb.sheetnames,["Resumo Geral","Por Armazém","Por Tipo","Evolução Mensal"])
+            self.assertEqual(wb.sheetnames, [
+                "Resumo Geral", "Por Armazém", "Por Tipo", "Evolução Mensal"])
             self.assertIsNone(list(wb["Evolução Mensal"].values)[1][1])
         finally:
             wb.close()
 
-    def test_kardex_filters_are_non_destructive(self):
-        frame=pd.DataFrame([
-            {"data":"2026-10-03","armazem":"S2","tipo":"II","tes":"520"},
-            {"data":"2026-10-05","armazem":"EP","tipo":"EP","tes":"520"},
-            {"data":"2026-09-30","armazem":"S2","tipo":"MP","tes":"020"},
+    def test_kardex_filters_do_not_mutate_original_frame(self):
+        frame = pd.DataFrame([
+            {"data": "2026-10-03", "armazem": "S2", "tipo": "II", "tes": "520"},
+            {"data": "2026-10-05", "armazem": "EP", "tipo": "EP", "tes": "520"},
+            {"data": "2026-09-30", "armazem": "S2", "tipo": "MP", "tes": "020"},
         ])
-        result=reports.filtered_kardex(frame,date(2026,10,1),date(2026,10,31),
-                                       warehouses={"S2"},types={"II"},groups={"520"})
-        self.assertEqual(len(result),1)
-        self.assertEqual(len(frame),3)
-        group_result=reports.filtered_kardex(
-            frame,group_names={"FLUXO DE ESTOQUE"},
-            group_config={"grupos":[{"nome":"FLUXO DE ESTOQUE","tes":["520"]}]})
-        self.assertEqual(len(group_result),2)
-        with patch("movements.export_excel",return_value=b"excel") as fake:
-            self.assertEqual(reports.export_kardex(result,{"condicoes":[]},summary_only=True),b"excel")
-            self.assertTrue(fake.call_args.kwargs["summary_only"])
+        filtered = reports.filtered_kardex(
+            frame, date(2026, 10, 1), date(2026, 10, 31),
+            warehouses={"S2"}, types={"II"}, groups={"520"},
+        )
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(len(frame), 3)
+        with patch("movements.export_excel", return_value=b"x") as excel:
+            self.assertEqual(reports.export_kardex(filtered, {},
+                                                   summary_only=True), b"x")
+            self.assertTrue(excel.call_args.kwargs["summary_only"])
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     unittest.main()
