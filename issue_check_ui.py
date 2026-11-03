@@ -672,9 +672,16 @@ def _ops_meta() -> dict:
     return ops_lot_source.read_meta()
 
 
-@st.cache_data(show_spinner=False, max_entries=1)
-def _parse_ops_upload(raw: bytes, name: str) -> dict:
-    return ops_lot_source.parse(raw, name)
+@st.cache_data(show_spinner=False, max_entries=2)
+def _parse_ops_upload(raw: bytes, name: str, rules_version: str) -> dict:
+    # A versão entra na CHAVE do cache. Um OPS.xltx de bytes idênticos
+    # deve ser reprocessado quando a classificação dos movimentos muda.
+    if rules_version != ops_lot_source.VERSION:
+        raise RuntimeError("Versão das regras OPS divergente; atualize a página.")
+    parsed = ops_lot_source.parse(raw, name)
+    if parsed["meta"].get("versao") != rules_version:
+        raise RuntimeError("Leitura OPS retornou regras antigas; recarregue o arquivo.")
+    return parsed
 
 
 @st.cache_resource(max_entries=2, show_spinner=False)
@@ -1335,8 +1342,21 @@ def render_issue_check():
         if uploaded is not None:
             try:
                 with st.spinner("Lendo movimentações e consolidando OP, produto, lote e data..."):
-                    parsed_ops = _parse_ops_upload(uploaded.getvalue(), uploaded.name)
+                    parsed_ops = _parse_ops_upload(
+                        uploaded.getvalue(), uploaded.name,
+                        ops_lot_source.VERSION,
+                    )
                 metadata = parsed_ops["meta"]
+                if metadata.get("versao") != ops_lot_source.VERSION:
+                    raise RuntimeError(
+                        "Prévia desatualizada: não é permitido gravar uma "
+                        "importação processada por regras anteriores."
+                    )
+                st.caption(
+                    "Regras de processamento: " + metadata["versao"]
+                    + " · versão salva: "
+                    + str(current_ops.get("versao") or "nenhuma")
+                )
                 st.write(
                     f"**{count(metadata['movimentos_validos'])} movimentos válidos** · "
                     f"{count(metadata['registros_consolidados_por_dia'])} registros consolidados "
@@ -1356,15 +1376,26 @@ def render_issue_check():
                     key="fm_issue_ops_save", use_container_width=True,
                 ):
                     with st.spinner("Salvando fotografia OPS e conferindo versão..."):
-                        saved_ops = ops_lot_source.save(parsed_ops, current=current_ops)
+                        # Consultar o registro vigente diretamente do banco,
+                        # pois o painel de metadados utiliza cache de 30 s.
+                        saved_ops = ops_lot_source.save(parsed_ops)
                     _ops_meta.clear(); _ops_snapshot.clear(); _audit.clear()
                     _operational_snapshot.clear()
                     st.session_state.pop("fm_issue_report_ready", None)
                     st.session_state.pop("fm_reports_ready", None)
+                    persisted = saved_ops["meta"]
+                    if persisted.get("versao") != ops_lot_source.VERSION:
+                        raise RuntimeError(
+                            "O banco não confirmou a versão de regras OPS. "
+                            "A atualização não pode ser considerada concluída."
+                        )
                     st.session_state["_fm_issue_ops_flash"] = (
-                        "Relatório OPS atualizado."
-                        if saved_ops["saved"]
-                        else "Essa versão do relatório OPS já estava cadastrada."
+                        ("Fonte OPS atualizada e verificada no banco. "
+                         if saved_ops["saved"]
+                         else "Fonte OPS já cadastrada e verificada no banco. ")
+                        + f"Regras {persisted['versao']} · "
+                        + f"RE1/999 reconhecidos: "
+                        + count(persisted.get("re1_999_reconhecidos", 0))
                     )
                     st.rerun()
             except Exception as exc:
