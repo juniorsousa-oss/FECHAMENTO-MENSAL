@@ -45,6 +45,26 @@ def audit(g=None, s=None, m=None, **changes):
 
 
 class IssueCheckTests(unittest.TestCase):
+    def test_24_products_3_documented_separations_and_23_confirmed_are_audited(self):
+        rows = []
+        for i in range(24):
+            rows.append(general(**{
+                "Código": f"{1000 + i:08d}",
+                "Data de separação": "10/10/26 08:00" if i < 3 else "",
+                "Data de conferência": "11/10/26 08:00" if i < 23 else "",
+                "Qtd. necessária": 1, "Qtd. atendida": 1,
+            }))
+        result = audit(g=rows)
+        head = result["ops"].iloc[0]
+        self.assertEqual(int(head["itens"]), 24)
+        self.assertEqual(int(head["separados_registrados"]), 3)
+        self.assertEqual(int(head["separados_inferidos"]), 20)
+        self.assertEqual(int(head["separados"]), 23)
+        self.assertEqual(int(head["conferidos"]), 23)
+        # Os dados brutos não devem ser sobrescritos para fechar a conta.
+        self.assertEqual(int((result["items"]["separada"] > 0).sum()), 3)
+        self.assertEqual(int((result["items"]["conferida"] > 0).sum()), 23)
+
     def test_cumulative_history_sums_same_op_product_across_months_without_common_warehouse_period(self):
         metas = [
             {"arquivo_nome": "JAN_S2.xlsx", "armazem": "S2",
