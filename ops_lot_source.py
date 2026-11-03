@@ -23,10 +23,13 @@ import movements as mv
 
 KEY = "fm_conferencia_ops_lotes_v1"
 FORMAT = "setta_ops_lotes_v1"
-VERSION = "2026-11-03.1"
-# Código de movimento em C e TES/TP em O: não confundir entrada de
-# produto acabado PR0/010 nem transferência RE1/999 com consumo de OP.
-ISSUES = {("RE0", "520"), ("RE0", "550"), ("RE6", "550")}
+VERSION = "2026-11-03.2"
+# Na base OPS, RE1/TES 999 também representa baixa associada à OP.
+# A exclusão anterior omitia 9.785 lançamentos do arquivo de referência,
+# inclusive 16 UN do 06050080 na OP 26017801001 (20/10/2026).
+# RE5/999 permanece fora até validação de sua natureza específica.
+# PR0/010 continua excluído por representar apontamento de produção.
+ISSUES = {("RE0", "520"), ("RE0", "550"), ("RE6", "550"), ("RE1", "999")}
 RETURNS = {("DE0", "020")}
 REQUIRED = {"B": "ORDPRODUCAO", "D": "PRODUTO", "F": "QUANTIDADE",
             "K": "DTEMISSAO", "N": "LOTE"}
@@ -69,6 +72,8 @@ def parse(raw: bytes, file_name: str) -> dict:
         kind = (movement_type, tes)
         if kind not in ISSUES and kind not in RETURNS:
             stats["outros_movimentos_ignorados"] += 1
+            if kind == ("RE5", "999"):
+                stats["re5_999_pendentes_analise"] += 1
             continue
         try:
             op = _op(cells.get("B"))
@@ -91,6 +96,8 @@ def parse(raw: bytes, file_name: str) -> dict:
             representative.setdefault(key, (str(cells.get("J") or ""), line))
             dates.add(d)
             stats["movimentos_validos"] += 1
+            if kind == ("RE1", "999"):
+                stats["re1_999_reconhecidos"] += 1
             if not lote:
                 stats["movimentos_sem_lote"] += 1
         except (ValueError, TypeError) as exc:
@@ -128,6 +135,8 @@ def parse(raw: bytes, file_name: str) -> dict:
                         + stats["quantidade_zero"],
         "movimentos_validos": stats["movimentos_validos"],
         "movimentos_sem_lote": stats["movimentos_sem_lote"],
+        "re1_999_reconhecidos": stats["re1_999_reconhecidos"],
+        "re5_999_pendentes_analise": stats["re5_999_pendentes_analise"],
         "outros_movimentos_ignorados": stats["outros_movimentos_ignorados"],
         "registros_consolidados_por_dia": len(rows),
         "periodo_inicio": min(dates), "periodo_fim": max(dates),
@@ -194,7 +203,8 @@ def load() -> dict:
 
 def save(parsed: dict, *, current: dict | None = None) -> dict:
     old = current if current is not None else read_meta()
-    if old.get("sha256") == parsed["meta"]["sha256"]:
+    if (old.get("sha256") == parsed["meta"]["sha256"]
+            and old.get("versao") == parsed["meta"]["versao"]):
         return {"saved": False, "meta": old}
     # A fonte OPS é uma fotografia histórica completa: não deixar que
     # uma exportação parcial substitua o histórico e pareça ausência de baixa.
@@ -211,8 +221,9 @@ def save(parsed: dict, *, current: dict | None = None) -> dict:
     db.rpc("fm_salvar_configuracao",
            {"p_chave": KEY, "p_valor": _pack(parsed)}, timeout=120)
     actual = read_meta()
-    if actual.get("sha256") != parsed["meta"]["sha256"]:
-        raise RuntimeError("A gravação OPS não retornou a versão esperada.")
+    if (actual.get("sha256") != parsed["meta"]["sha256"]
+            or actual.get("versao") != parsed["meta"]["versao"]):
+        raise RuntimeError("A gravação OPS não retornou a versão ou as regras de processamento esperadas.")
     return {"saved": True, "meta": actual}
 
 
