@@ -107,11 +107,20 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
     warehouses = []
     if choice != REPORT_NAMES[0]:
         try:
-            sources = movement_store.list_imports()
-            options = _known_warehouses(sources)
+            if choice == REPORT_NAMES[1]:
+                states = issue._states()
+                entry = states.get("endereco") or {}
+                token = (
+                    "endereco", int(entry["version"]),
+                    str(entry.get("last_update_at") or ""),
+                )
+                options = issue._warehouse_options(token)
+            else:
+                sources = movement_store.list_imports()
+                options = _known_warehouses(sources)
         except Exception as exc:
             options = []
-            st.caption(f"Armazéns do histórico não disponíveis para seleção: {exc}")
+            st.caption(f"Armazéns disponíveis não puderam ser consultados: {exc}")
         if options:
             warehouses = st.multiselect(
                 "ARMAZÉNS (vazio = todos)", options, key="fm_reports_wh",
