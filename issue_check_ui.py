@@ -1269,13 +1269,13 @@ def render_results(model):
                 data = export_issues({**model, "catalog_prices": prices})
             st.session_state["fm_issue_report_ready"] = (report_key, data)
     with right:
-        st.caption("Exportação integral em uma única aba: cabeçalho da OP repetido em cada produto. Para filtros por período, utilize RELATÓRIOS no menu lateral.")
+        st.caption("Exportação integral em uma única aba, linha por linha do Relatório Geral: OP + produto + lote, quantidades do Geral e baixa correspondente do OPS. Para filtros por período, utilize RELATÓRIOS no menu lateral.")
     prepared = st.session_state.get("fm_issue_report_ready")
     if prepared and prepared[0] == report_key:
         st.download_button(
             "BAIXAR RELATÓRIO COMPLETO · EXCEL",
             data=prepared[1],
-            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R4.xlsx",
+            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R6.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="fm_issue_download_complete", use_container_width=True,
         )
