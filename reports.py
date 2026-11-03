@@ -400,9 +400,16 @@ def issue_rows(model: dict, start: date | None = None, end: date | None = None,
         activity_date = events[-1][0].isoformat() if events else ""
         motives = ", ".join(sorted({type_name for _, type_name in events}))
         notes = []
-        if bool(head.get("separados_inferidos")):
+        raw_inferred = head.get("separados_inferidos")
+        raw_recorded = head.get("separados_registrados")
+        inferred_count = int(raw_inferred) if pd.notna(raw_inferred) else 0
+        recorded_count = (
+            int(raw_recorded) if pd.notna(raw_recorded)
+            else int(head.get("separados") or 0)
+        )
+        if inferred_count:
             notes.append(
-                f"{int(head['separados_inferidos'])} produto(s) conferido(s) sem data de separação"
+                f"{inferred_count} produto(s) conferido(s) sem data de separação"
             )
         if unregistered > 0:
             notes.append("Quantidade conferida supera separação registrada")
@@ -414,8 +421,8 @@ def issue_rows(model: dict, start: date | None = None, end: date | None = None,
             notes.append("Faturamento não informado")
         rows.append(
             [head.get(field) for _, field in OP_FIELDS] + values + [
-                head.get("separados_registrados", head.get("separados")),
-                head.get("separados_inferidos", 0),
+                recorded_count,
+                inferred_count,
                 separated,
                 max(separated_qty, confirmed_qty),
                 unregistered,
