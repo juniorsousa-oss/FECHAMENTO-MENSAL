@@ -71,7 +71,7 @@ def ops_record(lot=LOT_A, qty="1", day="2026-10-05", code=CODE, op=OP):
 
 
 class OpsSourceTests(unittest.TestCase):
-    def test_reader_captures_lots_and_does_not_count_produced_or_transferred(self):
+    def test_reader_captures_lots_and_counts_re1_999_without_production(self):
         raw = xltx_bytes([
             line(qty=5, day=46220),
             line(qty=3, day=46221),
@@ -82,16 +82,63 @@ class OpsSourceTests(unittest.TestCase):
             line(qty=2, day=46222, lot="", kind="RE0"),
         ])
         parsed = src.parse(raw, "OPS.xltx")
-        self.assertEqual(parsed["meta"]["movimentos_validos"], 5)
-        self.assertEqual(parsed["meta"]["outros_movimentos_ignorados"], 2)
+        self.assertEqual(parsed["meta"]["movimentos_validos"], 6)
+        self.assertEqual(parsed["meta"]["outros_movimentos_ignorados"], 1)
+        self.assertEqual(parsed["meta"]["re1_999_reconhecidos"], 1)
         self.assertEqual(parsed["meta"]["movimentos_sem_lote"], 1)
-        self.assertEqual(len(parsed["rows"]), 5)
+        self.assertEqual(len(parsed["rows"]), 6)
         day = (date(1899, 12, 30) + timedelta(days=46220)).isoformat()
         self.assertEqual(
             sum(Decimal(r["quantidade"]) for r in parsed["rows"]
                 if r["codigo"] == CODE and r["lote"] == LOT_A), Decimal("7"))
         self.assertEqual(next(r for r in parsed["rows"] if r["data"] == day)["lote"], LOT_A)
         self.assertEqual(src._unpack(src._pack(parsed)), parsed)
+
+    def test_regression_nf_2026_10_20_re1_999_op_26017801001(self):
+        """Exatamente a chave e a data demonstradas pelo usuário (dados sintéticos)."""
+        op = "26017801001"
+        code = "06050080"
+        lote = "000000000"
+        excel_row = line(op=op, code=code, kind="RE1", tes="999",
+                         qty=16, lot=lote, day=46315)
+        raw = xltx_bytes([
+            excel_row,
+            line(op=op, code=code, kind="PR0", tes="010",
+                 qty=16, lot=lote, day=46315),
+        ])
+        parsed = src.parse(raw, "OPS.xltx")
+        self.assertEqual(parsed["meta"]["movimentos_validos"], 1)
+        self.assertEqual(parsed["meta"]["re1_999_reconhecidos"], 1)
+        self.assertEqual(parsed["meta"]["outros_movimentos_ignorados"], 1)
+        self.assertEqual(parsed["rows"][0]["op"], op)
+        self.assertEqual(parsed["rows"][0]["codigo"], code)
+        self.assertEqual(parsed["rows"][0]["lote"], lote)
+        self.assertEqual(parsed["rows"][0]["data"], "2026-10-20")
+        self.assertEqual(parsed["rows"][0]["quantidade"], "16")
+        geral = issue_check.parse_general(pd.DataFrame([{
+            "Projeto": op, "Código": code, "Lote": lote,
+            "Qtd. necessária": 16, "Qtd. atendida": 16,
+            "Data de separação": "19/10/26 08:00",
+            "Data de conferência": "20/10/26 10:00",
+            "Descrição": "PUXADOR PLANO GRANDE 168X28 MM PRETO",
+        }]))
+        model = issue_check.reconcile_ops(
+            geral, [], parsed["rows"],
+            ops_meta=parsed["meta"], as_of="2026-10-30")
+        item = stages.apply(model)["items"].iloc[0]
+        self.assertEqual(item.baixada, Decimal("16"))
+        self.assertEqual(item.pendente, Decimal("0"))
+        self.assertEqual(item.status, stages.PRODUTO_CONSUMIDO)
+        self.assertFalse(item.divergente)
+
+    def test_same_file_can_be_reprocessed_with_updated_classification_version(self):
+        parsed = src.parse(xltx_bytes([line(kind="RE1", tes="999")]), "ops.xlsx")
+        old = {**parsed["meta"], "versao": "2026-11-03.1"}
+        with patch.object(src.db, "rpc") as rpc, \
+             patch.object(src, "read_meta", return_value=parsed["meta"]):
+            result = src.save(parsed, current=old)
+        self.assertTrue(result["saved"])
+        self.assertEqual(rpc.call_count, 1)
 
     def test_multiple_days_same_op_product_lot_are_added_without_cross_lot_credit(self):
         general = general_rows()
