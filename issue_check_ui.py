@@ -46,6 +46,9 @@ LABELS = {"op": "OP", "codigo": "Produto", "descricao": "Descrição", "lotes": 
           "lotes_baixados_divergentes": "Lotes com baixa divergente",
           "baixa_sem_lote": "Baixa sem lote",
           "lote_nao_informado_geral": "Lote não informado no Geral",
+          "excesso": "Excesso baixado no lote",
+          "divergencia_lotes": "Divergência entre lotes",
+          "pendente_lotes": "Faltas individuais por lote",
           "tipo_movimento": "Tipo movimento",
           "saldo": "Saldo no lote conferido",
           "saldo_g9_prod": "Saldo G9-PROD", "outros_enderecos": "Outros endereços", "sem_saldo": "Sem cobertura de saldo ou baixa",
@@ -65,7 +68,7 @@ LABELS = {"op": "OP", "codigo": "Produto", "descricao": "Descrição", "lotes": 
           "data": "Data", "tes": "TES", "documento": "Documento", "qtd_entrada": "Entrada", "qtd_saida": "Saída",
           "ae_original": "AE original", "natureza": "Natureza", "arquivo_origem": "Arquivo de origem"}
 QUANTITIES = {"necessaria", "atendida", "separada", "conferida", "baixada", "saida_bruta", "devolvida", "pendente", "saldo",
-              "saldo_g9_prod", "sem_saldo", "em_g9_prod", "baixa_outros_lotes", "baixa_sem_lote", "empenho", "pendente_minima", "pendente_maxima",
+              "saldo_g9_prod", "sem_saldo", "em_g9_prod", "baixa_outros_lotes", "baixa_sem_lote", "excesso", "pendente_lotes", "empenho", "pendente_minima", "pendente_maxima",
               "demanda_compartilhada_minima", "demanda_compartilhada_maxima", "pendencia_mes", "qtd_entrada", "qtd_saida"}
 
 
@@ -892,7 +895,14 @@ def _details(model, item):
     st.write(f"Conferida: **{quantity(item['conferida'])}** · Baixada líquida: **{quantity(item['baixada'])}** · Pendente: **{quantity(item['pendente'])}**")
     if item.get("lote_nao_informado_geral"):
         st.warning("O Relatório Geral não informa lote para parte do material; não é possível comprovar essa baixa por lote.")
-    if item.get("lotes_baixados_divergentes"):
+    if item.get("divergencia_lotes"):
+        st.warning(
+            "DIVERGÊNCIA DE LOTE — " + str(item["divergencia_lotes"])
+            + ". A quantidade pendente do produto é calculada pelo total "
+              "baixado; diferenças entre lotes devem ser regularizadas "
+              "separadamente no ERP."
+        )
+    elif item.get("lotes_baixados_divergentes"):
         st.warning("Baixa identificada em outro lote: " + str(item["lotes_baixados_divergentes"]))
     if item.get("baixa_sem_lote"):
         st.warning("Existem baixas sem lote informado; não foram atribuídas aos lotes conferidos.")
@@ -905,8 +915,12 @@ def _details(model, item):
                       "conferencia", "responsavel_conferencia", "reportado", "reporte", "referencia", "linha_origem"])
     with stock_tab:
         lots = model["lots"].loc[model["lots"]["item_id"] == item["item_id"]]
-        st.caption("Cada lote possui sua própria quantidade conferida, baixada e pendente. Baixas de outros lotes não compensam este saldo.")
-        _table(lots, ["lote", "conferida", "baixada", "pendente", "saldo", "saldo_g9_prod", "ops_com_demanda"])
+        st.caption(
+            "A diferença por lote indica lançamento em lote divergente. "
+            "Ela não representa necessariamente quantidade faltante no produto. "
+            "A pendência total considera a soma de todas as baixas da OP e produto."
+        )
+        _table(lots, ["lote", "conferida", "baixada", "pendente", "excesso", "saldo", "saldo_g9_prod", "ops_com_demanda"])
         allowed_lots = {r["lote"] for r in model["general"] if r["item_id"] == item["item_id"]}
         addresses = pd.DataFrame([r for r in model["stock"] if r["codigo"] == item["codigo"] and r["lote"] in allowed_lots])
         if item.get("outros_enderecos"):
@@ -1003,6 +1017,18 @@ def _ops(model, view, token):
                         "Marque o checkbox à esquerda do material para consultar "
                         "suas evidências. Selecione outra linha para trocar o produto."
                     )
+                    with st.expander("PRÉVIA DO EXCEL ENXUTO · OP + PRODUTO + LOTE"):
+                        from issue_line_report import COLUMNS, build_rows
+                        preview = build_rows(model, {number})
+                        st.dataframe(
+                            pd.DataFrame(preview, columns=COLUMNS),
+                            hide_index=True, use_container_width=True,
+                        )
+                        st.caption(
+                            "Estes são exatamente os campos exportados no Excel. "
+                            "Quando o total da baixa está correto, uma troca entre "
+                            "lotes é sinalizada no Resultado, sem criar falta de quantidade."
+                        )
                     st.markdown(
                         '<div class="fm-issue-mobile-hint">Deslize a tabela horizontalmente para consultar todas as colunas.</div>',
                         unsafe_allow_html=True,
@@ -1260,22 +1286,19 @@ def render_results(model):
     ).encode()).hexdigest()
     left, right = st.columns([1, 2])
     with left:
-        if st.button("PREPARAR RELATÓRIO COMPLETO", use_container_width=True, key="fm_issue_prepare_report"):
+        if st.button("PREPARAR EXCEL ENXUTO · GERAL + OPS", use_container_width=True, key="fm_issue_prepare_report"):
             from reports import export_issues
-            with st.spinner("Preparando Excel único com OPs, produtos e previsão de baixa..."):
-                prices, price_meta = _optional_catalog_prices()
-                if price_meta.get("erro"):
-                    st.warning("CADASTROS sem preços disponíveis: os valores previstos permanecerão vazios.")
-                data = export_issues({**model, "catalog_prices": prices})
+            with st.spinner("Preparando as dez colunas da conferência de baixas..."):
+                data = export_issues(model)
             st.session_state["fm_issue_report_ready"] = (report_key, data)
     with right:
         st.caption("Exportação integral em uma única aba, linha por linha do Relatório Geral: OP + produto + lote, quantidades do Geral e baixa correspondente do OPS. Para filtros por período, utilize RELATÓRIOS no menu lateral.")
     prepared = st.session_state.get("fm_issue_report_ready")
     if prepared and prepared[0] == report_key:
         st.download_button(
-            "BAIXAR RELATÓRIO COMPLETO · EXCEL",
+            "BAIXAR EXCEL ENXUTO · CONFERÊNCIA",
             data=prepared[1],
-            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R6.xlsx",
+            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R7.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="fm_issue_download_complete", use_container_width=True,
         )
