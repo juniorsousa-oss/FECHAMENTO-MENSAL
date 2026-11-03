@@ -10,7 +10,7 @@ import pandas as pd
 
 import movements as mv
 
-VERSION = "2026-11-03.4"
+VERSION = "2026-11-03.5"
 EPSILON = Decimal("0.000001")
 ZERO = Decimal(0)
 MISSING = "CONFERIDO SEM SALDO E SEM BAIXA SUFICIENTE"
@@ -289,6 +289,7 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
         "sem_saldo", "em_g9_prod",
         "op_possui_baixa", "historico_incompleto",
         "separada", "conferida", "itens_separados", "itens_conferidos",
+        "pendente_lotes", "excesso_lotes", "divergencia_lotes",
     )}
     lot_index = defaultdict(list)
     for row in base["lots"].to_dict("records"):
@@ -314,6 +315,9 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
         total_confirmed = ZERO
         count_separated = 0
         count_confirmed = 0
+        missing_by_lot = ZERO
+        excess_by_lot = ZERO
+        lot_differences = []
         for lot_line in existing:
             lote = ops_source.lot(lot_line["lote"])
             key = (op, code, lote)
@@ -334,6 +338,16 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
             total_returns += returned if lote else ZERO
             total_matching += matching
             total_pending += pending
+            excess = positive(matching - confirmed)
+            missing_by_lot += pending
+            excess_by_lot += excess
+            if confirmed > EPSILON or matching > EPSILON:
+                difference = matching - confirmed
+                if difference > EPSILON:
+                    lot_differences.append(f"LOTE {lote or '(SEM LOTE)'}: EXCESSO {difference}")
+                elif difference < -EPSILON:
+                    lot_differences.append(f"LOTE {lote or '(SEM LOTE)'}: FALTA {abs(difference)}")
+            lot_line["excesso"] = excess
             lot_line["baixada"] = matching
             lot_line["pendente"] = pending
             lot_line["separada"] = separated
@@ -352,15 +366,41 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
         unknown_lot_qty = max(all_by_product.get((op, code), {}).get("", ZERO), ZERO)
         other_qty = sum((max(all_by_product[op, code][lote], ZERO)
                          for lote in other_lots), ZERO)
-        # Nenhum lote diferente compensa a pendência do lote conferido.
+        # Quantidade TOTAL é por OP + produto. Lotes com excesso/falta
+        # geram uma divergência de vínculo, NÃO uma falta quantitativa
+        # quando a baixa líquida total do produto está integralmente coberta.
+        # Preserva cada lote para o operador identificar a troca.
+        ops_product_lots = all_by_product.get((op, code), {})
+        net_product = sum(ops_product_lots.values(), ZERO)
+        net_discharge = max(net_product, ZERO)
+        pending_product = positive(total_confirmed - net_discharge)
+        for lot_name in other_lots:
+            lot_differences.append(
+                f"LOTE {lot_name} NÃO CONSTA NO GERAL: BAIXADO {ops_product_lots[lot_name]}"
+            )
+        if unknown_lot_qty > EPSILON:
+            lot_differences.append(f"BAIXA SEM LOTE: {unknown_lot_qty}")
+        has_lot_mismatch = (
+            excess_by_lot > EPSILON or other_qty > EPSILON
+            or unknown_lot_qty > EPSILON
+        )
+        changes["pendente_lotes"].append(missing_by_lot)
+        changes["excesso_lotes"].append(excess_by_lot)
+        changes["divergencia_lotes"].append(
+            " | ".join(lot_differences) if has_lot_mismatch else ""
+        )
         changes["separada"].append(total_separated)
         changes["conferida"].append(total_confirmed)
         changes["itens_separados"].append(count_separated)
         changes["itens_conferidos"].append(count_confirmed)
-        changes["saida_bruta"].append(total_issued)
-        changes["devolvida"].append(total_returns)
-        changes["baixada"].append(total_matching)
-        changes["pendente"].append(total_pending)
+        changes["saida_bruta"].append(
+            sum((outgoing[op, code, lot] for lot in ops_product_lots), ZERO)
+        )
+        changes["devolvida"].append(
+            sum((incoming[op, code, lot] for lot in ops_product_lots), ZERO)
+        )
+        changes["baixada"].append(net_discharge)
+        changes["pendente"].append(pending_product)
         changes["baixa_outros_lotes"].append(other_qty)
         changes["lotes_baixados_divergentes"].append(", ".join(other_lots))
         changes["baixa_sem_lote"].append(unknown_lot_qty)
@@ -388,8 +428,8 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
             (min(max(lot["pendente"], ZERO), max(lot["saldo_g9_prod"], ZERO))
              for lot in existing if lot["lote"]), ZERO
         )
-        changes["sem_saldo"].append(positive(total_pending - remaining_stock))
-        changes["em_g9_prod"].append(min(total_pending, remaining_g9))
+        changes["sem_saldo"].append(positive(pending_product - remaining_stock))
+        changes["em_g9_prod"].append(min(pending_product, remaining_g9))
 
     updated = base["items"].copy()
     for name, values in changes.items():
