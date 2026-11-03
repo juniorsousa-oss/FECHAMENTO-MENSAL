@@ -11,7 +11,7 @@ import re
 
 import pandas as pd
 
-VERSION = "2026-11-03.4"
+VERSION = "2026-11-03.5"
 EPS = Decimal("0.000001")
 ZERO = Decimal(0)
 
@@ -259,6 +259,12 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
               and confirmed > EPS and model.get("history_available")
               and bool(item.get("lote_nao_informado_geral"))):
             status, alert = LOTE_AUSENTE_GERAL, True
+        elif (model.get("baixas_fonte") == "OPS"
+              and confirmed > EPS and model.get("history_available")
+              and decimal(item.get("baixa_outros_lotes")) > EPS):
+            # Movimentos em outro lote identificado prevalecem sobre a
+            # presença simultânea de lançamentos sem lote.
+            status, alert = BAIXA_LOTE_DIVERGENTE, True
         elif (model.get("baixas_fonte") == "OPS"
               and confirmed > EPS and model.get("history_available")
               and decimal(item.get("baixa_sem_lote")) > EPS):
