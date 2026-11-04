@@ -145,18 +145,29 @@ class OpsSourceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Saldo"):
             src.parse(out.getvalue(), "OPS.xltx")
 
-    def test_partial_history_is_blocked_even_when_dates_look_complete(self):
-        parsed = src.parse(xltx_bytes([line(kind="RE1", tes="999", qty=16)]),
+    def test_partial_interval_preserves_old_movements_even_when_file_is_smaller(self):
+        recent = src.parse(xltx_bytes([line(kind="RE1", tes="999", qty=16)]),
                            "OPS.xltx")
-        older = {
-            **parsed["meta"],
-            "sha256": "other-file",
-            "movimentos_validos": 112195,
-        }
-        with patch.object(src.db, "rpc") as rpc:
-            with self.assertRaisesRegex(ValueError, "redução superior a 20%"):
-                src.save(parsed, current=older)
-            rpc.assert_not_called()
+        old = src.parse(xltx_bytes([
+            line(kind="RE0", tes="550", qty=5, day=42000),
+            line(kind="RE0", tes="550", qty=8, day=46300),
+            line(kind="RE0", tes="550", qty=6, day=46301),
+        ]), "OPS-HISTORICO.xltx")
+        plan = src.plan_period_replace(recent, old)
+        summary = plan["impact"]
+        # O arquivo novo cobre apenas o dia 46300 por exemplo: linha de
+        # 2014 e o dia seguinte permanecem na fotografia final.
+        self.assertEqual(summary["historico_anterior"], 3)
+        self.assertEqual(summary["preservados"], 2)
+        self.assertEqual(summary["substituidos"], 1)
+        self.assertEqual(summary["novos"], 1)
+        self.assertEqual(summary["apos_substituicao"], 3)
+        records = plan["candidate"]["rows"]
+        days = {r["data"] for r in records}
+        self.assertEqual(len(days), 3)
+        self.assertEqual(sum(Decimal(r["quantidade"]) for r in records
+                             if r["data"] == recent["meta"]["periodo_inicio"]),
+                         Decimal("16"))
 
     def test_parser_cache_version_is_distinct_from_saved_classification(self):
         import issue_check_ui as ui
@@ -228,41 +239,75 @@ class OpsSourceTests(unittest.TestCase):
         self.assertEqual(item.status, stages.PRODUTO_CONSUMIDO)
         self.assertFalse(item.divergente)
 
-    def test_same_file_can_be_reprocessed_with_updated_classification_version(self):
-        parsed = src.parse(xltx_bytes([line(kind="RE1", tes="999")]), "ops.xlsx")
-        old = {**parsed["meta"], "versao": "2026-11-03.1"}
-        with patch.object(src.db, "rpc") as rpc, \
-             patch.object(src, "read_meta", return_value=parsed["meta"]):
-            result = src.save(parsed, current=old)
-        self.assertTrue(result["saved"])
-        self.assertEqual(rpc.call_count, 1)
+    def test_outdated_stored_source_is_blocked_without_modifying_history(self):
+        parsed = src.parse(xltx_bytes([line(kind="RE1", tes="999", qty=16)]),
+                           "OPS.xltx")
+        stale_snapshot = {
+            "meta": {**parsed["meta"], "versao": "2026-11-03.1"},
+            "rows": parsed["rows"],
+        }
+        with patch.object(src, "load", return_value=stale_snapshot), \
+             patch.object(src.db, "rpc") as rpc:
+            with self.assertRaisesRegex(ValueError, "incompatível"):
+                src.save(parsed)
+        rpc.assert_not_called()
 
     def test_outdated_cached_parse_cannot_be_saved_or_falsely_reported_current(self):
         parsed = src.parse(xltx_bytes([
             line(kind="RE1", tes="999", qty=16)
         ]), "OPS.xltx")
-        self.assertEqual(parsed["meta"]["versao"], src.VERSION)
-        self.assertEqual(parsed["meta"]["re1_999_reconhecidos"], 1)
-        # Simula exatamente a prévia antiga que apareceu na tela:
-        # o SHA coincide, mas as regras descartavam RE1/999.
         stale = {
             **parsed,
-            "meta": {**parsed["meta"],
-                     "versao": "2026-11-03.1",
-                     "re1_999_reconhecidos": 0}
+            "meta": {**parsed["meta"], "versao": "2026-11-03.1"}
         }
-        old = {**stale["meta"]}
-        with patch.object(src, "read_meta") as reader, \
+        with patch.object(src, "load", return_value={}), \
              patch.object(src.db, "rpc") as rpc:
-            with self.assertRaisesRegex(ValueError, "regras antigas"):
-                src.save(stale, current=old)
+            with self.assertRaisesRegex(ValueError, "desatualizadas"):
+                src.save(stale)
         rpc.assert_not_called()
-        reader.assert_not_called()
-        with patch.object(src.db, "rpc") as rpc, \
-             patch.object(src, "read_meta", return_value=parsed["meta"]):
-            refreshed = src.save(parsed, current=old)
-        self.assertTrue(refreshed["saved"])
-        self.assertEqual(rpc.call_count, 1)
+
+    def test_period_replace_writes_backup_before_current_and_verifies_sha(self):
+        before = src.parse(xltx_bytes([
+            line(kind="RE0", tes="550", qty=4, day=42000),
+            line(kind="RE0", tes="550", qty=3, day=46300),
+        ]), "base.xlsx")
+        parsed = src.parse(xltx_bytes([
+            line(kind="RE1", tes="999", qty=16, day=46300),
+        ]), "novo.xlsx")
+        candidate = src.plan_period_replace(parsed, before)["candidate"]
+        with patch.object(src, "load", return_value=before), \
+             patch.object(src, "read_meta", side_effect=[
+                 before["meta"], candidate["meta"]
+             ]), \
+             patch.object(src.db, "rpc") as rpc:
+            result = src.save(parsed, expected_previous_sha=before["meta"]["sha256"])
+        self.assertTrue(result["saved"])
+        self.assertEqual(rpc.call_count, 2)
+        self.assertEqual(rpc.call_args_list[0].args[1]["p_chave"], src.BACKUP_KEY)
+        self.assertEqual(rpc.call_args_list[1].args[1]["p_chave"], src.KEY)
+        self.assertEqual(result["meta"]["sha256"], candidate["meta"]["sha256"])
+
+    def test_concurrent_change_aborts_without_backups_or_new_writes(self):
+        parsed = src.parse(xltx_bytes([
+            line(kind="RE1", tes="999", qty=16, day=46300),
+        ]), "novo.xlsx")
+        before = src.parse(xltx_bytes([
+            line(kind="RE0", tes="550", qty=3, day=46299),
+        ]), "base.xlsx")
+        with patch.object(src, "load", return_value=before), \
+             patch.object(src.db, "rpc") as rpc:
+            with self.assertRaisesRegex(RuntimeError, "mudou desde a prévia"):
+                src.save(parsed, expected_previous_sha="stale-token")
+        rpc.assert_not_called()
+
+    def test_existing_snapshot_can_be_reimported_idempotently(self):
+        parsed = src.parse(xltx_bytes([line(kind="RE1", tes="999", qty=16)]),
+                           "OPS.xltx")
+        with patch.object(src, "load", return_value=parsed), \
+             patch.object(src.db, "rpc") as rpc:
+            result = src.save(parsed)
+        self.assertFalse(result["saved"])
+        rpc.assert_not_called()
 
     def test_ui_cache_key_includes_processing_rules_version(self):
         import inspect
@@ -411,17 +456,65 @@ class OpsSourceTests(unittest.TestCase):
         self.assertFalse(result["saved"])
         rpc.assert_not_called()
 
-    def test_partial_new_export_cannot_replace_previous_complete_history(self):
-        parsed = src.parse(xltx_bytes([line()]), "ops.xlsx")
-        meta = parsed["meta"]
-        older = {
-            "sha256": "outro-arquivo", "periodo_inicio": "2014-01-01",
-            "periodo_fim": meta["periodo_fim"],
-        }
-        with patch.object(src.db, "rpc") as rpc:
-            with self.assertRaisesRegex(ValueError, "histórico completo"):
-                src.save(parsed, current=older)
-        rpc.assert_not_called()
+    def test_partial_new_export_replaces_only_covered_day_and_is_idempotent(self):
+        original = src.parse(xltx_bytes([
+            line(kind="RE0", tes="550", qty=10, day=42000),
+            line(kind="RE0", tes="550", qty=3, day=46300),
+            line(kind="RE0", tes="550", qty=5, day=46301),
+        ]), "original.xlsx")
+        new = src.parse(xltx_bytes([
+            line(kind="RE1", tes="999", qty=16, day=46300),
+        ]), "OPS.xltx")
+        first = src.plan_period_replace(new, original)
+        self.assertEqual(first["impact"]["preservados"], 2)
+        self.assertEqual(first["impact"]["substituidos"], 1)
+        self.assertEqual(first["impact"]["novos"], 1)
+        second = src.plan_period_replace(new, first["candidate"])
+        self.assertFalse(second["impact"]["alterou"])
+        self.assertEqual(second["impact"]["apos_substituicao"], 3)
+        self.assertEqual(
+            src._rows_hash(first["candidate"]["rows"]),
+            src._rows_hash(second["candidate"]["rows"]),
+        )
+
+    def test_partial_month_overlap_erases_only_days_in_new_file_window(self):
+        old = src.parse(xltx_bytes([
+            line(kind="RE0", tes="550", qty=1, day=46299),
+            line(kind="RE0", tes="550", qty=2, day=46300),
+            line(kind="RE0", tes="550", qty=3, day=46301),
+            line(kind="RE0", tes="550", qty=4, day=46302),
+            line(kind="RE0", tes="550", qty=5, day=46303),
+        ]), "old.xlsx")
+        new = src.parse(xltx_bytes([
+            line(kind="RE1", tes="999", qty=7, day=46300),
+            line(kind="RE1", tes="999", qty=8, day=46302),
+        ]), "new.xlsx")
+        final = src.plan_period_replace(new, old)
+        self.assertEqual(final["impact"]["preservados"], 2)
+        self.assertEqual(final["impact"]["substituidos"], 3)
+        self.assertEqual(final["impact"]["novos"], 2)
+        records = final["candidate"]["rows"]
+        self.assertEqual(len(records), 4)
+        self.assertEqual({r["data"] for r in records}, {
+            old["rows"][0]["data"], new["rows"][0]["data"],
+            new["rows"][1]["data"], old["rows"][-1]["data"],
+        })
+        self.assertEqual(final["candidate"]["meta"]["politica"],
+                         "SUBSTITUIR_SOMENTE_PERIODO_INCLUSIVO")
+
+    def test_old_snapshot_not_replaced_when_backup_fails(self):
+        before = src.parse(xltx_bytes([
+            line(kind="RE0", tes="550", qty=4, day=42000),
+        ]), "before.xlsx")
+        parsed = src.parse(xltx_bytes([
+            line(kind="RE1", tes="999", qty=16, day=46300),
+        ]), "new.xlsx")
+        with patch.object(src, "load", return_value=before), \
+             patch.object(src.db, "rpc", side_effect=RuntimeError("backup falhou")) as rpc:
+            with self.assertRaisesRegex(RuntimeError, "backup falhou"):
+                src.save(parsed)
+        self.assertEqual(rpc.call_count, 1)
+        self.assertEqual(rpc.call_args.args[1]["p_chave"], src.BACKUP_KEY)
 
     def test_invalid_negative_request_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "quantidade negativa"):
