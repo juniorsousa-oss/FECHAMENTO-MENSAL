@@ -137,7 +137,8 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
             "Espelho do R3 validado: 12 colunas do cabeçalho "
             "da OP, seguidas de 13 colunas de materiais (inclui Valor "
             "previsto da baixa em R$), "
-            "em uma única aba. O cabeçalho se repete por material. "
+            "em uma única aba. OP + produto + lote diferentes geram linhas "
+            "distintas, com o cabeçalho repetido em cada uma. "
             "A conciliação continua baseada no Geral e no OPS por OP/produto/lote. "
             "Apenas produtos com alerta recebem destaque. "
             "Por padrão, o período filtra SOMENTE a data de faturamento: "
@@ -306,7 +307,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     prefix = "KARDEX"
             st.session_state["fm_reports_ready"] = (
                 report_key, data,
-                f"{prefix}_SETTA_{period_key}_R11.xlsx"
+                f"{prefix}_SETTA_{period_key}_R12.xlsx"
                 if choice == REPORT_NAMES[1]
                 else f"{prefix}_SETTA_{period_key}.xlsx",
                 records
