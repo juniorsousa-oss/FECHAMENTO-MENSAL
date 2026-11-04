@@ -25,7 +25,7 @@ MONEY_FORMAT = '#,##0.00;[Red](#,##0.00)'
 # separador decimal isolado que o formato #,##0.###### gerava no pt-BR.
 QUANTITY_FORMAT = "General"
 QUANTITY_INTEGER_FORMAT = "General"
-EXPORT_SCHEMA_VERSION = "2026-11-04.1-MIRROR-TABLE-R8"
+EXPORT_SCHEMA_VERSION = "2026-11-04.2-FATURAMENTO-PERIODO-R9"
 PERCENT_FORMAT = '0.00%;[Red](0.00%)'
 
 # Formato homologado: cabeçalho da OP repetido e, à direita, a mesma
@@ -151,45 +151,71 @@ def activity_evidence(model: dict, start: date | None, end: date | None) -> dict
 
 
 def selection_diagnostics(model: dict, start: date | None, end: date | None,
-                          *, include_prior_billing: bool = False) -> dict:
-    """Relata inclusões/exclusões, sem aplicar a data de faturamento às baixas."""
+                          *, include_activity: bool = False) -> dict:
+    """Por padrão, filtrar estritamente pelo FATURAMENTO na data selecionada.
+
+    Incluir movimentações é opção expressa: adiciona OPs com separação,
+    conferência ou baixa OPS no período (mesmo com faturamento NI, anterior
+    ou posterior). A opção nunca restringe OPs efetivamente faturadas no mês.
+    """
     _period(start, end)
     ops = {str(item["op"]): item for item in model["ops"].to_dict("records")}
-    events = activity_evidence(model, start, end) if start or end else {}
-    candidates = set(events) if start or end else set(ops)
-    excluded = {}
-    selected = set()
-    for op in candidates:
-        if op not in ops:
+    has_period = start is not None or end is not None
+    if has_period:
+        billed = {
+            op for op, header in ops.items()
+            if _between(header.get("data_faturamento"), start, end)
+        }
+    else:
+        # Histórico completo continua mostrando todas as OPs da base.
+        billed = set(ops)
+    events = (
+        activity_evidence(model, start, end)
+        if include_activity and has_period else {}
+    )
+    added_by_activity = (set(events) & set(ops)) - billed
+    selected = billed | added_by_activity
+    excluded_missing_billing = []
+    excluded_outside_billing = []
+    excluded_prior_billing = {}
+    for op, header in ops.items():
+        if op in selected:
             continue
-        billing_raw = ops[op].get("data_faturamento")
-        billing = _date(billing_raw)
-        if (start and not include_prior_billing and billing and billing < start):
-            excluded[op] = {
-                "faturamento": billing.isoformat(),
-                "motivo": "FATURAMENTO ANTERIOR AO PERÍODO",
-                "atividade": sorted(events.get(op, [])),
-            }
-            continue
-        selected.add(op)
+        billing = _date(header.get("data_faturamento"))
+        if billing is None:
+            excluded_missing_billing.append(op)
+        else:
+            excluded_outside_billing.append(op)
+            if start and billing < start:
+                excluded_prior_billing[op] = {
+                    "faturamento": billing.isoformat(),
+                    "motivo": "FATURAMENTO ANTERIOR AO PERÍODO",
+                }
+    unreadable_billing = sorted(
+        op for op in selected
+        if str(ops[op].get("data_faturamento") or "").strip().upper()
+        not in ("", "NI", "N/I", "NONE", "NAN") and
+        _date(ops[op].get("data_faturamento")) is None
+    )
     return {
         "selected": selected,
-        "excluded_prior_billing": excluded,
+        "billed_in_period": billed,
+        "added_by_activity": added_by_activity,
+        "excluded_missing_billing": sorted(excluded_missing_billing),
+        "excluded_outside_billing": sorted(excluded_outside_billing),
+        "excluded_prior_billing": excluded_prior_billing,
         "events": events,
-        "unreadable_billing": sorted(op for op in selected if
-                                     str(ops[op].get("data_faturamento") or "").strip().upper()
-                                     not in ("", "NI", "N/I") and
-                                     _date(ops[op].get("data_faturamento")) is None),
+        "unreadable_billing": unreadable_billing,
     }
 
 
 def ops_with_activity(model: dict, start: date | None, end: date | None,
-                      *, include_prior_billing: bool = False) -> set[str]:
-    """Atividade no período e, por padrão, exclui faturamentos anteriores."""
+                      *, include_activity: bool = False) -> set[str]:
+    """Compatibilidade: seleção fiscal padrão, com atividade opcional."""
     return selection_diagnostics(
-        model, start, end,
-        include_prior_billing=include_prior_billing,
+        model, start, end, include_activity=include_activity,
     )["selected"]
+
 
 class _Excel:
     """Escrita streaming com cabeçalho fixo, autofiltro e formatação de colunas."""
@@ -365,9 +391,9 @@ def _valor_previsto_baixa(item: dict, prices: dict) -> float | None:
 def _issue_selection(model: dict, start: date | None, end: date | None,
                      *, statuses: set[str] | None, alerts_only: bool,
                      material_types: set[str] | None,
-                     include_prior_billing: bool) -> tuple[set[str], set[tuple[str, str]] | None]:
+                     include_activity: bool) -> tuple[set[str], set[tuple[str, str]] | None]:
     diagnostic = selection_diagnostics(
-        model, start, end, include_prior_billing=include_prior_billing
+        model, start, end, include_activity=include_activity
     )
     selected_ops = set(diagnostic["selected"])
     ops = model.get("ops")
@@ -437,11 +463,11 @@ def issue_detail_rows(model: dict, selected_ops: set[str],
 def issue_rows(model: dict, start: date | None = None, end: date | None = None,
                *, statuses: set[str] | None = None, alerts_only: bool = False,
                material_types: set[str] | None = None,
-               include_prior_billing: bool = False) -> list[list]:
+               include_activity: bool = False) -> list[list]:
     selected_ops, selected_codes = _issue_selection(
         model, start, end, statuses=statuses, alerts_only=alerts_only,
         material_types=material_types,
-        include_prior_billing=include_prior_billing,
+        include_activity=include_activity,
     )
     return [
         values for values, _ in issue_detail_rows(
@@ -453,12 +479,12 @@ def issue_rows(model: dict, start: date | None = None, end: date | None = None,
 def export_issues(model: dict, start: date | None = None, end: date | None = None,
                   *, statuses: set[str] | None = None, alerts_only: bool = False,
                   material_types: set[str] | None = None,
-                  include_prior_billing: bool = False) -> bytes:
+                  include_activity: bool = False) -> bytes:
     """Espelha as 12 colunas da OP e 12 da tabela de materiais; uma só aba."""
     selected_ops, selected_codes = _issue_selection(
         model, start, end, statuses=statuses, alerts_only=alerts_only,
         material_types=material_types,
-        include_prior_billing=include_prior_billing,
+        include_activity=include_activity,
     )
     records = issue_detail_rows(model, selected_ops, selected_codes=selected_codes)
     wb = _Excel()
