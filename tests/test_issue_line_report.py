@@ -101,19 +101,31 @@ class GeneralBaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Relatório OPS"):
             build_rows(m, {"26017801001"})
 
-    def test_export_only_ten_original_and_comparison_columns(self):
+    def test_export_uses_screen_fields_while_general_reconciliation_stays_intact(self):
         m = model([row()], [movement(16, "2026-10-20")])
+        m["ops"]["itens"] = 1
+        m["ops"]["separados"] = 1
+        m["ops"]["conferidos"] = 1
+        m["ops"]["baixados"] = 1
+        m["items"]["necessaria"] = 16
+        m["items"]["separada"] = 16
+        m["items"]["conferida"] = 16
+        m["items"]["baixada"] = 16
+        m["items"]["pendente"] = 0
+        m["items"]["lotes"] = "000000000"
+        m["items"]["status"] = "PRODUTO CONSUMIDO"
+        m["items"]["divergente"] = False
         blob = reports.export_issues(m)
         wb = load_workbook(BytesIO(blob), read_only=True, data_only=True)
         try:
             self.assertEqual(wb.sheetnames, ["Conferência de Baixas"])
             cells = list(wb.active.values)
-            self.assertEqual(cells[0], tuple(COLUMNS))
+            self.assertEqual(cells[0], tuple(reports.OP_COLUMNS))
             self.assertEqual(len(cells), 2)
             self.assertEqual(cells[1][0], "26017801001")
-            self.assertEqual(cells[1][1], "06050080")
-            self.assertEqual(cells[1][7], 16)
-            self.assertEqual(wb.active["H2"].number_format, "General")
+            self.assertEqual(cells[1][12], "06050080")
+            self.assertEqual(cells[1][18], 16)
+            self.assertEqual(wb.active["S2"].number_format, "General")
         finally:
             wb.close()
 
