@@ -252,13 +252,14 @@ class OpsSourceTests(unittest.TestCase):
         self.assertTrue(final["items"].iloc[0].divergente)
         import reports
         rows = reports.issue_rows(final)
-        # A exportação espelha a tela: um produto com seus dois lotes
-        # consolidados, sem perder o alerta de distribuição entre lotes.
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0][12], CODE)
-        self.assertEqual((rows[0][17], rows[0][18], rows[0][19]),
-                         (Decimal("5"), Decimal("5"), Decimal("0")))
-        self.assertIn("LOTE DIFERENTE", rows[0][-1])
+        # OP + produto + LOTE é a chave visual/exportada: duas linhas,
+        # preservando baixas 3/2, conferidas 2/3 e pendência total zero.
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({r[14] for r in rows}, {LOT_A, LOT_B})
+        self.assertEqual(sum(r[17] for r in rows), Decimal("5"))
+        self.assertEqual(sum(r[18] for r in rows), Decimal("5"))
+        self.assertEqual(sum(r[19] for r in rows), Decimal("0"))
+        self.assertTrue(all("BAIXA A" in r[-1] for r in rows))
 
     def test_same_total_wrong_lot_is_divergence_not_unpaid_quantity(self):
         model = issue_check.reconcile_ops(
