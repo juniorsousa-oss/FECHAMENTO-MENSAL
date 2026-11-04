@@ -436,11 +436,15 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
     for name, values in changes.items():
         updated[name] = values
     base["items"] = updated
-    # Cabeçalho da Conferência OPS usa as mesmas linhas do Geral,
-    # sem alterar a contagem dos outros módulos que usam reconcile().
+    # Cabeçalho da Conferência OPS usa as mesmas linhas do Geral.
+    # Índice evita uma varredura de todo o Relatório Geral PARA CADA OP
+    # (custo quadrático, perceptível após a atualização do OPS histórico).
+    general_by_op = defaultdict(list)
+    for general_row in general:
+        general_by_op[general_row["op"]].append(general_row)
     for row_index, header in base["ops"].iterrows():
         op = header["op"]
-        source_rows = [r for r in general if r["op"] == op]
+        source_rows = general_by_op.get(op, ())
         confirmed_codes = {
             r["codigo"] for r in source_rows
             if text(r.get("responsavel_conferencia"))
