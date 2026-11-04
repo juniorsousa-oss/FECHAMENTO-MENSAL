@@ -145,9 +145,12 @@ class LotReportTests(unittest.TestCase):
         )
         self.assertEqual(result["items"].iloc[0]["pendente"], 0)
         self.assertTrue(all(lot_items["divergente"]))
-        self.assertIn("BAIXA A MENOR", lots.loc[LOT_A, "resultado_lote"])
-        self.assertIn("COMPENSADA EM OUTRO LOTE", lots.loc[LOT_A, "resultado_lote"])
-        self.assertIn("BAIXA A MAIOR", lots.loc[LOT_B, "resultado_lote"])
+        self.assertEqual(lots.loc[LOT_A, "resultado_lote"], "BAIXA A MENOR NESTE LOTE")
+        self.assertEqual(lots.loc[LOT_B, "resultado_lote"], "BAIXA A MAIOR NESTE LOTE")
+        self.assertIn("COMPENSADA EM OUTRO LOTE",
+                      lots.loc[LOT_A, "detalhe_resultado_lote"])
+        self.assertIn("BAIXA A MAIOR NESTE LOTE (1)",
+                      lots.loc[LOT_B, "detalhe_resultado_lote"])
         head = result["lot_ops"].iloc[0]
         self.assertEqual((head["itens"], head["separados"], head["conferidos"],
                           head["divergencias"]), (2, 2, 2, 2))
@@ -183,7 +186,10 @@ class LotReportTests(unittest.TestCase):
         rows = result["lot_items"].set_index("lote")
         self.assertEqual(rows.loc[LOT_A, "pendente"], 1)
         self.assertEqual(rows.loc[LOT_B, "pendente"], 0)
-        self.assertIn("FALTAM 1 NESTE LOTE", rows.loc[LOT_A, "resultado_lote"])
+        self.assertEqual(rows.loc[LOT_A, "resultado_lote"],
+                         stages.NAO_CONSUMIDO_SEM)
+        self.assertIn("FALTAM 1 NESTE LOTE",
+                      rows.loc[LOT_A, "detalhe_resultado_lote"])
         self.assertEqual(rows.loc[LOT_B, "status"], stages.PRODUTO_CONSUMIDO)
         self.assertFalse(rows.loc[LOT_B, "divergente"])
         excel = reports.issue_rows(result)
@@ -203,7 +209,10 @@ class LotReportTests(unittest.TestCase):
         self.assertEqual(lots.loc[LOT_A, "pendente"], 1)
         self.assertEqual(lots.loc[LOT_B, "excesso_lote"], 1)
         self.assertEqual(lots.loc[LOT_B, "pendente"], 0)
-        self.assertIn("PENDÊNCIA REAL 1", lots.loc[LOT_A, "resultado_lote"])
+        self.assertEqual(lots.loc[LOT_A, "resultado_lote"],
+                         "BAIXA A MENOR NESTE LOTE")
+        self.assertIn("PENDÊNCIA REAL 1",
+                      lots.loc[LOT_A, "detalhe_resultado_lote"])
         self.assertEqual(result["items"].iloc[0]["pendente"], 1)
         self.assertEqual(
             sum(r[19] or 0 for r in reports.issue_rows(result)), 1
@@ -235,8 +244,10 @@ class LotReportTests(unittest.TestCase):
         self.assertIsNone(view.loc[LOT_B, "pendente"])
         self.assertTrue(view.loc[LOT_A, "pendencia_indeterminada"])
         self.assertTrue(view.loc[LOT_B, "pendencia_indeterminada"])
+        self.assertEqual(view.loc[LOT_A, "resultado_lote"],
+                         "DIVERGÊNCIA DE LOTES — PENDÊNCIA A APURAR")
         self.assertIn("NÃO PODE SER COMPROVADA",
-                      view.loc[LOT_A, "resultado_lote"])
+                      view.loc[LOT_A, "detalhe_resultado_lote"])
         self.assertEqual(view.loc[LOT_C, "pendente"], 0)
         self.assertIsNone(
             next(r for r in reports.issue_rows(result) if r[14] == LOT_A)[20]
@@ -251,8 +262,48 @@ class LotReportTests(unittest.TestCase):
         self.assertEqual(row["pendente"], 0)
         self.assertEqual(row["baixada"], 0)
         self.assertTrue(row["divergente"])
-        self.assertIn(LOT_C, row["resultado_lote"])
-        self.assertIn("COMPENSADA", row["resultado_lote"])
+        self.assertEqual(row["resultado_lote"], "BAIXA A MENOR NESTE LOTE")
+        self.assertIn(LOT_C, row["detalhe_resultado_lote"])
+        self.assertIn("COMPENSADA", row["detalhe_resultado_lote"])
+
+    def test_fixed_result_labels_group_different_error_quantities_in_excel(self):
+        """A categoria é estável, mesmo com quantidades de excesso distintas."""
+        cases = [
+            (Decimal("1"), "BAIXA A MAIOR NESTE LOTE"),
+            (Decimal("2"), "BAIXA A MAIOR NESTE LOTE"),
+            (Decimal("11"), "BAIXA A MAIOR NESTE LOTE"),
+            (Decimal("54"), "BAIXA A MAIOR NESTE LOTE"),
+        ]
+        for excess, expected in cases:
+            with self.subTest(excesso=excess):
+                label = lot_conference._result_category(
+                    stages.BAIXA_LOTE_DIVERGENTE,
+                    f"BAIXA A MAIOR NESTE LOTE ({excess}); DIVERGÊNCIA DE LOTE",
+                    gross_missing=Decimal("0"), gross_excess=excess,
+                    wrong_lots="DIVERGÊNCIA DE LOTE", ambiguity=False,
+                )
+                self.assertEqual(label, expected)
+                self.assertNotIn("(", label)
+
+        result = model(
+            [mes(LOT_A, 3), mes(LOT_B, 2)],
+            [move(LOT_A, 2), move(LOT_B, 3)],
+        )
+        table_labels = set(result["lot_items"]["resultado_lote"])
+        excel_labels = {r[-1] for r in reports.issue_rows(result)}
+        self.assertEqual(table_labels, excel_labels)
+        self.assertEqual(table_labels, {
+            "BAIXA A MENOR NESTE LOTE", "BAIXA A MAIOR NESTE LOTE"
+        })
+        wb = load_workbook(BytesIO(reports.export_issues(result)), data_only=True)
+        try:
+            worksheet = wb.active
+            self.assertEqual(
+                {worksheet["Y2"].value, worksheet["Y3"].value},
+                table_labels,
+            )
+        finally:
+            wb.close()
 
     def test_header_and_report_filter_count_each_lot_as_separate_product(self):
         result = model(
