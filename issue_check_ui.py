@@ -16,6 +16,7 @@ import issue_check as check
 import movement_store
 import movements as mv
 import ops_lot_source
+import lot_conference
 import master_plan
 import operational_status as op_rules
 import catalog_types
@@ -907,6 +908,9 @@ def _details(model, item):
             st.error(message)
     st.markdown("**" + str(item["descricao"]) + "**")
     st.write(f"Conferida: **{quantity(item['conferida'])}** · Baixada líquida: **{quantity(item['baixada'])}** · Pendente: **{quantity(item['pendente'])}**")
+    detailed = item.get("detalhe_resultado_lote")
+    if detailed and detailed != item.get("resultado_lote"):
+        st.caption("DETALHAMENTO DO LOTE: " + str(detailed))
     if item.get("lote_nao_informado_geral"):
         st.warning("O Relatório Geral não informa lote para parte do material; não é possível comprovar essa baixa por lote.")
     if item.get("divergencia_lotes"):
@@ -1351,7 +1355,7 @@ def render_results(model):
         unsafe_allow_html=True,
     )
     token = hashlib.sha256(
-        (op_rules.VERSION + query + choice + selected_status + str(invoice_period)
+        (op_rules.VERSION + lot_conference.VERSION + query + choice + selected_status + str(invoice_period)
          + str(model["warehouses"]) + str(model["source_meta"]) + str(period)).encode()
     ).hexdigest()[:14]
     if view.empty:
@@ -1364,7 +1368,7 @@ def render_results(model):
     report_key = hashlib.sha256((
         EXPORT_SCHEMA_VERSION + str(model.get("as_of")) + str(model.get("warehouses"))
         + str(model.get("history_meta")) + str(model.get("source_meta"))
-        + op_rules.VERSION + str(model.get("master_plan_meta"))
+        + op_rules.VERSION + lot_conference.VERSION + str(model.get("master_plan_meta"))
     ).encode()).hexdigest()
     left, right = st.columns([1, 2])
     with left:
@@ -1382,7 +1386,7 @@ def render_results(model):
             st.session_state["fm_issue_report_ready"] = (report_key, data)
     with right:
         st.caption(
-            "Exportação R12 em uma única aba: 12 campos da OP e 13 do material, "
+            "Exportação R13 em uma única aba: 12 campos da OP e 13 do material, "
             "reproduzindo o R3 validado. Inclui Valor previsto da baixa "
             "(CADASTROS × quantidade pendente), saldos e resultado. "
             "Cada lote do mesmo produto aparece em sua própria linha. "
@@ -1393,7 +1397,7 @@ def render_results(model):
         st.download_button(
             "BAIXAR EXCEL · CONFERÊNCIA DE BAIXAS",
             data=prepared[1],
-            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R12.xlsx",
+            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R13.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="fm_issue_download_complete", use_container_width=True,
         )
@@ -1629,7 +1633,8 @@ def render_issue_check():
         catalog_version = str(catalog_meta.get("source_version", catalog_meta.get("version", ""))) + str(catalog_meta.get("content_sha256") or catalog_meta.get("erro") or "")
         model = _operational_snapshot(
             tokens, history_tokens, tuple(sorted(chosen)),
-            master_version, catalog_version, op_rules.VERSION,
+            master_version, catalog_version,
+            op_rules.VERSION + "|" + lot_conference.VERSION,
             model, master_records, types,
         )
         render_results({**model, "master_plan_meta": master_meta, "catalog_meta": catalog_meta})
