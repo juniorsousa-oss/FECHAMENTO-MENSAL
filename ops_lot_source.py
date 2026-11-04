@@ -23,7 +23,7 @@ import movements as mv
 
 KEY = "fm_conferencia_ops_lotes_v1"
 FORMAT = "setta_ops_lotes_v1"
-VERSION = "2026-11-03.2"
+VERSION = "2026-11-04.1-HEADER-MAPPING"
 # Na base OPS, RE1/TES 999 também representa baixa associada à OP.
 # A exclusão anterior omitia 9.785 lançamentos do arquivo de referência,
 # inclusive 16 UN do 06050080 na OP 26017801001 (20/10/2026).
@@ -33,6 +33,85 @@ ISSUES = {("RE0", "520"), ("RE0", "550"), ("RE6", "550"), ("RE1", "999")}
 RETURNS = {("DE0", "020")}
 REQUIRED = {"B": "ORDPRODUCAO", "D": "PRODUTO", "F": "QUANTIDADE",
             "K": "DTEMISSAO", "N": "LOTE"}
+
+# Nunca classificar um movimento como baixa sem identificar C (RE/DE) e
+# O (TES). O Protheus pode alterar o texto ou a ordem das colunas: a
+# conciliação precisa reconhecer o cabeçalho REAL, não supor posições.
+HEADER_ALIASES = {
+    "op": {"ORDPRODUCAO", "ORDEMPRODUCAO", "ORDDEPRODUCAO",
+           "ORDPROD", "ORDEMPROD", "OP", "NUMOP", "NUMERODAOP"},
+    "codigo": {"PRODUTO", "CODPRODUTO", "CODIGOPRODUTO",
+               "CODMATERIAL", "CODIGOMATERIAL", "CODIGOITEM"},
+    "quantidade": {"QUANTIDADE", "QTD", "QTDMOVIMENTADA",
+                   "QUANTMOVIMENTADA", "QUANTIDADEMOVIMENTADA"},
+    "data": {"DTEMISSAO", "DATAEMISSAO", "DTMOVIMENTO",
+             "DATAMOVIMENTO", "DTBAIXA", "DATABAIXA"},
+    "lote": {"LOTE", "NUMLOTE", "NUMEROLOTE", "LOTEPRODUTO",
+             "CODLOTE", "CODIGOLOTE"},
+    "movimento": {"TIPOREDE", "TIPOMOVIMENTO", "TIPOMOV",
+                   "TIPOREQUISICAODEVOLUCAO"},
+    "tes": {"TPMOVIMENTO", "TPMOVIM", "TES", "CODTES", "CODIGOTES",
+            "TPMOV", "TIPOTES"},
+}
+HEADER_OPTIONAL = {"documento": {"DOCUMENTO", "DOC", "NUMDOCUMENTO"}}
+PREFERRED_COLUMNS = {
+    "op": "B", "codigo": "D", "quantidade": "F", "data": "K",
+    "lote": "N", "movimento": "C", "tes": "O", "documento": "J",
+}
+
+
+def _header_token(value) -> str:
+    return re.sub(r"[^A-Z0-9]", "", mv.normalized(value))
+
+
+def _detect_header(cells: dict) -> dict[str, str] | None:
+    """Exige sete papéis distintos; detecta aliases e colunas deslocadas.
+
+    Em cabeçalhos ambíguos, só resolve quando a posição do layout original
+    identifica inequivocamente uma das alternativas.
+    """
+    names = {col: _header_token(value) for col, value in cells.items()}
+    resolved = {}
+    for role, aliases in {**HEADER_ALIASES, **HEADER_OPTIONAL}.items():
+        candidates = [col for col, name in names.items() if name in aliases]
+        if not candidates:
+            if role in HEADER_ALIASES:
+                return None
+            continue
+        if len(candidates) == 1:
+            resolved[role] = candidates[0]
+        elif PREFERRED_COLUMNS[role] in candidates:
+            resolved[role] = PREFERRED_COLUMNS[role]
+        else:
+            return None
+    if len(set(resolved.values())) != len(resolved):
+        return None
+    return resolved
+
+
+def _header_diagnostic(rows: list[tuple]) -> str:
+    if not rows:
+        return "Nenhuma linha legível foi encontrada no arquivo."
+    closest = max(
+        rows,
+        key=lambda entry: sum(
+            _header_token(c) in aliases
+            for aliases in HEADER_ALIASES.values()
+            for c in entry[2].values()
+        ),
+    )
+    sheet, number, cells = closest
+    sample = " | ".join(
+        f"{col}: {str(value).strip()[:36]}"
+        for col, value in list(cells.items())[:17]
+    )
+    return (
+        f"Cabeçalho OPS não localizado. Linha mais próxima: aba {sheet!r}, "
+        f"linha {number}. Colunas encontradas: {sample}. "
+        "Necessário identificar OP, Produto, Quantidade, Data, Lote, "
+        "Tipo RE/DE e TES/TP Movimento. O histórico anterior não foi alterado."
+    )
+
 
 
 def lot(value) -> str:
@@ -53,22 +132,28 @@ def parse(raw: bytes, file_name: str) -> dict:
     if not file_name.lower().endswith((".xlsx", ".xltx")):
         raise ValueError("Envie o relatório OPS em formato XLSX ou XLTX.")
     digest = hashlib.sha256(raw).hexdigest()
-    seen_headers = set()
+    maps = {}
     grouped = defaultdict(Decimal)
     representative = {}
     stats = Counter()
     dates = set()
     errors = []
+    sample_headers = []
     for sheet, line, cells, epoch in mv._xml_rows(raw):
-        headers = {col: re.sub(r"[^A-Z0-9]", "", mv.normalized(cells.get(col, "")))
-                   for col in REQUIRED}
-        if all(headers[k] == v for k, v in REQUIRED.items()):
-            seen_headers.add(sheet)
+        found = _detect_header(cells)
+        if found is not None:
+            # Repetição do cabeçalho dentro da planilha é comum.
+            maps[sheet] = found
             continue
-        if sheet not in seen_headers:
+        if sheet not in maps:
+            # Limitar somente a amostragem para diagnóstico, nunca a
+            # procura do cabeçalho, que percorre a planilha inteira.
+            if len(sample_headers) < 30:
+                sample_headers.append((sheet, line, cells))
             continue
-        movement_type = str(cells.get("C") or "").strip().upper()
-        tes = mv.identifier(cells.get("O"), 3)
+        cols = maps[sheet]
+        movement_type = str(cells.get(cols["movimento"]) or "").strip().upper()
+        tes = mv.identifier(cells.get(cols["tes"]), 3)
         kind = (movement_type, tes)
         if kind not in ISSUES and kind not in RETURNS:
             stats["outros_movimentos_ignorados"] += 1
@@ -76,12 +161,12 @@ def parse(raw: bytes, file_name: str) -> dict:
                 stats["re5_999_pendentes_analise"] += 1
             continue
         try:
-            op = _op(cells.get("B"))
-            code = mv.identifier(cells.get("D"), 8)
+            op = _op(cells.get(cols["op"]))
+            code = mv.identifier(cells.get(cols["codigo"]), 8)
             if not op or not re.fullmatch(r"\d{8}", code):
                 raise ValueError("OP ou código de produto inválido")
-            d = mv._date(cells.get("K"), epoch)
-            quantity = mv.decimal(cells.get("F"))
+            d = mv._date(cells.get(cols["data"]), epoch)
+            quantity = mv.decimal(cells.get(cols["quantidade"]))
             if kind in ISSUES and quantity < 0:
                 raise ValueError("requisição com quantidade negativa")
             if kind in RETURNS and quantity > 0:
@@ -89,11 +174,13 @@ def parse(raw: bytes, file_name: str) -> dict:
             if not quantity:
                 stats["quantidade_zero"] += 1
                 continue
-            lote = lot(cells.get("N"))
-            # O valor do tipo de movimento é mantido para auditoria.
+            lote = lot(cells.get(cols["lote"]))
             key = (op, code, lote, d, movement_type, tes)
             grouped[key] += quantity
-            representative.setdefault(key, (str(cells.get("J") or ""), line))
+            doc_col = cols.get("documento")
+            representative.setdefault(
+                key, (str(cells.get(doc_col) or "") if doc_col else "", line)
+            )
             dates.add(d)
             stats["movimentos_validos"] += 1
             if kind == ("RE1", "999"):
@@ -105,11 +192,8 @@ def parse(raw: bytes, file_name: str) -> dict:
             if len(errors) >= 20:
                 break
 
-    if not seen_headers:
-        raise ValueError(
-            "Cabeçalho OPS não localizado. Esperado: B Ord Producao, "
-            "D Produto, F Quantidade, K DT Emissao e N Lote."
-        )
+    if not maps:
+        raise ValueError(_header_diagnostic(sample_headers))
     if errors:
         raise ValueError(
             "O arquivo possui movimentações inconsistentes. Importação bloqueada: "
@@ -142,6 +226,7 @@ def parse(raw: bytes, file_name: str) -> dict:
         "periodo_inicio": min(dates), "periodo_fim": max(dates),
         "politica": "SUBSTITUIR_FOTOGRAFIA_COMPLETA",
         "versao": VERSION,
+        "mapeamento_colunas": maps,
     }
     return {"meta": meta, "rows": rows}
 
@@ -224,6 +309,16 @@ def save(parsed: dict, *, current: dict | None = None) -> dict:
         raise ValueError(
             "A nova planilha OPS termina antes da fonte vigente. "
             "Confira se a exportação é acumulada e atualizada."
+        )
+    old_valid = int(old.get("movimentos_validos") or 0)
+    new_valid = int(parsed["meta"].get("movimentos_validos") or 0)
+    if old_valid >= 100 and new_valid < old_valid * 0.8:
+        raise ValueError(
+            "Importação OPS bloqueada: a nova fonte possui "
+            f"{new_valid} movimentos válidos contra {old_valid} da fonte "
+            "atual (redução superior a 20%). Confirme que o arquivo foi "
+            "exportado com histórico acumulado completo antes de substituir. "
+            "A base vigente permanece preservada."
         )
     db.rpc("fm_salvar_configuracao",
            {"p_chave": KEY, "p_valor": _pack(parsed)}, timeout=120)
