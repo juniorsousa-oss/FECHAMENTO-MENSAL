@@ -125,6 +125,58 @@ class LotReportTests(unittest.TestCase):
         # (>25 milhões de verificações desnecessárias).
         self.assertLess(elapsed, 18.0)
 
+    def test_zero_quantity_lot_not_inherit_mismatch_from_same_product(self):
+        # Caso real relatado: OP/produto contém um lote '9' sem demanda,
+        # nem separação/conferência/baixa, e outro lote 060919 todo baixado.
+        # Um lote vazio não é um erro de saldo ou consumo.
+        result = model(
+            [mes("9", 0, confirmed=False), mes("060919", 9)],
+            [move("060919", 9)],
+        )
+        view = result["lot_items"].set_index("lote")
+        self.assertEqual(len(view), 2)
+        empty = view.loc["9"]
+        self.assertEqual(
+            (empty["necessaria"], empty["separada"], empty["conferida"],
+             empty["baixada"], empty["pendente"]),
+            (0, 0, 0, 0, 0),
+        )
+        self.assertEqual(
+            empty["resultado_lote"], "SEM DEMANDA OU MOVIMENTAÇÃO NO LOTE"
+        )
+        self.assertFalse(empty["divergente"])
+        self.assertFalse(empty["divergencia_lote_informativa"])
+        complete = view.loc["060919"]
+        self.assertEqual(complete["resultado_lote"], stages.PRODUTO_CONSUMIDO)
+        self.assertEqual(complete["baixada"], Decimal("9"))
+        self.assertEqual(result["lot_ops"].iloc[0]["divergencias"], 0)
+        excel = reports.issue_rows(result)
+        self.assertEqual(len(excel), 2)
+        self.assertEqual({row[24] for row in excel}, {
+            "SEM DEMANDA OU MOVIMENTAÇÃO NO LOTE", stages.PRODUTO_CONSUMIDO
+        })
+        wb = load_workbook(BytesIO(reports.export_issues(result)))
+        try:
+            self.assertIsNone(wb.active["Y2"].fill.patternType)
+            self.assertIsNone(wb.active["Y3"].fill.patternType)
+        finally:
+            wb.close()
+
+    def test_empty_lot_is_neutral_even_when_another_lot_has_mismatch(self):
+        result = model(
+            [mes("9", 0, confirmed=False), mes("060919", 9)],
+            [move("060919", 8), move("099999", 1)],
+        )
+        empty = result["lot_items"].set_index("lote").loc["9"]
+        self.assertEqual(empty["resultado_lote"],
+                         "SEM DEMANDA OU MOVIMENTAÇÃO NO LOTE")
+        self.assertFalse(empty["divergente"])
+        self.assertEqual(empty["pendente"], 0)
+        # A divergência real permanece rastreável na linha COM demanda.
+        active = result["lot_items"].set_index("lote").loc["060919"]
+        self.assertEqual(active["resultado_lote"],
+                         "BAIXA A MENOR NESTE LOTE")
+
     def test_swapped_lots_3_2_vs_2_3_have_zero_real_pending_but_both_alert(self):
         result = model(
             [mes(LOT_A, 3), mes(LOT_B, 2)],
