@@ -11,7 +11,7 @@ import re
 
 import pandas as pd
 
-VERSION = "2026-11-03.5"
+VERSION = "2026-11-04.2"
 EPS = Decimal("0.000001")
 ZERO = Decimal(0)
 
@@ -338,5 +338,12 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
             for item in counted.get_group(op).to_dict("records")
         )))
     result["items"], result["ops"] = products, ops
+    if model.get("baixas_fonte") == "OPS":
+        # A análise de produto continua disponível para os outros módulos.
+        # A grade operacional e o Excel usam linhas distintas por LOTE.
+        import lot_conference
+        lot_items, lot_ops = lot_conference.build(result)
+        result["lot_items"], result["lot_ops"] = lot_items, lot_ops
+        result["lot_view_version"] = lot_conference.VERSION
     result["status_version"] = VERSION
     return result
