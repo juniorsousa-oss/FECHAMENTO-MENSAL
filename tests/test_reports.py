@@ -150,9 +150,14 @@ class ReportsTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("fm_reports_include_activity", content)
-        self.assertIn("INCLUIR TAMBÉM OPs COM MOVIMENTAÇÃO NO PERÍODO", content)
+        self.assertIn("Incluir OPs com atividade no período", content)
         self.assertIn("value=False, key=\"fm_reports_include_activity\"", content)
         self.assertNotIn("fm_reports_prior_billing", content)
+        self.assertIn("with st.expander(\"FILTROS ADICIONAIS", content)
+        self.assertIn("fm_reports_issue_status", content)
+        self.assertIn("fm_reports_alerts", content)
+        self.assertIn("fm_reports_wh", content)
+        self.assertIn("with btn_download:", content)
 
     def test_excel_mirrors_expanded_op_and_colors_only_real_alerts(self):
         """Repetir cabeçalho e as 12 colunas expandidas; sem amarelo para OK."""
