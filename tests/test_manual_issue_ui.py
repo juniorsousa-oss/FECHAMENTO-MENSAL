@@ -82,9 +82,11 @@ class UIManualCandidatesTests(unittest.TestCase):
             self.assertEqual(table.iloc[0]["OP candidata"], "26009201001")
             self.assertEqual(table.iloc[0]["Situação"],
                              "CANDIDATO ÚNICO — VALIDAR")
-            self.assertTrue(any(
-                "BAIXAR EXCEL" in item.label for item in app.button
-            ))
+            # O AppTest não expõe st.download_button como app.button;
+            # o arquivo pronto permanece disponível na sessão.
+            ready = app.session_state["fm_manual_candidate_ready"]
+            self.assertGreater(len(ready[2]), 100)
+            self.assertEqual(ready[1]["summary"]["movimentos_elegiveis"], 1)
 
 
 if __name__ == "__main__":
