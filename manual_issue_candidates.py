@@ -342,6 +342,14 @@ def build(model: dict, kardex_frame: pd.DataFrame, *,
                 "movimento_id": movement_id,
             })
     summary["linhas_para_revisao"] = len(evidence)
+    # Campos de métricas sempre presentes, inclusive quando nenhum
+    # movimento no período passou pela triagem.
+    for key in (
+        "movimentos_elegiveis", "movimentos_ambiguos",
+        "movimentos_com_op_unica", "movimentos_sem_correspondencia",
+        "duplicados_ignorados", "sem_insuficiencia_atual_g9",
+    ):
+        summary[key] += 0
     summary["regras"] = VERSION
     summary["data_corte_mes"] = cutoff.isoformat()
     summary["filtro_g9"] = require_insufficient_g9
