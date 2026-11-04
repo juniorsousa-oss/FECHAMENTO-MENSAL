@@ -139,13 +139,15 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
             "em uma única aba. O cabeçalho se repete por material. "
             "A conciliação continua baseada no Geral e no OPS por OP/produto/lote. "
             "Apenas produtos com alerta recebem destaque. "
-            "O período seleciona OPs com atividade e exclui, por padrão, "
-            "faturamentos anteriores à data inicial."
+            "Por padrão, o período filtra SOMENTE a data de faturamento: "
+            "OPs NI ou com faturamento em outro mês ficam de fora. "
+            "Marque a opção abaixo somente se também quiser incluir OPs "
+            "com movimentações no período."
         )
-        extra["include_prior_billing"] = st.checkbox(
-            "Incluir excepcionalmente OPs faturadas antes da data inicial, "
-            "quando tiverem atividade no período",
-            value=False, key="fm_reports_prior_billing",
+        extra["include_activity"] = st.checkbox(
+            "INCLUIR TAMBÉM OPs COM MOVIMENTAÇÃO NO PERÍODO "
+            "(separação, conferência ou baixa, inclusive faturamento NI)",
+            value=False, key="fm_reports_include_activity",
         )
         available_statuses = [
             stages.FINALIZADO_PATIO, stages.FINALIZADO_ENTREGUE,
@@ -223,21 +225,30 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                         )
                     audit = reports.selection_diagnostics(
                         model, start, end,
-                        include_prior_billing=extra["include_prior_billing"],
+                        include_activity=extra["include_activity"],
                     )
-                    excluded = len(audit["excluded_prior_billing"])
-                    if excluded:
+                    missing = len(audit["excluded_missing_billing"])
+                    outside = len(audit["excluded_outside_billing"])
+                    if not extra["include_activity"] and (missing or outside):
                         st.info(
-                            f"{excluded} OP(s) com atividade no período foram excluídas "
-                            "por faturamento anterior à data inicial. "
-                            "Isso não significa que não houve movimentação."
+                            f"Filtro somente por faturamento: {missing} OP(s) "
+                            "sem data válida (NI ou inválida) e "
+                            f"{outside} OP(s) faturadas fora do período "
+                            "não serão exportadas."
                         )
-                    if audit["unreadable_billing"]:
-                        st.warning(
-                            f"{len(audit['unreadable_billing'])} OP(s) têm data de "
-                            "faturamento não reconhecida; o Excel sinalizará "
-                            "a necessidade de verificação."
+                    if extra["include_activity"]:
+                        added = len(audit["added_by_activity"])
+                        st.info(
+                            f"Movimentações habilitadas: {added} OP(s) "
+                            "adicionadas além das faturadas no período. "
+                            "Essas OPs podem ter faturamento NI ou fora do mês."
                         )
+                        if audit["unreadable_billing"]:
+                            st.warning(
+                                f"{len(audit['unreadable_billing'])} OP(s) "
+                                "incluídas por atividade têm faturamento "
+                                "não reconhecido. Confira a fonte."
+                            )
                     # O Relatório Geral é a base linha a linha. O OPS só informa baixas.
                     if end and model.get("as_of"):
                         reference = reports._date(model["as_of"])
@@ -252,13 +263,13 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     rows = reports.issue_rows(
                         model, start, end, statuses=statuses,
                         alerts_only=extra["alerts"], material_types=types,
-                        include_prior_billing=extra["include_prior_billing"])
+                        include_activity=extra["include_activity"])
                     if not rows:
                         raise ValueError("Nenhuma OP com atividade ou produto corresponde ao recorte selecionado.")
                     data = reports.export_issues(
                         model, start, end, statuses=statuses,
                         alerts_only=extra["alerts"], material_types=types,
-                        include_prior_billing=extra["include_prior_billing"])
+                        include_activity=extra["include_activity"])
                     records = len(rows)
                     prefix = "CONFERENCIA_BAIXAS"
                 else:
@@ -285,7 +296,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     prefix = "KARDEX"
             st.session_state["fm_reports_ready"] = (
                 report_key, data,
-                f"{prefix}_SETTA_{period_key}_R8.xlsx"
+                f"{prefix}_SETTA_{period_key}_R9.xlsx"
                 if choice == REPORT_NAMES[1]
                 else f"{prefix}_SETTA_{period_key}.xlsx",
                 records
