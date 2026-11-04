@@ -1032,6 +1032,1212 @@ def render_manual_contingency(imports_by_month: dict[str, dict]) -> None:
             st.rerun()
 
 
+def render_cb_feeders(
+    cb_month, cb_closing_stock_items, _closing_label, standby_catalog,
+    cb_catalog, cb_mappings, physical_mapping_lookup, cadastros_context,
+    cb_imports, visible_months,
+):
+    """Carregamentos de chapas, barramentos e saldo histórico apenas em Configurações."""
+    with st.expander(
+        (
+            f"ALIMENTAR SALDO DO FECHAMENTO · {_closing_label}"
+            if not cb_closing_stock_items
+            else f"ATUALIZAR SALDO DO FECHAMENTO · {_closing_label}"
+        ),
+        expanded=not bool(cb_closing_stock_items),
+    ):
+        cb_analytic_file = st.file_uploader(
+            f"Relatório Analítico da posição de {_closing_label}",
+            type=["xlsx", "xltx"],
+            key="cb_analytic_file",
+            help=(
+                "Esta carga é a fotografia do último dia da competência. "
+                "O saldo atual continuará vindo automaticamente da Central de Dados."
+            ),
+        )
+
+        if cb_analytic_file is not None:
+            try:
+                parsed_cb_analytic = parse_inventory_balance_report(
+                    cb_analytic_file.getvalue(),
+                    cb_analytic_file.name,
+                )
+
+                sa, sb, sc = st.columns(3)
+                sa.metric(
+                    "Linhas lidas",
+                    parsed_cb_analytic["total_rows"],
+                )
+                sb.metric(
+                    "Saldos negativos → 0",
+                    parsed_cb_analytic["adjusted_negative"],
+                )
+                sc.metric(
+                    "Saldos inválidos → 0",
+                    parsed_cb_analytic["invalid_balance"],
+                )
+
+                st.caption(
+                    "O VALOR EM ESTOQUE desta carga será usado para valorizar "
+                    "as divergências do fechamento. O saldo atual não substitui esta fotografia."
+                )
+
+                if st.button(
+                    "SALVAR SALDO DO FECHAMENTO",
+                    type="primary",
+                    use_container_width=True,
+                    key="cb_save_analytic",
+                ):
+                    db.save_cb_system_balances(
+                        cb_month,
+                        cb_analytic_file.name,
+                        parsed_cb_analytic["rows"],
+                    )
+                    st.session_state["_cb_base_flash"] = (
+                        f"Saldo do fechamento de {_closing_label} salvo."
+                    )
+                    load_cb_page_snapshot.clear()
+                    st.rerun()
+            except Exception as exc:
+                st.error(
+                    f"Não foi possível ler o Relatório Analítico do fechamento: {exc}"
+                )
+
+    cb_stage_header(
+        "02",
+        "ALIMENTAÇÃO FÍSICA",
+        "Importe as fontes de chapas, barramentos e almoxarifado e confira suas correspondências.",
+    )
+    # st.expander e st.tabs executam TODAS as seções mesmo fechadas.
+    # A chave abaixo só constrói controles e análises quando solicitados.
+    if st.toggle(
+        "GERENCIAR FONTES E CONTAGENS",
+        key="fm_cb_open_sources",
+        value=False,
+    ):
+        cb_source_active = st.segmented_control(
+            "Fonte de contagem",
+            ["CHAPAS · E-MAIL", "BARRAMENTOS · EXCEL", "ALMOXARIFADO · BARRAS"],
+            default="CHAPAS · E-MAIL",
+            key="fm_cb_source_active",
+        )
+
+        if cb_source_active == "CHAPAS · E-MAIL":
+            email_file = st.file_uploader(
+                "E-mail do setor de chapas",
+                type=["eml"],
+                key="cb_chapas_eml",
+                help=(
+                    "Use preferencialmente o arquivo .EML. O leitor pega "
+                    "automaticamente a tabela mais recente da conversa."
+                ),
+            )
+
+            if email_file is not None:
+                try:
+                    parsed_email = cached_parse_cb_source(
+                        email_file.getvalue(), email_file.name, "chapas"
+                    )
+
+                    detected_comp = parsed_email.get("competencia")
+                    _data_contagem = parsed_email.get("data_contagem")
+                    _data_txt = (
+                        _data_contagem.strftime("%d/%m/%Y")
+                        if _data_contagem else "—"
+                    )
+                    if detected_comp:
+                        _fechamento_txt = closing_date(
+                            detected_comp
+                        ).strftime("%d/%m/%Y")
+                        st.caption(
+                            "Data da contagem: " + _data_txt
+                            + " · Fechamento sugerido: " + _fechamento_txt
+                            + " · Competência sugerida: "
+                            + month_label(detected_comp)
+                            + f" · {parsed_email['tables_found']} tabela(s) de histórico encontrada(s)"
+                        )
+                    else:
+                        st.caption(
+                            "Data da contagem: " + _data_txt
+                            + " · Competência sem determinação automática"
+                            + f" · {parsed_email['tables_found']} tabela(s) de histórico encontrada(s)"
+                        )
+
+                    resolved_email = resolve_chapa_rows(
+                        parsed_email["rows"],
+                        cb_mappings,
+                        cb_catalog,
+                    )
+
+                    _email_total_chapas = sum(
+                        max(float(row.get("chapas") or 0), 0.0)
+                        for row in parsed_email["rows"]
+                    )
+                    _email_total_peso = sum(
+                        max(float(row.get("peso_total") or 0), 0.0)
+                        for row in parsed_email["rows"]
+                    )
+
+                    em1, em2, em3, em4, em5 = st.columns(5)
+                    em1.metric(
+                        "Linhas do e-mail",
+                        len(parsed_email["rows"]),
+                    )
+                    em2.metric(
+                        "Códigos consolidados",
+                        len(resolved_email["resolved"]),
+                    )
+                    em3.metric(
+                        "Quantidade física",
+                        f"{_email_total_chapas:,.0f} chapas"
+                        .replace(",", "."),
+                    )
+                    em4.metric(
+                        "Peso físico",
+                        f"{_email_total_peso:,.3f} kg"
+                        .replace(",", "X")
+                        .replace(".", ",")
+                        .replace("X", "."),
+                    )
+                    em5.metric(
+                        "Sem vínculo",
+                        len(resolved_email["unresolved"]),
+                    )
+
+                    if resolved_email["unresolved"]:
+                        st.warning(
+                            "Existem descrições de chapas ainda não vinculadas "
+                            "a um código Protheus. Resolva os vínculos abaixo; "
+                            "depois disso eles ficarão salvos para os próximos meses."
+                        )
+
+                        chapa_options = [
+                            row
+                            for row in standby_catalog
+                            if row.get("categoria") == "CHAPA"
+                        ]
+                        option_labels = [
+                            f"{row.get('codigo')} · {row.get('descricao')}"
+                            for row in chapa_options
+                        ]
+
+                        mapping_rows = []
+                        for index, row in enumerate(
+                            resolved_email["unresolved"]
+                        ):
+                            mapping_rows.append(
+                                {
+                                    "ID": index,
+                                    "Dimensão": row.get("dimensao"),
+                                    "Descrição": row.get("descricao"),
+                                    "Chapas": row.get("chapas"),
+                                    "Peso total": row.get("peso_total"),
+                                    "Código Protheus": (
+                                        option_labels[0]
+                                        if option_labels
+                                        else ""
+                                    ),
+                                }
+                            )
+
+                        mapping_df = pd.DataFrame(mapping_rows)
+                        edited_mapping = _setta_data_editor(
+                            mapping_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            disabled=[
+                                "ID",
+                                "Dimensão",
+                                "Descrição",
+                                "Chapas",
+                                "Peso total",
+                            ],
+                            column_config={
+                                "Código Protheus": st.column_config.SelectboxColumn(
+                                    "Código Protheus",
+                                    options=option_labels,
+                                    required=True,
+                                )
+                            },
+                            key="cb_mapping_editor",
+                        )
+
+                        if st.button(
+                            "SALVAR VÍNCULOS DE CHAPAS",
+                            type="primary",
+                            use_container_width=True,
+                            key="cb_save_sheet_maps",
+                        ):
+                            if not option_labels:
+                                st.error(
+                                    "Não há códigos de CHAPA disponíveis no standby do CADASTROS."
+                                )
+                            else:
+                                for _, edit_row in edited_mapping.iterrows():
+                                    source_row = resolved_email[
+                                        "unresolved"
+                                    ][int(edit_row["ID"])]
+                                    selected_label = str(
+                                        edit_row["Código Protheus"]
+                                    )
+                                    selected_code = selected_label.split(
+                                        " · ",
+                                        1,
+                                    )[0].strip()
+
+                                    db.save_cb_sheet_mapping(
+                                        source_row.get(
+                                            "dimensao_norm"
+                                        )
+                                        or "*",
+                                        source_row.get(
+                                            "descricao_norm"
+                                        )
+                                        or "",
+                                        source_row.get(
+                                            "dimensao"
+                                        )
+                                        or "",
+                                        source_row.get(
+                                            "descricao"
+                                        )
+                                        or "",
+                                        selected_code,
+                                        "CONFIRMADO",
+                                        "APP · E-MAIL CHAPAS",
+                                    )
+                                load_cb_page_snapshot.clear()
+                                st.rerun()
+                    else:
+                        preview_email = pd.DataFrame(
+                            resolved_email["resolved"]
+                        )
+                        if not preview_email.empty:
+                            _setta_dataframe(
+                                preview_email.rename(
+                                    columns={
+                                        "codigo": "Código",
+                                        "quantidade_fisica": "Físico",
+                                        "observacao": "Origem",
+                                    }
+                                ),
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+
+                        mismatch = (
+                            detected_comp is not None
+                            and detected_comp != cb_month
+                        )
+                        if mismatch:
+                            st.error(
+                                "COMPETÊNCIA DIFERENTE DA CONTAGEM: "
+                                + "fechamento selecionado em "
+                                + month_label(cb_month)
+                                + ", mas a data " + _data_txt
+                                + " indica " + month_label(detected_comp)
+                                + ". Nenhum registro foi gravado."
+                            )
+                            if detected_comp in visible_months:
+                                st.button(
+                                    "ALTERAR PARA "
+                                    + month_label(detected_comp),
+                                    type="primary",
+                                    use_container_width=True,
+                                    key="cb_change_email_month",
+                                    on_click=_select_cb_competencia,
+                                    args=(detected_comp,),
+                                )
+                            else:
+                                st.warning(
+                                    "A competência sugerida não está disponível "
+                                    "na seleção. Regularize a base de estoque "
+                                    "dessa competência antes da importação."
+                                )
+                        else:
+                            # Para datas intermediárias, a competência é
+                            # escolha explícita do operador, não inferência.
+                            email_confirmed = True
+                            if detected_comp is None:
+                                st.warning(
+                                    "A data da contagem não permite determinar "
+                                    "com segurança a competência. Confira o "
+                                    "fechamento antes de importar."
+                                )
+                                email_confirmed = st.checkbox(
+                                    "CONFIRMO A IMPORTAÇÃO EM "
+                                    + month_label(cb_month)
+                                    + " (fechamento "
+                                    + closing_date(cb_month).strftime("%d/%m/%Y")
+                                    + ")",
+                                    key="cb_confirm_email_month_"
+                                    + cb_month.strftime("%Y%m"),
+                                )
+                            if email_confirmed and st.button(
+                                "IMPORTAR CONTAGEM DE CHAPAS",
+                                type="primary",
+                                use_container_width=True,
+                                key="cb_import_email",
+                            ):
+                                db.save_cb_counts_batch(
+                                    cb_month,
+                                    "CHAPAS_EMAIL",
+                                    email_file.name,
+                                    resolved_email["resolved"],
+                                )
+                                st.session_state["_cb_count_flash"] = (
+                                    "Contagem de chapas importada em "
+                                    + month_label(cb_month) + "."
+                                )
+                                load_cb_page_snapshot.clear()
+                                st.rerun()
+                except Exception as exc:
+                    st.error(
+                        f"Não foi possível ler o e-mail de chapas: {exc}"
+                    )
+
+        if cb_source_active == "BARRAMENTOS · EXCEL":
+            bar_file = st.file_uploader(
+                "Planilha da produção de barramentos",
+                type=["xlsx", "xltx"],
+                key="cb_barramentos_file",
+                help=(
+                    "Todos os itens do relatório precisam estar vinculados "
+                    "a um código do CADASTROS antes da importação."
+                ),
+            )
+
+            if bar_file is not None:
+                try:
+                    parsed_bar = cached_parse_cb_source(
+                        bar_file.getvalue(), bar_file.name, "barramentos"
+                    )
+
+                    catalog_bar = {
+                        str(row.get("codigo") or "").strip(): row
+                        for row in standby_catalog
+                        if row.get("categoria") == "BARRA_COBRE"
+                    }
+                    cad_master_lookup = (
+                        (cadastros_context.get("parsed") or {})
+                        .get("master_lookup")
+                        or {}
+                    )
+
+                    valid_bar_rows = []
+                    bar_issues = []
+                    auto_bar_catalog = {}
+
+                    for row in parsed_bar["rows"]:
+                        source_code = normalize_code(
+                            row.get("codigo")
+                        )
+
+                        # 1) Já existe como barra no standby.
+                        mapped_code = (
+                            source_code
+                            if source_code in catalog_bar
+                            else ""
+                        )
+
+                        # 2) Já existe vínculo persistente de meses anteriores.
+                        if not mapped_code:
+                            mapped_code = physical_mapping_lookup.get(
+                                (
+                                    "BARRAMENTOS_EXCEL",
+                                    source_code,
+                                ),
+                                "",
+                            )
+
+                        # 3) Correspondência direta com o CADASTROS.
+                        # A própria origem BARRAMENTOS valida a categoria.
+                        if (
+                            not mapped_code
+                            and source_code in cad_master_lookup
+                        ):
+                            mapped_code = source_code
+                            cadastro_item = cad_master_lookup[source_code]
+                            auto_bar_catalog[source_code] = {
+                                "descricao": str(
+                                    cadastro_item.get("descricao")
+                                    or ""
+                                ).strip(),
+                                "referencia": str(
+                                    cadastro_item.get("referencia")
+                                    or row.get("modelo")
+                                    or ""
+                                ).strip(),
+                                "ult_preco": float(
+                                    cadastro_item.get("ult_preco")
+                                    or 0
+                                ),
+                            }
+
+                        item = (
+                            catalog_bar.get(mapped_code)
+                            or cad_master_lookup.get(mapped_code)
+                        )
+                        if item is None:
+                            bar_issues.append(
+                                {
+                                    "Código origem": source_code,
+                                    "Modelo": row.get("modelo"),
+                                    "Físico (m)": float(
+                                        row.get("quantidade_fisica")
+                                        or 0
+                                    ),
+                                    "Consumo (m)": float(
+                                        row.get("consumo")
+                                        or 0
+                                    ),
+                                }
+                            )
+                            continue
+
+                        quantidade = float(
+                            row.get("quantidade_fisica")
+                            or 0
+                        )
+                        consumo = float(
+                            row.get("consumo")
+                            or 0
+                        )
+                        criterio = str(
+                            row.get("criterio")
+                            or ""
+                        ).strip()
+
+                        valid_bar_rows.append(
+                            {
+                                "codigo": mapped_code,
+                                "quantidade_fisica": quantidade,
+                                "consumo": consumo,
+                                "observacao": (
+                                    f"{row.get('modelo') or ''} · "
+                                    f"{criterio or 'CONTAGEM'} "
+                                    f"{quantidade:.3f} m · "
+                                    f"Consumo informado {consumo:.3f} m"
+                                    + (
+                                        f" · origem {source_code}"
+                                        if mapped_code != source_code
+                                        else ""
+                                    )
+                                ).strip(" ·"),
+                            }
+                        )
+
+                    br1, br2, br3, br4 = st.columns(4)
+                    br1.metric(
+                        "Itens do relatório",
+                        parsed_bar["total_rows"],
+                    )
+                    br2.metric(
+                        "Vinculados",
+                        len(valid_bar_rows),
+                    )
+                    br3.metric(
+                        "Físico total",
+                        f"{float(parsed_bar['total_metros']):,.3f} m"
+                        .replace(",", "X")
+                        .replace(".", ",")
+                        .replace("X", "."),
+                    )
+                    br4.metric(
+                        "Sem vínculo",
+                        len(bar_issues),
+                    )
+
+                    if valid_bar_rows:
+                        preview_bar = pd.DataFrame(
+                            valid_bar_rows
+                        ).rename(
+                            columns={
+                                "codigo": "Código sistema",
+                                "quantidade_fisica": "Contagem (m)",
+                                "consumo": "Consumo informado (m)",
+                                "observacao": "Detalhe",
+                            }
+                        )
+                        _setta_dataframe(
+                            preview_bar,
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                    if bar_issues:
+                        st.warning(
+                            "A importação fica bloqueada até que TODOS os itens "
+                            "do relatório possuam vínculo com um código do sistema."
+                        )
+
+                        bar_options = [
+                            f"{row.get('codigo')} · {row.get('descricao')}"
+                            for row in standby_catalog
+                            if row.get("categoria") == "BARRA_COBRE"
+                        ]
+                        mapping_rows = []
+                        for index, issue in enumerate(bar_issues):
+                            mapping_rows.append(
+                                {
+                                    "ID": index,
+                                    "Código origem": issue.get(
+                                        "Código origem"
+                                    ),
+                                    "Modelo": issue.get("Modelo"),
+                                    "Físico (m)": issue.get(
+                                        "Físico (m)"
+                                    ),
+                                    "Consumo (m)": issue.get(
+                                        "Consumo (m)"
+                                    ),
+                                    "Vincular ao código": "",
+                                }
+                            )
+
+                        edited_bar_maps = _setta_data_editor(
+                            pd.DataFrame(mapping_rows),
+                            use_container_width=True,
+                            hide_index=True,
+                            disabled=[
+                                "ID",
+                                "Código origem",
+                                "Modelo",
+                                "Físico (m)",
+                                "Consumo (m)",
+                            ],
+                            column_config={
+                                "Vincular ao código": (
+                                    st.column_config.SelectboxColumn(
+                                        "Vincular ao código",
+                                        options=[""] + bar_options,
+                                        required=True,
+                                    )
+                                )
+                            },
+                            key="cb_bar_mapping_editor",
+                        )
+
+                        if st.button(
+                            "SALVAR VÍNCULOS DOS BARRAMENTOS",
+                            type="primary",
+                            use_container_width=True,
+                            key="cb_save_bar_maps",
+                        ):
+                            missing_links = edited_bar_maps[
+                                edited_bar_maps[
+                                    "Vincular ao código"
+                                ].astype(str).str.strip() == ""
+                            ]
+                            if not missing_links.empty:
+                                st.error(
+                                    "Vincule todos os itens antes de salvar."
+                                )
+                            else:
+                                for _, edit_row in (
+                                    edited_bar_maps.iterrows()
+                                ):
+                                    source_issue = bar_issues[
+                                        int(edit_row["ID"])
+                                    ]
+                                    selected_code = str(
+                                        edit_row[
+                                            "Vincular ao código"
+                                        ]
+                                    ).split(" · ", 1)[0].strip()
+
+                                    db.save_cb_physical_mapping(
+                                        "BARRAMENTOS_EXCEL",
+                                        str(
+                                            source_issue.get(
+                                                "Código origem"
+                                            )
+                                            or ""
+                                        ),
+                                        str(
+                                            source_issue.get(
+                                                "Modelo"
+                                            )
+                                            or ""
+                                        ),
+                                        selected_code,
+                                    )
+                                st.session_state[
+                                    "_cb_count_flash"
+                                ] = (
+                                    "Vínculos dos barramentos salvos."
+                                )
+                                load_cb_page_snapshot.clear()
+                                st.rerun()
+
+                    elif valid_bar_rows and st.button(
+                        "IMPORTAR CONTAGEM DE BARRAMENTOS",
+                        type="primary",
+                        use_container_width=True,
+                        key="cb_import_bars",
+                    ):
+                        # Se o código veio diretamente do CADASTROS e ainda
+                        # não estava classificado no standby, a própria
+                        # contagem de barramentos confirma sua categoria.
+                        for auto_code, auto_item in (
+                            auto_bar_catalog.items()
+                        ):
+                            db.confirm_cb_catalog_item(
+                                auto_code,
+                                "BARRA_COBRE",
+                                auto_item.get("descricao") or "",
+                                auto_item.get("referencia") or "",
+                                float(
+                                    auto_item.get("ult_preco")
+                                    or 0
+                                ),
+                            )
+
+                        db.save_cb_counts_batch(
+                            cb_month,
+                            "BARRAMENTOS_EXCEL",
+                            bar_file.name,
+                            valid_bar_rows,
+                        )
+                        st.session_state["_cb_count_flash"] = (
+                            "Contagem de barramentos importada. "
+                            "Todos os itens possuem vínculo com o sistema."
+                        )
+                        load_cb_page_snapshot.clear()
+                        st.rerun()
+                except Exception as exc:
+                    st.error(
+                        f"Não foi possível ler a planilha de barramentos: {exc}"
+                    )
+
+        if cb_source_active == "ALMOXARIFADO · BARRAS":
+            internal_file = st.file_uploader(
+                "Planilha do almoxarifado de barras",
+                type=["xlsx", "xltx"],
+                key="cb_internal_file",
+                help=(
+                    "Layout recomendado: BARRAMENTO + QUANTIDADE. "
+                    "BARRAMENTO pode ser código, referência ou medida em "
+                    "mm/polegadas. QUANTIDADE é tratada como número de barras "
+                    "de 3 m, salvo quando a célula indicar metros."
+                ),
+            )
+
+            st.download_button(
+                "RELATÓRIO MODELO",
+                data=build_almox_barras_model(),
+                file_name="MODELO_CONTAGEM_ALMOX_BARRAS.xlsx",
+                mime=(
+                    "application/vnd.openxmlformats-officedocument."
+                    "spreadsheetml.sheet"
+                ),
+                type="tertiary",
+                use_container_width=False,
+                key="cb_download_internal_model",
+            )
+
+            if internal_file is not None:
+                try:
+                    parsed_internal = cached_parse_cb_source(
+                        internal_file.getvalue(), internal_file.name, "almoxarifado"
+                    )
+
+                    internal_catalog_rows = [
+                        row
+                        for row in standby_catalog
+                        if row.get("categoria") == "BARRA_COBRE"
+                    ]
+                    internal_catalog = {
+                        str(row.get("codigo") or "").strip(): row
+                        for row in internal_catalog_rows
+                    }
+
+                    internal_valid = []
+                    internal_issues = []
+
+                    for row in parsed_internal["rows"]:
+                        source_key = str(
+                            row.get("chave_origem") or ""
+                        ).strip()
+                        identifier = str(
+                            row.get("identificador") or source_key
+                        ).strip()
+                        direct_code = str(
+                            row.get("codigo_direto") or ""
+                        ).strip()
+
+                        mapped_code = (
+                            direct_code
+                            if direct_code in internal_catalog
+                            else ""
+                        )
+
+                        if not mapped_code:
+                            mapped_code = physical_mapping_lookup.get(
+                                ("INTERNO_EXCEL", source_key),
+                                "",
+                            )
+
+                        match_origin = ""
+                        if mapped_code:
+                            match_origin = (
+                                "CÓDIGO"
+                                if mapped_code == direct_code
+                                else "VÍNCULO SALVO"
+                            )
+
+                        similarity = None
+                        matched_dimension = ""
+
+                        if not mapped_code:
+                            auto_matches = find_bar_catalog_matches(
+                                identifier,
+                                internal_catalog_rows,
+                            )
+
+                            if auto_matches:
+                                best_match = auto_matches[0]
+                                mapped_code = str(
+                                    best_match.get("codigo")
+                                    or ""
+                                ).strip()
+                                similarity = float(
+                                    best_match.get(
+                                        "_match_similarity"
+                                    )
+                                    or 0
+                                )
+                                matched_dimension = str(
+                                    best_match.get(
+                                        "_match_dimension"
+                                    )
+                                    or ""
+                                ).strip()
+
+                                match_origin = str(
+                                    best_match.get(
+                                        "_match_mode"
+                                    )
+                                    or "SIMILARIDADE"
+                                ).strip()
+
+                                if similarity < 99.99:
+                                    match_origin += (
+                                        f" · {similarity:.2f}%"
+                                    )
+                            else:
+                                internal_issues.append(
+                                    {
+                                        "Chave origem": source_key,
+                                        "Barramento informado": identifier,
+                                        "Quantidade informada": float(
+                                            row.get(
+                                                "quantidade_informada"
+                                            )
+                                            or 0
+                                        ),
+                                        "Leitura": str(
+                                            row.get(
+                                                "modo_quantidade"
+                                            )
+                                            or ""
+                                        ),
+                                        "Contagem calculada (m)": float(
+                                            row.get(
+                                                "quantidade_fisica"
+                                            )
+                                            or 0
+                                        ),
+                                        "Sugestões": "",
+                                    }
+                                )
+                                continue
+
+                        catalog_item = internal_catalog.get(
+                            mapped_code,
+                            {},
+                        )
+                        internal_valid.append(
+                            {
+                                "codigo": mapped_code,
+                                "chave_origem": source_key,
+                                "identificador": identifier,
+                                "quantidade_informada": float(
+                                    row.get(
+                                        "quantidade_informada"
+                                    )
+                                    or 0
+                                ),
+                                "modo_quantidade": str(
+                                    row.get(
+                                        "modo_quantidade"
+                                    )
+                                    or ""
+                                ),
+                                "quantidade_fisica": float(
+                                    row.get(
+                                        "quantidade_fisica"
+                                    )
+                                    or 0
+                                ),
+                                "descricao": str(
+                                    catalog_item.get(
+                                        "descricao"
+                                    )
+                                    or ""
+                                ).strip(),
+                                "medida_encontrada": matched_dimension,
+                                "similaridade": similarity,
+                                "vinculo": match_origin,
+                                "observacao": (
+                                    f"{parsed_internal['sheet']} · "
+                                    f"informado {identifier} · "
+                                    f"{row.get('quantidade_origem') or ''} · "
+                                    f"{match_origin}"
+                                ).strip(" ·"),
+                            }
+                        )
+
+                    in1, in2, in3 = st.columns(3)
+                    in1.metric(
+                        "Itens do relatório",
+                        parsed_internal["total_rows"],
+                    )
+                    in2.metric(
+                        "Vinculados",
+                        len(internal_valid),
+                    )
+                    in3.metric(
+                        "Sem vínculo",
+                        len(internal_issues),
+                    )
+
+                    if internal_valid:
+                        preview_internal = pd.DataFrame(
+                            [
+                                {
+                                    "Barramento informado": row.get(
+                                        "identificador"
+                                    ),
+                                    "Quantidade informada": row.get(
+                                        "quantidade_informada"
+                                    ),
+                                    "Leitura": row.get(
+                                        "modo_quantidade"
+                                    ),
+                                    "Contagem (m)": row.get(
+                                        "quantidade_fisica"
+                                    ),
+                                    "Código sistema": row.get(
+                                        "codigo"
+                                    ),
+                                    "Descrição": row.get(
+                                        "descricao"
+                                    ),
+                                    "Medida encontrada": row.get(
+                                        "medida_encontrada"
+                                    ),
+                                    "Semelhança": (
+                                        (
+                                            f"{float(row.get('similaridade')):.2f}%"
+                                        )
+                                        if row.get("similaridade") is not None
+                                        else ""
+                                    ),
+                                    "Vínculo": row.get(
+                                        "vinculo"
+                                    ),
+                                }
+                                for row in internal_valid
+                            ]
+                        )
+                        _setta_dataframe(
+                            preview_internal,
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                    if internal_issues:
+                        st.warning(
+                            "A importação fica bloqueada até que TODOS os itens "
+                            "da contagem do almoxarifado estejam vinculados."
+                        )
+
+                        internal_options = sorted(
+                            [
+                                (
+                                    f"{row.get('codigo')} · "
+                                    f"{row.get('descricao')}"
+                                )
+                                for row in internal_catalog_rows
+                            ]
+                        )
+
+                        mapping_rows = [
+                            {
+                                "ID": index,
+                                "Barramento informado": issue.get(
+                                    "Barramento informado"
+                                ),
+                                "Quantidade informada": issue.get(
+                                    "Quantidade informada"
+                                ),
+                                "Leitura": issue.get("Leitura"),
+                                "Contagem (m)": issue.get(
+                                    "Contagem calculada (m)"
+                                ),
+                                "Sugestões encontradas": issue.get(
+                                    "Sugestões"
+                                ),
+                                "Vincular ao código": "",
+                            }
+                            for index, issue in enumerate(
+                                internal_issues
+                            )
+                        ]
+
+                        edited_internal_maps = _setta_data_editor(
+                            pd.DataFrame(mapping_rows),
+                            use_container_width=True,
+                            hide_index=True,
+                            disabled=[
+                                "ID",
+                                "Barramento informado",
+                                "Quantidade informada",
+                                "Leitura",
+                                "Contagem (m)",
+                                "Sugestões encontradas",
+                            ],
+                            column_config={
+                                "Vincular ao código": (
+                                    st.column_config.SelectboxColumn(
+                                        "Vincular ao código",
+                                        options=[""] + internal_options,
+                                        required=True,
+                                    )
+                                )
+                            },
+                            key="cb_internal_mapping_editor",
+                        )
+
+                        if st.button(
+                            "SALVAR VÍNCULOS DO ALMOXARIFADO",
+                            type="primary",
+                            use_container_width=True,
+                            key="cb_save_internal_maps",
+                        ):
+                            missing_links = edited_internal_maps[
+                                edited_internal_maps[
+                                    "Vincular ao código"
+                                ].astype(str).str.strip() == ""
+                            ]
+                            if not missing_links.empty:
+                                st.error(
+                                    "Vincule todos os itens antes de salvar."
+                                )
+                            else:
+                                for _, edit_row in (
+                                    edited_internal_maps.iterrows()
+                                ):
+                                    issue = internal_issues[
+                                        int(edit_row["ID"])
+                                    ]
+                                    selected_code = str(
+                                        edit_row[
+                                            "Vincular ao código"
+                                        ]
+                                    ).split(" · ", 1)[0].strip()
+
+                                    db.save_cb_physical_mapping(
+                                        "INTERNO_EXCEL",
+                                        str(
+                                            issue.get(
+                                                "Chave origem"
+                                            )
+                                            or ""
+                                        ),
+                                        str(
+                                            issue.get(
+                                                "Barramento informado"
+                                            )
+                                            or ""
+                                        ),
+                                        selected_code,
+                                    )
+                                st.session_state[
+                                    "_cb_count_flash"
+                                ] = (
+                                    "Vínculos do almoxarifado salvos."
+                                )
+                                load_cb_page_snapshot.clear()
+                                st.rerun()
+
+                    elif internal_valid and st.button(
+                        "IMPORTAR CONTAGEM DO ALMOXARIFADO",
+                        type="primary",
+                        use_container_width=True,
+                        key="cb_import_internal",
+                    ):
+                        for linked_row in internal_valid:
+                            if str(
+                                linked_row.get("vinculo")
+                                or ""
+                            ) not in {
+                                "CÓDIGO",
+                                "VÍNCULO SALVO",
+                            }:
+                                db.save_cb_physical_mapping(
+                                    "INTERNO_EXCEL",
+                                    str(
+                                        linked_row.get(
+                                            "chave_origem"
+                                        )
+                                        or ""
+                                    ),
+                                    str(
+                                        linked_row.get(
+                                            "identificador"
+                                        )
+                                        or ""
+                                    ),
+                                    str(
+                                        linked_row.get("codigo")
+                                        or ""
+                                    ),
+                                )
+
+                        db.save_cb_counts_batch(
+                            cb_month,
+                            "INTERNO_EXCEL",
+                            internal_file.name,
+                            internal_valid,
+                        )
+                        st.session_state["_cb_count_flash"] = (
+                            "Contagem do almoxarifado importada. "
+                            "Todos os itens possuem vínculo com o sistema."
+                        )
+                        load_cb_page_snapshot.clear()
+                        st.rerun()
+                except Exception as exc:
+                    st.error(
+                        f"Não foi possível processar a contagem do almoxarifado: {exc}"
+                    )
+
+            with st.expander(
+                "LANÇAMENTO MANUAL",
+                expanded=False,
+            ):
+                manual_options = [
+                    (
+                        str(row.get("codigo")),
+                        str(row.get("descricao") or ""),
+                        (
+                            "KG"
+                            if row.get("categoria") == "CHAPA"
+                            else "MT"
+                        ),
+                    )
+                    for row in standby_catalog
+                    if row.get("categoria") == "BARRA_COBRE"
+                ]
+                manual_labels = [
+                    f"{code} · {description} · {unit}"
+                    for code, description, unit in manual_options
+                ]
+
+                if manual_labels:
+                    manual_selected = st.selectbox(
+                        "Material",
+                        manual_labels,
+                        key="cb_manual_code",
+                    )
+                    manual_code = manual_selected.split(
+                        " · ",
+                        1,
+                    )[0].strip()
+                    manual_unit = next(
+                        (
+                            unit
+                            for code, _, unit in manual_options
+                            if code == manual_code
+                        ),
+                        "",
+                    )
+
+                    manual_qty = st.number_input(
+                        f"Quantidade física ({manual_unit or 'U.M.'})",
+                        min_value=0.0,
+                        value=0.0,
+                        step=1.0,
+                        format="%.6f",
+                        key="cb_manual_qty",
+                    )
+                    manual_obs = st.text_input(
+                        "Observação",
+                        key="cb_manual_obs",
+                    )
+
+                    if st.button(
+                        "SALVAR CONTAGEM MANUAL",
+                        type="primary",
+                        use_container_width=True,
+                        key="cb_save_manual",
+                    ):
+                        db.save_cb_count(
+                            cb_month,
+                            "INTERNO_MANUAL",
+                            manual_code,
+                            manual_qty,
+                            manual_obs,
+                            "Lançamento manual no aplicativo",
+                        )
+                        st.session_state["_cb_count_flash"] = (
+                            "Contagem manual salva."
+                        )
+                        load_cb_page_snapshot.clear()
+                        st.rerun()
+
+    flash_count = st.session_state.pop(
+        "_cb_count_flash",
+        None,
+    )
+    if flash_count:
+        st.success(flash_count)
+
+    if cb_imports:
+        with st.expander("IMPORTAÇÕES DA COMPETÊNCIA"):
+            imports_view = pd.DataFrame(cb_imports)
+            if not imports_view.empty:
+                imports_view["fonte"] = imports_view[
+                    "fonte"
+                ].map(
+                    lambda value: CB_SOURCE_LABELS.get(
+                        str(value),
+                        str(value),
+                    )
+                )
+                _setta_dataframe(
+                    imports_view[
+                        [
+                            "fonte",
+                            "arquivo_nome",
+                            "linhas",
+                            "importado_em",
+                        ]
+                    ].rename(
+                        columns={
+                            "fonte": "Fonte",
+                            "arquivo_nome": "Arquivo",
+                            "linhas": "Linhas",
+                            "importado_em": "Importado em",
+                        }
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+
+
 def api_sources_summary(
     sources: list[dict],
     error: str = "",
@@ -2084,6 +3290,7 @@ def _set_fm_page(target: str) -> None:
 def _select_cb_competencia(target: date) -> None:
     """Troca a competência antes de remontar o seletor Streamlit."""
     st.session_state["cb_month"] = target
+    st.session_state["fm_feeder_month"] = target
     st.query_params["mes_cb"] = target.strftime("%Y-%m")
 
 
@@ -2222,7 +3429,13 @@ _needs_inventory_core = page in {
     "Dashboard",
     "Conferência de chapas e barramentos",
     "Relatórios",
-}
+} or (
+    page == "Configurações"
+    and st.session_state.get("fm_settings_area") == "ALIMENTADORES"
+    and st.session_state.get("fm_feeder_type") in (
+        "ANALÍTICO", "CHAPAS E BARRAMENTOS"
+    )
+)
 
 central_context = {"available": False, "meta": {}}
 current_competencia = previous_month(
@@ -2725,14 +3938,124 @@ with _fm_page_surface.container():
                 "Validação indica apenas a qualidade do relatório importado. VALIDADO = nenhuma inconsistência encontrada. PENDÊNCIA = existem itens sem custo, sem saldo, negativos ou com cadastro obrigatório ausente. Não é um status contábil ou de aprovação do fechamento.",
             )
 
-            st.markdown(
-                history_table_html(
-                    history_months,
-                    _dashboard_summary_map,
-                    _dashboard_imports_by_month,
-                ),
-                unsafe_allow_html=True,
+            history_view = st.segmented_control(
+                "Visualização do histórico",
+                ["FECHAMENTOS", "VALOR DAS BAIXAS"],
+                default="FECHAMENTOS",
+                key="fm_history_view",
+                width="stretch",
+                label_visibility="collapsed",
             )
+            if history_view != "VALOR DAS BAIXAS":
+                st.markdown(
+                    history_table_html(
+                        history_months,
+                        _dashboard_summary_map,
+                        _dashboard_imports_by_month,
+                    ),
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.caption(
+                    "BAIXAS ESTIMADAS = ESTOQUE INICIAL + COMPRAS − ESTOQUE FINAL. "
+                    "Compras são apuradas somente de movimentos identificáveis no "
+                    "KARDEX; períodos com cobertura ou classificação incompleta "
+                    "são sinalizados sem calcular uma baixa definitiva."
+                )
+                try:
+                    from closing_purchases import closing_write_off, summarize_purchases
+                    from movement_analysis_ui import _imports as _kardex_imports, _model as _kardex_model
+                    import movements as _kardex_moves
+                    import kardex_history as _kardex_history
+
+                    _kardex_registry = _kardex_imports()
+                    _kardex_purchases = {}
+                    if _kardex_registry:
+                        _kardex_tokens = tuple(
+                            (item["chave"], item.get("atualizado_em", ""),
+                             item.get("meta") or {})
+                            for item in _kardex_registry
+                        )
+                        _kardex_snapshot = _kardex_model(
+                            _kardex_tokens,
+                            _kardex_moves.rules()["versao"] + _kardex_history.VERSION,
+                        )
+                        _kardex_purchases = summarize_purchases(_kardex_snapshot)
+
+                    _write_off_rows = []
+                    for _competencia in history_months:
+                        _last = previous_month(_competencia)
+                        _initial = (
+                            dimension_value(_dashboard_summary_map, _last, "TOTAL", "TOTAL")
+                            if _last.isoformat() in _dashboard_imports_by_month
+                            else None
+                        )
+                        _final = dimension_value(
+                            _dashboard_summary_map, _competencia, "TOTAL", "TOTAL"
+                        )
+                        _purchases_info = _kardex_purchases.get(
+                            _competencia.strftime("%Y-%m")
+                        )
+                        _write_off = closing_write_off(
+                            _initial, _final, _purchases_info
+                        )
+                        if _initial is None:
+                            _status = "PENDENTE · ESTOQUE INICIAL"
+                        elif _purchases_info is None:
+                            _status = "PENDENTE · KARDEX NÃO CARREGADO"
+                        elif _purchases_info["armazens_pendentes"]:
+                            _status = (
+                                "PENDENTE · ARMAZÉNS "
+                                + ", ".join(_purchases_info["armazens_pendentes"])
+                            )
+                        elif _purchases_info["registros_revisar"]:
+                            _status = (
+                                "PENDENTE · "
+                                + str(_purchases_info["registros_revisar"])
+                                + " ENTRADAS A CLASSIFICAR"
+                            )
+                        else:
+                            _status = "CALCULADO · CONFERIR CONTABILMENTE"
+
+                        _write_off_rows.append({
+                            "Competência": month_label(_competencia),
+                            "Estoque inicial": _initial,
+                            "Compras identificadas": (
+                                _purchases_info["compras"]
+                                if _purchases_info is not None else None
+                            ),
+                            "Estoque final": _final,
+                            "Valor das baixas": _write_off,
+                            "Situação": _status,
+                        })
+                    if _write_off_rows:
+                        st.dataframe(
+                            pd.DataFrame(_write_off_rows),
+                            hide_index=True,
+                            use_container_width=True,
+                            column_config={
+                                column: st.column_config.NumberColumn(
+                                    column, format="R$ %.2f"
+                                )
+                                for column in (
+                                    "Estoque inicial", "Compras identificadas",
+                                    "Estoque final", "Valor das baixas"
+                                )
+                            },
+                        )
+                    else:
+                        st.info("Nenhuma competência com estoque consolidado no histórico.")
+                    st.caption(
+                        "Critério de compras: CFOP 1101/1102, 2101/2102 e 3101/3102 "
+                        "ou TES explicitamente de compra, aquisição ou importação, "
+                        "sem devoluções e transferências. O indicador não substitui "
+                        "a conciliação contábil."
+                    )
+                except Exception as exc:
+                    st.error(
+                        "Não foi possível calcular as baixas a partir do KARDEX: "
+                        + str(exc)
+                    )
 
 
         st.markdown('<div class="topic-divider"></div>', unsafe_allow_html=True)
@@ -3118,1203 +4441,15 @@ with _fm_page_surface.container():
                     "Carregue o Relatório Analítico extraído nessa data para liberar o cálculo definitivo."
                 )
 
-            with st.expander(
-                (
-                    f"ALIMENTAR SALDO DO FECHAMENTO · {_closing_label}"
-                    if not cb_closing_stock_items
-                    else f"ATUALIZAR SALDO DO FECHAMENTO · {_closing_label}"
-                ),
-                expanded=not bool(cb_closing_stock_items),
-            ):
-                cb_analytic_file = st.file_uploader(
-                    f"Relatório Analítico da posição de {_closing_label}",
-                    type=["xlsx", "xltx"],
-                    key="cb_analytic_file",
-                    help=(
-                        "Esta carga é a fotografia do último dia da competência. "
-                        "O saldo atual continuará vindo automaticamente da Central de Dados."
-                    ),
-                )
-
-                if cb_analytic_file is not None:
-                    try:
-                        parsed_cb_analytic = parse_inventory_balance_report(
-                            cb_analytic_file.getvalue(),
-                            cb_analytic_file.name,
-                        )
-
-                        sa, sb, sc = st.columns(3)
-                        sa.metric(
-                            "Linhas lidas",
-                            parsed_cb_analytic["total_rows"],
-                        )
-                        sb.metric(
-                            "Saldos negativos → 0",
-                            parsed_cb_analytic["adjusted_negative"],
-                        )
-                        sc.metric(
-                            "Saldos inválidos → 0",
-                            parsed_cb_analytic["invalid_balance"],
-                        )
-
-                        st.caption(
-                            "O VALOR EM ESTOQUE desta carga será usado para valorizar "
-                            "as divergências do fechamento. O saldo atual não substitui esta fotografia."
-                        )
-
-                        if st.button(
-                            "SALVAR SALDO DO FECHAMENTO",
-                            type="primary",
-                            use_container_width=True,
-                            key="cb_save_analytic",
-                        ):
-                            db.save_cb_system_balances(
-                                cb_month,
-                                cb_analytic_file.name,
-                                parsed_cb_analytic["rows"],
-                            )
-                            st.session_state["_cb_base_flash"] = (
-                                f"Saldo do fechamento de {_closing_label} salvo."
-                            )
-                            load_cb_page_snapshot.clear()
-                            st.rerun()
-                    except Exception as exc:
-                        st.error(
-                            f"Não foi possível ler o Relatório Analítico do fechamento: {exc}"
-                        )
-
-            cb_stage_header(
-                "02",
-                "ALIMENTAÇÃO FÍSICA",
-                "Importe as fontes de chapas, barramentos e almoxarifado e confira suas correspondências.",
+            st.info(
+                "Os arquivos do saldo do fechamento e as contagens físicas agora são "
+                "carregados em CONFIGURAÇÕES → ALIMENTADORES → CHAPAS E BARRAMENTOS."
             )
-            # st.expander e st.tabs executam TODAS as seções mesmo fechadas.
-            # A chave abaixo só constrói controles e análises quando solicitados.
-            if st.toggle(
-                "GERENCIAR FONTES E CONTAGENS",
-                key="fm_cb_open_sources",
-                value=False,
-            ):
-                cb_source_active = st.segmented_control(
-                    "Fonte de contagem",
-                    ["CHAPAS · E-MAIL", "BARRAMENTOS · EXCEL", "ALMOXARIFADO · BARRAS"],
-                    default="CHAPAS · E-MAIL",
-                    key="fm_cb_source_active",
-                )
-
-                if cb_source_active == "CHAPAS · E-MAIL":
-                    email_file = st.file_uploader(
-                        "E-mail do setor de chapas",
-                        type=["eml"],
-                        key="cb_chapas_eml",
-                        help=(
-                            "Use preferencialmente o arquivo .EML. O leitor pega "
-                            "automaticamente a tabela mais recente da conversa."
-                        ),
-                    )
-
-                    if email_file is not None:
-                        try:
-                            parsed_email = cached_parse_cb_source(
-                                email_file.getvalue(), email_file.name, "chapas"
-                            )
-
-                            detected_comp = parsed_email.get("competencia")
-                            _data_contagem = parsed_email.get("data_contagem")
-                            _data_txt = (
-                                _data_contagem.strftime("%d/%m/%Y")
-                                if _data_contagem else "—"
-                            )
-                            if detected_comp:
-                                _fechamento_txt = closing_date(
-                                    detected_comp
-                                ).strftime("%d/%m/%Y")
-                                st.caption(
-                                    "Data da contagem: " + _data_txt
-                                    + " · Fechamento sugerido: " + _fechamento_txt
-                                    + " · Competência sugerida: "
-                                    + month_label(detected_comp)
-                                    + f" · {parsed_email['tables_found']} tabela(s) de histórico encontrada(s)"
-                                )
-                            else:
-                                st.caption(
-                                    "Data da contagem: " + _data_txt
-                                    + " · Competência sem determinação automática"
-                                    + f" · {parsed_email['tables_found']} tabela(s) de histórico encontrada(s)"
-                                )
-
-                            resolved_email = resolve_chapa_rows(
-                                parsed_email["rows"],
-                                cb_mappings,
-                                cb_catalog,
-                            )
-
-                            _email_total_chapas = sum(
-                                max(float(row.get("chapas") or 0), 0.0)
-                                for row in parsed_email["rows"]
-                            )
-                            _email_total_peso = sum(
-                                max(float(row.get("peso_total") or 0), 0.0)
-                                for row in parsed_email["rows"]
-                            )
-
-                            em1, em2, em3, em4, em5 = st.columns(5)
-                            em1.metric(
-                                "Linhas do e-mail",
-                                len(parsed_email["rows"]),
-                            )
-                            em2.metric(
-                                "Códigos consolidados",
-                                len(resolved_email["resolved"]),
-                            )
-                            em3.metric(
-                                "Quantidade física",
-                                f"{_email_total_chapas:,.0f} chapas"
-                                .replace(",", "."),
-                            )
-                            em4.metric(
-                                "Peso físico",
-                                f"{_email_total_peso:,.3f} kg"
-                                .replace(",", "X")
-                                .replace(".", ",")
-                                .replace("X", "."),
-                            )
-                            em5.metric(
-                                "Sem vínculo",
-                                len(resolved_email["unresolved"]),
-                            )
-
-                            if resolved_email["unresolved"]:
-                                st.warning(
-                                    "Existem descrições de chapas ainda não vinculadas "
-                                    "a um código Protheus. Resolva os vínculos abaixo; "
-                                    "depois disso eles ficarão salvos para os próximos meses."
-                                )
-
-                                chapa_options = [
-                                    row
-                                    for row in standby_catalog
-                                    if row.get("categoria") == "CHAPA"
-                                ]
-                                option_labels = [
-                                    f"{row.get('codigo')} · {row.get('descricao')}"
-                                    for row in chapa_options
-                                ]
-
-                                mapping_rows = []
-                                for index, row in enumerate(
-                                    resolved_email["unresolved"]
-                                ):
-                                    mapping_rows.append(
-                                        {
-                                            "ID": index,
-                                            "Dimensão": row.get("dimensao"),
-                                            "Descrição": row.get("descricao"),
-                                            "Chapas": row.get("chapas"),
-                                            "Peso total": row.get("peso_total"),
-                                            "Código Protheus": (
-                                                option_labels[0]
-                                                if option_labels
-                                                else ""
-                                            ),
-                                        }
-                                    )
-
-                                mapping_df = pd.DataFrame(mapping_rows)
-                                edited_mapping = _setta_data_editor(
-                                    mapping_df,
-                                    use_container_width=True,
-                                    hide_index=True,
-                                    disabled=[
-                                        "ID",
-                                        "Dimensão",
-                                        "Descrição",
-                                        "Chapas",
-                                        "Peso total",
-                                    ],
-                                    column_config={
-                                        "Código Protheus": st.column_config.SelectboxColumn(
-                                            "Código Protheus",
-                                            options=option_labels,
-                                            required=True,
-                                        )
-                                    },
-                                    key="cb_mapping_editor",
-                                )
-
-                                if st.button(
-                                    "SALVAR VÍNCULOS DE CHAPAS",
-                                    type="primary",
-                                    use_container_width=True,
-                                    key="cb_save_sheet_maps",
-                                ):
-                                    if not option_labels:
-                                        st.error(
-                                            "Não há códigos de CHAPA disponíveis no standby do CADASTROS."
-                                        )
-                                    else:
-                                        for _, edit_row in edited_mapping.iterrows():
-                                            source_row = resolved_email[
-                                                "unresolved"
-                                            ][int(edit_row["ID"])]
-                                            selected_label = str(
-                                                edit_row["Código Protheus"]
-                                            )
-                                            selected_code = selected_label.split(
-                                                " · ",
-                                                1,
-                                            )[0].strip()
-
-                                            db.save_cb_sheet_mapping(
-                                                source_row.get(
-                                                    "dimensao_norm"
-                                                )
-                                                or "*",
-                                                source_row.get(
-                                                    "descricao_norm"
-                                                )
-                                                or "",
-                                                source_row.get(
-                                                    "dimensao"
-                                                )
-                                                or "",
-                                                source_row.get(
-                                                    "descricao"
-                                                )
-                                                or "",
-                                                selected_code,
-                                                "CONFIRMADO",
-                                                "APP · E-MAIL CHAPAS",
-                                            )
-                                        load_cb_page_snapshot.clear()
-                                        st.rerun()
-                            else:
-                                preview_email = pd.DataFrame(
-                                    resolved_email["resolved"]
-                                )
-                                if not preview_email.empty:
-                                    _setta_dataframe(
-                                        preview_email.rename(
-                                            columns={
-                                                "codigo": "Código",
-                                                "quantidade_fisica": "Físico",
-                                                "observacao": "Origem",
-                                            }
-                                        ),
-                                        use_container_width=True,
-                                        hide_index=True,
-                                    )
-
-                                mismatch = (
-                                    detected_comp is not None
-                                    and detected_comp != cb_month
-                                )
-                                if mismatch:
-                                    st.error(
-                                        "COMPETÊNCIA DIFERENTE DA CONTAGEM: "
-                                        + "fechamento selecionado em "
-                                        + month_label(cb_month)
-                                        + ", mas a data " + _data_txt
-                                        + " indica " + month_label(detected_comp)
-                                        + ". Nenhum registro foi gravado."
-                                    )
-                                    if detected_comp in visible_months:
-                                        st.button(
-                                            "ALTERAR PARA "
-                                            + month_label(detected_comp),
-                                            type="primary",
-                                            use_container_width=True,
-                                            key="cb_change_email_month",
-                                            on_click=_select_cb_competencia,
-                                            args=(detected_comp,),
-                                        )
-                                    else:
-                                        st.warning(
-                                            "A competência sugerida não está disponível "
-                                            "na seleção. Regularize a base de estoque "
-                                            "dessa competência antes da importação."
-                                        )
-                                else:
-                                    # Para datas intermediárias, a competência é
-                                    # escolha explícita do operador, não inferência.
-                                    email_confirmed = True
-                                    if detected_comp is None:
-                                        st.warning(
-                                            "A data da contagem não permite determinar "
-                                            "com segurança a competência. Confira o "
-                                            "fechamento antes de importar."
-                                        )
-                                        email_confirmed = st.checkbox(
-                                            "CONFIRMO A IMPORTAÇÃO EM "
-                                            + month_label(cb_month)
-                                            + " (fechamento "
-                                            + closing_date(cb_month).strftime("%d/%m/%Y")
-                                            + ")",
-                                            key="cb_confirm_email_month_"
-                                            + cb_month.strftime("%Y%m"),
-                                        )
-                                    if email_confirmed and st.button(
-                                        "IMPORTAR CONTAGEM DE CHAPAS",
-                                        type="primary",
-                                        use_container_width=True,
-                                        key="cb_import_email",
-                                    ):
-                                        db.save_cb_counts_batch(
-                                            cb_month,
-                                            "CHAPAS_EMAIL",
-                                            email_file.name,
-                                            resolved_email["resolved"],
-                                        )
-                                        st.session_state["_cb_count_flash"] = (
-                                            "Contagem de chapas importada em "
-                                            + month_label(cb_month) + "."
-                                        )
-                                        load_cb_page_snapshot.clear()
-                                        st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Não foi possível ler o e-mail de chapas: {exc}"
-                            )
-
-                if cb_source_active == "BARRAMENTOS · EXCEL":
-                    bar_file = st.file_uploader(
-                        "Planilha da produção de barramentos",
-                        type=["xlsx", "xltx"],
-                        key="cb_barramentos_file",
-                        help=(
-                            "Todos os itens do relatório precisam estar vinculados "
-                            "a um código do CADASTROS antes da importação."
-                        ),
-                    )
-
-                    if bar_file is not None:
-                        try:
-                            parsed_bar = cached_parse_cb_source(
-                                bar_file.getvalue(), bar_file.name, "barramentos"
-                            )
-
-                            catalog_bar = {
-                                str(row.get("codigo") or "").strip(): row
-                                for row in standby_catalog
-                                if row.get("categoria") == "BARRA_COBRE"
-                            }
-                            cad_master_lookup = (
-                                (cadastros_context.get("parsed") or {})
-                                .get("master_lookup")
-                                or {}
-                            )
-
-                            valid_bar_rows = []
-                            bar_issues = []
-                            auto_bar_catalog = {}
-
-                            for row in parsed_bar["rows"]:
-                                source_code = normalize_code(
-                                    row.get("codigo")
-                                )
-
-                                # 1) Já existe como barra no standby.
-                                mapped_code = (
-                                    source_code
-                                    if source_code in catalog_bar
-                                    else ""
-                                )
-
-                                # 2) Já existe vínculo persistente de meses anteriores.
-                                if not mapped_code:
-                                    mapped_code = physical_mapping_lookup.get(
-                                        (
-                                            "BARRAMENTOS_EXCEL",
-                                            source_code,
-                                        ),
-                                        "",
-                                    )
-
-                                # 3) Correspondência direta com o CADASTROS.
-                                # A própria origem BARRAMENTOS valida a categoria.
-                                if (
-                                    not mapped_code
-                                    and source_code in cad_master_lookup
-                                ):
-                                    mapped_code = source_code
-                                    cadastro_item = cad_master_lookup[source_code]
-                                    auto_bar_catalog[source_code] = {
-                                        "descricao": str(
-                                            cadastro_item.get("descricao")
-                                            or ""
-                                        ).strip(),
-                                        "referencia": str(
-                                            cadastro_item.get("referencia")
-                                            or row.get("modelo")
-                                            or ""
-                                        ).strip(),
-                                        "ult_preco": float(
-                                            cadastro_item.get("ult_preco")
-                                            or 0
-                                        ),
-                                    }
-
-                                item = (
-                                    catalog_bar.get(mapped_code)
-                                    or cad_master_lookup.get(mapped_code)
-                                )
-                                if item is None:
-                                    bar_issues.append(
-                                        {
-                                            "Código origem": source_code,
-                                            "Modelo": row.get("modelo"),
-                                            "Físico (m)": float(
-                                                row.get("quantidade_fisica")
-                                                or 0
-                                            ),
-                                            "Consumo (m)": float(
-                                                row.get("consumo")
-                                                or 0
-                                            ),
-                                        }
-                                    )
-                                    continue
-
-                                quantidade = float(
-                                    row.get("quantidade_fisica")
-                                    or 0
-                                )
-                                consumo = float(
-                                    row.get("consumo")
-                                    or 0
-                                )
-                                criterio = str(
-                                    row.get("criterio")
-                                    or ""
-                                ).strip()
-
-                                valid_bar_rows.append(
-                                    {
-                                        "codigo": mapped_code,
-                                        "quantidade_fisica": quantidade,
-                                        "consumo": consumo,
-                                        "observacao": (
-                                            f"{row.get('modelo') or ''} · "
-                                            f"{criterio or 'CONTAGEM'} "
-                                            f"{quantidade:.3f} m · "
-                                            f"Consumo informado {consumo:.3f} m"
-                                            + (
-                                                f" · origem {source_code}"
-                                                if mapped_code != source_code
-                                                else ""
-                                            )
-                                        ).strip(" ·"),
-                                    }
-                                )
-
-                            br1, br2, br3, br4 = st.columns(4)
-                            br1.metric(
-                                "Itens do relatório",
-                                parsed_bar["total_rows"],
-                            )
-                            br2.metric(
-                                "Vinculados",
-                                len(valid_bar_rows),
-                            )
-                            br3.metric(
-                                "Físico total",
-                                f"{float(parsed_bar['total_metros']):,.3f} m"
-                                .replace(",", "X")
-                                .replace(".", ",")
-                                .replace("X", "."),
-                            )
-                            br4.metric(
-                                "Sem vínculo",
-                                len(bar_issues),
-                            )
-
-                            if valid_bar_rows:
-                                preview_bar = pd.DataFrame(
-                                    valid_bar_rows
-                                ).rename(
-                                    columns={
-                                        "codigo": "Código sistema",
-                                        "quantidade_fisica": "Contagem (m)",
-                                        "consumo": "Consumo informado (m)",
-                                        "observacao": "Detalhe",
-                                    }
-                                )
-                                _setta_dataframe(
-                                    preview_bar,
-                                    use_container_width=True,
-                                    hide_index=True,
-                                )
-
-                            if bar_issues:
-                                st.warning(
-                                    "A importação fica bloqueada até que TODOS os itens "
-                                    "do relatório possuam vínculo com um código do sistema."
-                                )
-
-                                bar_options = [
-                                    f"{row.get('codigo')} · {row.get('descricao')}"
-                                    for row in standby_catalog
-                                    if row.get("categoria") == "BARRA_COBRE"
-                                ]
-                                mapping_rows = []
-                                for index, issue in enumerate(bar_issues):
-                                    mapping_rows.append(
-                                        {
-                                            "ID": index,
-                                            "Código origem": issue.get(
-                                                "Código origem"
-                                            ),
-                                            "Modelo": issue.get("Modelo"),
-                                            "Físico (m)": issue.get(
-                                                "Físico (m)"
-                                            ),
-                                            "Consumo (m)": issue.get(
-                                                "Consumo (m)"
-                                            ),
-                                            "Vincular ao código": "",
-                                        }
-                                    )
-
-                                edited_bar_maps = _setta_data_editor(
-                                    pd.DataFrame(mapping_rows),
-                                    use_container_width=True,
-                                    hide_index=True,
-                                    disabled=[
-                                        "ID",
-                                        "Código origem",
-                                        "Modelo",
-                                        "Físico (m)",
-                                        "Consumo (m)",
-                                    ],
-                                    column_config={
-                                        "Vincular ao código": (
-                                            st.column_config.SelectboxColumn(
-                                                "Vincular ao código",
-                                                options=[""] + bar_options,
-                                                required=True,
-                                            )
-                                        )
-                                    },
-                                    key="cb_bar_mapping_editor",
-                                )
-
-                                if st.button(
-                                    "SALVAR VÍNCULOS DOS BARRAMENTOS",
-                                    type="primary",
-                                    use_container_width=True,
-                                    key="cb_save_bar_maps",
-                                ):
-                                    missing_links = edited_bar_maps[
-                                        edited_bar_maps[
-                                            "Vincular ao código"
-                                        ].astype(str).str.strip() == ""
-                                    ]
-                                    if not missing_links.empty:
-                                        st.error(
-                                            "Vincule todos os itens antes de salvar."
-                                        )
-                                    else:
-                                        for _, edit_row in (
-                                            edited_bar_maps.iterrows()
-                                        ):
-                                            source_issue = bar_issues[
-                                                int(edit_row["ID"])
-                                            ]
-                                            selected_code = str(
-                                                edit_row[
-                                                    "Vincular ao código"
-                                                ]
-                                            ).split(" · ", 1)[0].strip()
-
-                                            db.save_cb_physical_mapping(
-                                                "BARRAMENTOS_EXCEL",
-                                                str(
-                                                    source_issue.get(
-                                                        "Código origem"
-                                                    )
-                                                    or ""
-                                                ),
-                                                str(
-                                                    source_issue.get(
-                                                        "Modelo"
-                                                    )
-                                                    or ""
-                                                ),
-                                                selected_code,
-                                            )
-                                        st.session_state[
-                                            "_cb_count_flash"
-                                        ] = (
-                                            "Vínculos dos barramentos salvos."
-                                        )
-                                        load_cb_page_snapshot.clear()
-                                        st.rerun()
-
-                            elif valid_bar_rows and st.button(
-                                "IMPORTAR CONTAGEM DE BARRAMENTOS",
-                                type="primary",
-                                use_container_width=True,
-                                key="cb_import_bars",
-                            ):
-                                # Se o código veio diretamente do CADASTROS e ainda
-                                # não estava classificado no standby, a própria
-                                # contagem de barramentos confirma sua categoria.
-                                for auto_code, auto_item in (
-                                    auto_bar_catalog.items()
-                                ):
-                                    db.confirm_cb_catalog_item(
-                                        auto_code,
-                                        "BARRA_COBRE",
-                                        auto_item.get("descricao") or "",
-                                        auto_item.get("referencia") or "",
-                                        float(
-                                            auto_item.get("ult_preco")
-                                            or 0
-                                        ),
-                                    )
-
-                                db.save_cb_counts_batch(
-                                    cb_month,
-                                    "BARRAMENTOS_EXCEL",
-                                    bar_file.name,
-                                    valid_bar_rows,
-                                )
-                                st.session_state["_cb_count_flash"] = (
-                                    "Contagem de barramentos importada. "
-                                    "Todos os itens possuem vínculo com o sistema."
-                                )
-                                load_cb_page_snapshot.clear()
-                                st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Não foi possível ler a planilha de barramentos: {exc}"
-                            )
-
-                if cb_source_active == "ALMOXARIFADO · BARRAS":
-                    internal_file = st.file_uploader(
-                        "Planilha do almoxarifado de barras",
-                        type=["xlsx", "xltx"],
-                        key="cb_internal_file",
-                        help=(
-                            "Layout recomendado: BARRAMENTO + QUANTIDADE. "
-                            "BARRAMENTO pode ser código, referência ou medida em "
-                            "mm/polegadas. QUANTIDADE é tratada como número de barras "
-                            "de 3 m, salvo quando a célula indicar metros."
-                        ),
-                    )
-
-                    st.download_button(
-                        "RELATÓRIO MODELO",
-                        data=build_almox_barras_model(),
-                        file_name="MODELO_CONTAGEM_ALMOX_BARRAS.xlsx",
-                        mime=(
-                            "application/vnd.openxmlformats-officedocument."
-                            "spreadsheetml.sheet"
-                        ),
-                        type="tertiary",
-                        use_container_width=False,
-                        key="cb_download_internal_model",
-                    )
-
-                    if internal_file is not None:
-                        try:
-                            parsed_internal = cached_parse_cb_source(
-                                internal_file.getvalue(), internal_file.name, "almoxarifado"
-                            )
-
-                            internal_catalog_rows = [
-                                row
-                                for row in standby_catalog
-                                if row.get("categoria") == "BARRA_COBRE"
-                            ]
-                            internal_catalog = {
-                                str(row.get("codigo") or "").strip(): row
-                                for row in internal_catalog_rows
-                            }
-
-                            internal_valid = []
-                            internal_issues = []
-
-                            for row in parsed_internal["rows"]:
-                                source_key = str(
-                                    row.get("chave_origem") or ""
-                                ).strip()
-                                identifier = str(
-                                    row.get("identificador") or source_key
-                                ).strip()
-                                direct_code = str(
-                                    row.get("codigo_direto") or ""
-                                ).strip()
-
-                                mapped_code = (
-                                    direct_code
-                                    if direct_code in internal_catalog
-                                    else ""
-                                )
-
-                                if not mapped_code:
-                                    mapped_code = physical_mapping_lookup.get(
-                                        ("INTERNO_EXCEL", source_key),
-                                        "",
-                                    )
-
-                                match_origin = ""
-                                if mapped_code:
-                                    match_origin = (
-                                        "CÓDIGO"
-                                        if mapped_code == direct_code
-                                        else "VÍNCULO SALVO"
-                                    )
-
-                                similarity = None
-                                matched_dimension = ""
-
-                                if not mapped_code:
-                                    auto_matches = find_bar_catalog_matches(
-                                        identifier,
-                                        internal_catalog_rows,
-                                    )
-
-                                    if auto_matches:
-                                        best_match = auto_matches[0]
-                                        mapped_code = str(
-                                            best_match.get("codigo")
-                                            or ""
-                                        ).strip()
-                                        similarity = float(
-                                            best_match.get(
-                                                "_match_similarity"
-                                            )
-                                            or 0
-                                        )
-                                        matched_dimension = str(
-                                            best_match.get(
-                                                "_match_dimension"
-                                            )
-                                            or ""
-                                        ).strip()
-
-                                        match_origin = str(
-                                            best_match.get(
-                                                "_match_mode"
-                                            )
-                                            or "SIMILARIDADE"
-                                        ).strip()
-
-                                        if similarity < 99.99:
-                                            match_origin += (
-                                                f" · {similarity:.2f}%"
-                                            )
-                                    else:
-                                        internal_issues.append(
-                                            {
-                                                "Chave origem": source_key,
-                                                "Barramento informado": identifier,
-                                                "Quantidade informada": float(
-                                                    row.get(
-                                                        "quantidade_informada"
-                                                    )
-                                                    or 0
-                                                ),
-                                                "Leitura": str(
-                                                    row.get(
-                                                        "modo_quantidade"
-                                                    )
-                                                    or ""
-                                                ),
-                                                "Contagem calculada (m)": float(
-                                                    row.get(
-                                                        "quantidade_fisica"
-                                                    )
-                                                    or 0
-                                                ),
-                                                "Sugestões": "",
-                                            }
-                                        )
-                                        continue
-
-                                catalog_item = internal_catalog.get(
-                                    mapped_code,
-                                    {},
-                                )
-                                internal_valid.append(
-                                    {
-                                        "codigo": mapped_code,
-                                        "chave_origem": source_key,
-                                        "identificador": identifier,
-                                        "quantidade_informada": float(
-                                            row.get(
-                                                "quantidade_informada"
-                                            )
-                                            or 0
-                                        ),
-                                        "modo_quantidade": str(
-                                            row.get(
-                                                "modo_quantidade"
-                                            )
-                                            or ""
-                                        ),
-                                        "quantidade_fisica": float(
-                                            row.get(
-                                                "quantidade_fisica"
-                                            )
-                                            or 0
-                                        ),
-                                        "descricao": str(
-                                            catalog_item.get(
-                                                "descricao"
-                                            )
-                                            or ""
-                                        ).strip(),
-                                        "medida_encontrada": matched_dimension,
-                                        "similaridade": similarity,
-                                        "vinculo": match_origin,
-                                        "observacao": (
-                                            f"{parsed_internal['sheet']} · "
-                                            f"informado {identifier} · "
-                                            f"{row.get('quantidade_origem') or ''} · "
-                                            f"{match_origin}"
-                                        ).strip(" ·"),
-                                    }
-                                )
-
-                            in1, in2, in3 = st.columns(3)
-                            in1.metric(
-                                "Itens do relatório",
-                                parsed_internal["total_rows"],
-                            )
-                            in2.metric(
-                                "Vinculados",
-                                len(internal_valid),
-                            )
-                            in3.metric(
-                                "Sem vínculo",
-                                len(internal_issues),
-                            )
-
-                            if internal_valid:
-                                preview_internal = pd.DataFrame(
-                                    [
-                                        {
-                                            "Barramento informado": row.get(
-                                                "identificador"
-                                            ),
-                                            "Quantidade informada": row.get(
-                                                "quantidade_informada"
-                                            ),
-                                            "Leitura": row.get(
-                                                "modo_quantidade"
-                                            ),
-                                            "Contagem (m)": row.get(
-                                                "quantidade_fisica"
-                                            ),
-                                            "Código sistema": row.get(
-                                                "codigo"
-                                            ),
-                                            "Descrição": row.get(
-                                                "descricao"
-                                            ),
-                                            "Medida encontrada": row.get(
-                                                "medida_encontrada"
-                                            ),
-                                            "Semelhança": (
-                                                (
-                                                    f"{float(row.get('similaridade')):.2f}%"
-                                                )
-                                                if row.get("similaridade") is not None
-                                                else ""
-                                            ),
-                                            "Vínculo": row.get(
-                                                "vinculo"
-                                            ),
-                                        }
-                                        for row in internal_valid
-                                    ]
-                                )
-                                _setta_dataframe(
-                                    preview_internal,
-                                    use_container_width=True,
-                                    hide_index=True,
-                                )
-
-                            if internal_issues:
-                                st.warning(
-                                    "A importação fica bloqueada até que TODOS os itens "
-                                    "da contagem do almoxarifado estejam vinculados."
-                                )
-
-                                internal_options = sorted(
-                                    [
-                                        (
-                                            f"{row.get('codigo')} · "
-                                            f"{row.get('descricao')}"
-                                        )
-                                        for row in internal_catalog_rows
-                                    ]
-                                )
-
-                                mapping_rows = [
-                                    {
-                                        "ID": index,
-                                        "Barramento informado": issue.get(
-                                            "Barramento informado"
-                                        ),
-                                        "Quantidade informada": issue.get(
-                                            "Quantidade informada"
-                                        ),
-                                        "Leitura": issue.get("Leitura"),
-                                        "Contagem (m)": issue.get(
-                                            "Contagem calculada (m)"
-                                        ),
-                                        "Sugestões encontradas": issue.get(
-                                            "Sugestões"
-                                        ),
-                                        "Vincular ao código": "",
-                                    }
-                                    for index, issue in enumerate(
-                                        internal_issues
-                                    )
-                                ]
-
-                                edited_internal_maps = _setta_data_editor(
-                                    pd.DataFrame(mapping_rows),
-                                    use_container_width=True,
-                                    hide_index=True,
-                                    disabled=[
-                                        "ID",
-                                        "Barramento informado",
-                                        "Quantidade informada",
-                                        "Leitura",
-                                        "Contagem (m)",
-                                        "Sugestões encontradas",
-                                    ],
-                                    column_config={
-                                        "Vincular ao código": (
-                                            st.column_config.SelectboxColumn(
-                                                "Vincular ao código",
-                                                options=[""] + internal_options,
-                                                required=True,
-                                            )
-                                        )
-                                    },
-                                    key="cb_internal_mapping_editor",
-                                )
-
-                                if st.button(
-                                    "SALVAR VÍNCULOS DO ALMOXARIFADO",
-                                    type="primary",
-                                    use_container_width=True,
-                                    key="cb_save_internal_maps",
-                                ):
-                                    missing_links = edited_internal_maps[
-                                        edited_internal_maps[
-                                            "Vincular ao código"
-                                        ].astype(str).str.strip() == ""
-                                    ]
-                                    if not missing_links.empty:
-                                        st.error(
-                                            "Vincule todos os itens antes de salvar."
-                                        )
-                                    else:
-                                        for _, edit_row in (
-                                            edited_internal_maps.iterrows()
-                                        ):
-                                            issue = internal_issues[
-                                                int(edit_row["ID"])
-                                            ]
-                                            selected_code = str(
-                                                edit_row[
-                                                    "Vincular ao código"
-                                                ]
-                                            ).split(" · ", 1)[0].strip()
-
-                                            db.save_cb_physical_mapping(
-                                                "INTERNO_EXCEL",
-                                                str(
-                                                    issue.get(
-                                                        "Chave origem"
-                                                    )
-                                                    or ""
-                                                ),
-                                                str(
-                                                    issue.get(
-                                                        "Barramento informado"
-                                                    )
-                                                    or ""
-                                                ),
-                                                selected_code,
-                                            )
-                                        st.session_state[
-                                            "_cb_count_flash"
-                                        ] = (
-                                            "Vínculos do almoxarifado salvos."
-                                        )
-                                        load_cb_page_snapshot.clear()
-                                        st.rerun()
-
-                            elif internal_valid and st.button(
-                                "IMPORTAR CONTAGEM DO ALMOXARIFADO",
-                                type="primary",
-                                use_container_width=True,
-                                key="cb_import_internal",
-                            ):
-                                for linked_row in internal_valid:
-                                    if str(
-                                        linked_row.get("vinculo")
-                                        or ""
-                                    ) not in {
-                                        "CÓDIGO",
-                                        "VÍNCULO SALVO",
-                                    }:
-                                        db.save_cb_physical_mapping(
-                                            "INTERNO_EXCEL",
-                                            str(
-                                                linked_row.get(
-                                                    "chave_origem"
-                                                )
-                                                or ""
-                                            ),
-                                            str(
-                                                linked_row.get(
-                                                    "identificador"
-                                                )
-                                                or ""
-                                            ),
-                                            str(
-                                                linked_row.get("codigo")
-                                                or ""
-                                            ),
-                                        )
-
-                                db.save_cb_counts_batch(
-                                    cb_month,
-                                    "INTERNO_EXCEL",
-                                    internal_file.name,
-                                    internal_valid,
-                                )
-                                st.session_state["_cb_count_flash"] = (
-                                    "Contagem do almoxarifado importada. "
-                                    "Todos os itens possuem vínculo com o sistema."
-                                )
-                                load_cb_page_snapshot.clear()
-                                st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Não foi possível processar a contagem do almoxarifado: {exc}"
-                            )
-
-                    with st.expander(
-                        "LANÇAMENTO MANUAL",
-                        expanded=False,
-                    ):
-                        manual_options = [
-                            (
-                                str(row.get("codigo")),
-                                str(row.get("descricao") or ""),
-                                (
-                                    "KG"
-                                    if row.get("categoria") == "CHAPA"
-                                    else "MT"
-                                ),
-                            )
-                            for row in standby_catalog
-                            if row.get("categoria") == "BARRA_COBRE"
-                        ]
-                        manual_labels = [
-                            f"{code} · {description} · {unit}"
-                            for code, description, unit in manual_options
-                        ]
-
-                        if manual_labels:
-                            manual_selected = st.selectbox(
-                                "Material",
-                                manual_labels,
-                                key="cb_manual_code",
-                            )
-                            manual_code = manual_selected.split(
-                                " · ",
-                                1,
-                            )[0].strip()
-                            manual_unit = next(
-                                (
-                                    unit
-                                    for code, _, unit in manual_options
-                                    if code == manual_code
-                                ),
-                                "",
-                            )
-
-                            manual_qty = st.number_input(
-                                f"Quantidade física ({manual_unit or 'U.M.'})",
-                                min_value=0.0,
-                                value=0.0,
-                                step=1.0,
-                                format="%.6f",
-                                key="cb_manual_qty",
-                            )
-                            manual_obs = st.text_input(
-                                "Observação",
-                                key="cb_manual_obs",
-                            )
-
-                            if st.button(
-                                "SALVAR CONTAGEM MANUAL",
-                                type="primary",
-                                use_container_width=True,
-                                key="cb_save_manual",
-                            ):
-                                db.save_cb_count(
-                                    cb_month,
-                                    "INTERNO_MANUAL",
-                                    manual_code,
-                                    manual_qty,
-                                    manual_obs,
-                                    "Lançamento manual no aplicativo",
-                                )
-                                st.session_state["_cb_count_flash"] = (
-                                    "Contagem manual salva."
-                                )
-                                load_cb_page_snapshot.clear()
-                                st.rerun()
-
-            flash_count = st.session_state.pop(
-                "_cb_count_flash",
-                None,
-            )
-            if flash_count:
-                st.success(flash_count)
-
-            if cb_imports:
-                with st.expander("IMPORTAÇÕES DA COMPETÊNCIA"):
-                    imports_view = pd.DataFrame(cb_imports)
-                    if not imports_view.empty:
-                        imports_view["fonte"] = imports_view[
-                            "fonte"
-                        ].map(
-                            lambda value: CB_SOURCE_LABELS.get(
-                                str(value),
-                                str(value),
-                            )
-                        )
-                        _setta_dataframe(
-                            imports_view[
-                                [
-                                    "fonte",
-                                    "arquivo_nome",
-                                    "linhas",
-                                    "importado_em",
-                                ]
-                            ].rename(
-                                columns={
-                                    "fonte": "Fonte",
-                                    "arquivo_nome": "Arquivo",
-                                    "linhas": "Linhas",
-                                    "importado_em": "Importado em",
-                                }
-                            ),
-                            use_container_width=True,
-                            hide_index=True,
-                        )
+            if st.button("ABRIR ALIMENTADORES", key="fm_cb_to_feeders"):
+                st.session_state["fm_settings_area"] = "ALIMENTADORES"
+                st.session_state["fm_feeder_type"] = "CHAPAS E BARRAMENTOS"
+                _set_fm_page("Configurações")
+                st.rerun()
 
             cb_stage_header(
                 "03",
@@ -5363,11 +5498,83 @@ with _fm_page_surface.container():
             unsafe_allow_html=True,
         )
 
-        tab_api, tab_menu, tab_rules, tab_perf = st.tabs(
-            ["STATUS API", "MENU", "REGRAS", "DESEMPENHO"]
+        settings_view = st.segmented_control(
+            "Área de configurações",
+            ["STATUS API", "ALIMENTADORES", "MENU", "REGRAS", "DESEMPENHO"],
+            default="STATUS API",
+            key="fm_settings_area",
+            label_visibility="collapsed",
+            width="stretch",
         )
 
-        with tab_api:
+        if settings_view == "ALIMENTADORES":
+            feeder = st.segmented_control(
+                "Fonte de alimentação",
+                ["KARDEX", "ANALÍTICO", "CHAPAS E BARRAMENTOS"],
+                default="KARDEX",
+                key="fm_feeder_type",
+                width="stretch",
+            )
+            if feeder == "KARDEX":
+                from movement_analysis_ui import render_kardex_feeder
+                render_kardex_feeder()
+            elif feeder == "ANALÍTICO":
+                section_band(
+                    "01 · ALIMENTAÇÃO", "ANALÍTICO DE ESTOQUE",
+                    "Carga manual de contingência por competência. "
+                    "A conexão automática segue monitorada em STATUS API.",
+                )
+                render_manual_contingency(imports_by_month)
+            elif feeder == "CHAPAS E BARRAMENTOS":
+                section_band(
+                    "02 · ALIMENTAÇÃO", "ESTOQUE E CONTAGENS FÍSICAS",
+                    "Importe a posição de fechamento e as contagens do setor de "
+                    "chapas, barramentos e almoxarifado.",
+                )
+                if not visible_months:
+                    st.warning("Nenhuma competência disponível para alimentar.")
+                else:
+                    cb_month = st.selectbox(
+                        "Competência a alimentar",
+                        visible_months,
+                        index=len(visible_months) - 1,
+                        format_func=month_label,
+                        key="fm_feeder_month",
+                    )
+                    try:
+                        cadastros_context = central_cadastros_context()
+                        if cadastros_context.get("synchronized"):
+                            load_cb_page_snapshot.clear()
+                        cb_sources = load_cb_page_snapshot(cb_month)
+                        cb_catalog = cb_sources["catalogo"]
+                        standby_catalog = [
+                            row for row in cb_catalog
+                            if bool(row.get("ativo", True))
+                            and str(row.get("status") or "").upper() != "IGNORADO"
+                        ]
+                        physical_mapping_lookup = {
+                            (str(row.get("fonte") or "").strip(),
+                             str(row.get("chave_origem") or "").strip()):
+                            str(row.get("codigo") or "").strip()
+                            for row in cb_sources["mapeamentos_fisicos"]
+                            if str(row.get("status") or "").upper() == "CONFIRMADO"
+                        }
+                        render_cb_feeders(
+                            cb_month,
+                            cb_sources["saldos"],
+                            closing_date(cb_month).strftime("%d/%m/%Y"),
+                            standby_catalog,
+                            cb_catalog,
+                            cb_sources["mapeamentos_chapas"],
+                            physical_mapping_lookup,
+                            cadastros_context,
+                            cb_sources["importacoes"],
+                            visible_months,
+                        )
+                    except Exception as exc:
+                        st.error("Não foi possível carregar os alimentadores: " + str(exc))
+
+        if settings_view == "STATUS API":
             section_band(
                 "01 · FONTES",
                 "CENTRAL DE DADOS",
@@ -5484,15 +5691,7 @@ with _fm_page_surface.container():
                 '<div class="topic-divider"></div>',
                 unsafe_allow_html=True,
             )
-            section_band(
-                "02 · CONTINGÊNCIA",
-                "ALIMENTAÇÃO E RECUPERAÇÃO",
-                "As telas operacionais não exibem mais detalhes de conexão. Alimentação manual e recuperação ficam concentradas aqui.",
-            )
-
-            render_manual_contingency(imports_by_month)
-
-        with tab_menu:
+        if settings_view == "MENU":
             section_band(
                 "01 · NAVEGAÇÃO",
                 "NOMES DOS BOTÕES",
@@ -5597,7 +5796,7 @@ with _fm_page_surface.container():
                         + str(exc)
                     )
 
-        with tab_rules:
+        if settings_view == "REGRAS":
             section_band(
                 "01 · REGRAS",
                 "VALIDAÇÃO DO ANALÍTICO",
@@ -5614,7 +5813,7 @@ with _fm_page_surface.container():
             )
 
 
-        with tab_perf:
+        if settings_view == "DESEMPENHO":
             section_band(
                 "04 · DIAGNÓSTICO",
                 "TEMPO DE RESPOSTA DO APLICATIVO",
