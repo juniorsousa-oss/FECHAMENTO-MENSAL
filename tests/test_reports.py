@@ -257,6 +257,38 @@ class ReportsTests(unittest.TestCase):
         sample["items"]["divergente"] = False
         self.assertIsNone(reports.issue_rows(sample)[0][20])
 
+    def test_validated_r3_october_op_with_no_october_activity_is_included(self):
+        # R3 continha 26015901001 / 00705997, NF em 16/10/2026.
+        # O R8 baseado em atividade a excluía mesmo com faturamento no mês.
+        model = {
+            "as_of": "2026-10-31",
+            "baixas_fonte": "OPS", "history_available": True,
+            "catalog_prices": {"00705997": 40.62},
+            "ops": pd.DataFrame([{
+                "op": "26015901001", "data_faturamento": "16/10/2026",
+                "itens": 17, "separados": 17, "conferidos": 17,
+                "baixados": 16, "divergencias": 1,
+            }]),
+            "items": pd.DataFrame([{
+                "op": "26015901001", "codigo": "00705997",
+                "descricao": "CHAVE FIM DE CURSO COM SELETOR ROTATIVO",
+                "lotes": "061463", "necessaria": 13,
+                "separada": 13, "conferida": 13,
+                "baixada": 10, "pendente": 3,
+                "status": "PRODUTO NÃO CONSUMIDO COM SALDO NA PRODUÇÃO",
+                "divergente": True,
+            }]),
+            "general": [],  # nenhuma atividade entre as datas filtradas
+            "movements": [],
+        }
+        filtered = reports.issue_rows(
+            model, date(2026, 10, 1), date(2026, 10, 31)
+        )
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0][0], "26015901001")
+        self.assertEqual(filtered[0][12], "00705997")
+        self.assertEqual(filtered[0][20], 121.86)
+
     def test_future_activity_beyond_mes_snapshot_is_excluded(self):
         model = {
             "as_of": "2026-10-21", "baixas_fonte": "OPS",
