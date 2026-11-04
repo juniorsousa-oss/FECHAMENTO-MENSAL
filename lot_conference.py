@@ -17,7 +17,27 @@ import operational_status as status
 
 ZERO = Decimal("0")
 EPS = Decimal("0.000001")
-VERSION = "2026-11-04.3-RESULTADO-AGRUPADO"
+VERSION = "2026-11-04.4-ATENCAO-SEM-FALSO-ALERTA"
+
+# As mesmas categorias recebem atenção âmbar na tela e na exportação.
+# Não usar quantidade ou status de alerta para decidir a cor desses resultados.
+ATTENTION_RESULTS = frozenset({
+    status.AGUARDANDO_SEPARACAO,
+    status.SEPARADO_SEM_CONFERENCIA,
+    "BAIXA A MAIOR NESTE LOTE",
+    "BAIXA A MENOR NESTE LOTE",
+    "DIVERGÊNCIA DE LOTE",
+})
+LOT_RESULT_CATEGORIES = frozenset({
+    "BAIXA A MAIOR NESTE LOTE",
+    "BAIXA A MENOR NESTE LOTE",
+    "DIVERGÊNCIA DE LOTE",
+})
+
+
+def is_attention_result(result: str) -> bool:
+    return str(result or "").strip() in ATTENTION_RESULTS
+
 
 
 def _positive(value: Decimal) -> Decimal:
@@ -202,9 +222,13 @@ def build(model: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
             continue
 
         confirmed_total = sum((by_key[k]["conferida"] for k in keys), ZERO)
+        required_total = sum((by_key[k]["necessaria"] for k in keys), ZERO)
         issued_for_product = issued_index.get(product, {})
         issued_total = sum(issued_for_product.values(), ZERO)
         pending_total = _positive(confirmed_total - issued_total) if known else None
+        # Alertas por LOTE dependem da demanda TOTAL da OP + produto,
+        # não apenas do lote individual e nem só do conferido.
+        remaining_demand = _positive(required_total - issued_total) if known else None
 
         raw_short = {}
         raw_excess = {}
@@ -286,6 +310,13 @@ def build(model: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
                 gross_excess=excess, wrong_lots=note,
                 ambiguity=bool(ambiguity and shortage > EPS),
             )
+            # Diferenças entre lotes continuam registradas e destacadas,
+            # mas não integram alertas se a demanda total já foi baixada.
+            # A situação de atenção não é a mesma coisa que alerta ativo.
+            lot_difference = outcome in LOT_RESULT_CATEGORIES
+            if lot_difference and remaining_demand is not None:
+                divergent = remaining_demand > EPS
+            informative_lot_difference = lot_difference and not divergent
             row = dict(main)
             row.update({
                 "op": op, "codigo": code, "lote": lot, "lotes": lot,
@@ -312,6 +343,8 @@ def build(model: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
                 "falta_bruta_lote": shortage if known else None,
                 "excesso_lote": excess if known else None,
                 "pendente_total_produto": pending_total,
+                "pendente_demanda_produto": remaining_demand,
+                "divergencia_lote_informativa": informative_lot_difference,
                 "pendencia_indeterminada": ambiguity and shortage > EPS,
                 "item_id": f"{op}:{code}:{lot}",
                 "item_id_produto": main.get("item_id"),
