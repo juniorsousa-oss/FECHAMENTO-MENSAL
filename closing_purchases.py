@@ -21,7 +21,7 @@ PURCHASE_TERMS = ("COMPRA", "AQUISICAO", "IMPORTACAO")
 
 
 def _cfop(row: dict) -> str:
-    value = str(row.get("cf") or "").strip().replace(".", "")
+    value = str(row.get("cf") or "").strip()
     if re.fullmatch(r"\d{4}(?:\.0+)?", value):
         return value.split(".")[0]
     return ""
