@@ -1038,7 +1038,15 @@ def _ops(model, view, token):
                         key="fm_issue_excel_preview_" + number, value=False,
                     ):
                         from reports import OP_COLUMNS, issue_detail_rows
-                        preview = issue_detail_rows(model, {number})
+                        prices, price_meta = _optional_catalog_prices()
+                        preview = issue_detail_rows(
+                            {**model, "catalog_prices": prices}, {number},
+                        )
+                        if price_meta.get("erro"):
+                            st.caption(
+                                "Valor previsto da baixa indisponível: "
+                                + str(price_meta["erro"])
+                            )
                         preview_df = pd.DataFrame(
                             [values for values, _ in preview],
                             columns=OP_COLUMNS,
@@ -1058,9 +1066,10 @@ def _ops(model, view, token):
                         else:
                             st.info("Esta OP não possui materiais na fonte.")
                         st.caption(
-                            "A prévia mostra os 12 campos do cabeçalho da OP "
-                            "e os 12 campos dos materiais. Só o Resultado "
-                            "de produtos com alerta recebe destaque."
+                            "A prévia reproduz o cabeçalho da OP e os 13 campos "
+                            "de materiais do R3 validado, incluindo a previsão "
+                            "financeira de baixa. Só resultados com alerta "
+                            "recebem destaque."
                         )
                     st.markdown(
                         '<div class="fm-issue-mobile-hint">Deslize a tabela horizontalmente para consultar todas as colunas.</div>',
@@ -1282,15 +1291,13 @@ def render_results(model):
     } & selected_pairs
     separated_pairs = {
         (r["op"], r["codigo"]) for r in model["general"]
-        if not str(r.get("responsavel_conferencia") or "").strip()
-        and r["atendida"] > check.EPSILON
+        if r["atendida"] > check.EPSILON
     } & selected_pairs
-    separated_pairs -= confirmed_pairs
     with st.container(key="fm_issue_summary"):
         _cards([
             ("OPs encontradas", count(view["op"].nunique()), "Ordens no recorte"),
             ("Produtos", count(len(view)), "Códigos distintos por OP"),
-            ("Separados", count(len(separated_pairs)), "Atendidos sem conferente no Relatório Geral"),
+            ("Separados", count(len(separated_pairs)), "Quantidade atendida, inclusive materiais conferidos"),
             ("Conferidos", count(len(confirmed_pairs)), "Atendidos com conferente no Relatório Geral"),
         ])
     alerts = view.loc[view["divergente"]]
@@ -1321,17 +1328,29 @@ def render_results(model):
     with left:
         if st.button("PREPARAR EXCEL · ESPELHO DA CONFERÊNCIA", use_container_width=True, key="fm_issue_prepare_report"):
             from reports import export_issues
-            with st.spinner("Exportando os cabeçalhos das OPs e os produtos com os mesmos resultados da tela..."):
-                data = export_issues(model)
+            with st.spinner("Exportando a conferência e os valores previstos conforme R3..."):
+                prices, price_meta = _optional_catalog_prices()
+                if price_meta.get("erro"):
+                    st.warning(
+                        "CADASTROS sem preço disponível. Valores previstos "
+                        "ficarão vazios quando não houver preço válido. "
+                        + str(price_meta["erro"])
+                    )
+                data = export_issues({**model, "catalog_prices": prices})
             st.session_state["fm_issue_report_ready"] = (report_key, data)
     with right:
-        st.caption("Exportação em uma única aba: 12 colunas do cabeçalho da OP, seguidas das 12 colunas da tabela expandida de materiais. Os dados da OP se repetem em cada produto; somente resultados com alerta são destacados. Para filtrar por período, utilize RELATÓRIOS no menu lateral.")
+        st.caption(
+            "Exportação R10 em uma única aba: 12 campos da OP e 13 do material, "
+            "reproduzindo o R3 validado. Inclui Valor previsto da baixa "
+            "(CADASTROS × quantidade pendente), saldos e resultado. "
+            "Sem alteração das fontes ou da conciliação OPS."
+        )
     prepared = st.session_state.get("fm_issue_report_ready")
     if prepared and prepared[0] == report_key:
         st.download_button(
             "BAIXAR EXCEL · CONFERÊNCIA DE BAIXAS",
             data=prepared[1],
-            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R8.xlsx",
+            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R10.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="fm_issue_download_complete", use_container_width=True,
         )
