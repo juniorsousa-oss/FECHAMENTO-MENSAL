@@ -134,8 +134,9 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
         sheet_count = 4
     elif choice == REPORT_NAMES[1]:
         st.caption(
-            "Espelho da tela de Conferência de Baixas: 12 colunas do cabeçalho "
-            "da OP, seguidas de 12 colunas da tabela expandida de produtos, "
+            "Espelho do R3 validado: 12 colunas do cabeçalho "
+            "da OP, seguidas de 13 colunas de materiais (inclui Valor "
+            "previsto da baixa em R$), "
             "em uma única aba. O cabeçalho se repete por material. "
             "A conciliação continua baseada no Geral e no OPS por OP/produto/lote. "
             "Apenas produtos com alerta recebem destaque. "
@@ -217,7 +218,16 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                 elif choice == REPORT_NAMES[1]:
                     model = _get_issue_model(tuple(warehouses))
                     if model.get("catalog_meta", {}).get("erro"):
-                        st.warning("CADASTROS indisponível: a classificação de tipo de material pode estar incompleta.")
+                        st.warning(
+                            "CADASTROS indisponível: a classificação "
+                            "de tipo de material pode estar incompleta."
+                        )
+                    if model.get("catalog_price_meta", {}).get("erro"):
+                        st.warning(
+                            "Preços do CADASTROS indisponíveis: o Valor previsto "
+                            "da baixa ficará vazio para itens sem preço válido. "
+                            + str(model["catalog_price_meta"]["erro"])
+                        )
                     if not model.get("history_available"):
                         raise ValueError(
                             "Relatório OPS obrigatório: sem fonte confiável não "
@@ -296,7 +306,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     prefix = "KARDEX"
             st.session_state["fm_reports_ready"] = (
                 report_key, data,
-                f"{prefix}_SETTA_{period_key}_R9.xlsx"
+                f"{prefix}_SETTA_{period_key}_R10.xlsx"
                 if choice == REPORT_NAMES[1]
                 else f"{prefix}_SETTA_{period_key}.xlsx",
                 records
