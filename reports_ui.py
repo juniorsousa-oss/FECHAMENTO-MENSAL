@@ -95,20 +95,77 @@ def _date_controls():
 
 
 def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
+    """Três relatórios; período essencial visível, filtros secundários recolhidos.
+
+    Preserva as chaves de sessão e todos os argumentos da exportação.
+    As alterações são apenas visuais: não reclassificam ou alteram fontes.
+    """
     st.markdown('<div class="section-title">RELATÓRIOS</div>', unsafe_allow_html=True)
-    st.caption("Exporte o resumo do estoque, todas as OPs da conferência ou as movimentações KARDEX em arquivos independentes.")
-    choice = st.radio("TIPO DE RELATÓRIO", REPORT_NAMES, key="fm_reports_kind",
-                      horizontal=True)
-    st.markdown("### Período e critérios")
-    start, end, period_key = _date_controls()
+    st.caption("Escolha o relatório, defina o período e prepare o arquivo Excel.")
+
+    with st.container(border=True):
+        st.markdown("**01 · RELATÓRIO**")
+        choice = st.radio(
+            "TIPO DE RELATÓRIO", REPORT_NAMES, horizontal=True,
+            key="fm_reports_kind", label_visibility="collapsed",
+        )
+    with st.container(border=True):
+        st.markdown("**02 · PERÍODO**")
+        start, end, period_key = _date_controls()
     if not period_key:
         return
 
     extra = {}
     warehouses = []
-    if choice != REPORT_NAMES[0]:
-        try:
-            if choice == REPORT_NAMES[1]:
+    if choice == REPORT_NAMES[0]:
+        st.caption(
+            "Competências mensais: as datas selecionam meses de fechamento; "
+            "não representam saldos diários."
+        )
+        if not imports:
+            st.warning("Não há competências de estoque disponíveis para exportação.")
+            return
+        sheet_count = 4
+
+    elif choice == REPORT_NAMES[1]:
+        st.caption(
+            "25 colunas · uma linha por OP + produto + lote. "
+            "Por padrão, o período considera somente o faturamento."
+        )
+        left, right = st.columns(2, gap="medium")
+        with left:
+            extra["alerts"] = st.checkbox(
+                "Somente OPs com alerta",
+                key="fm_reports_alerts",
+            )
+        with right:
+            extra["include_activity"] = st.checkbox(
+                "Incluir OPs com atividade no período",
+                value=False, key="fm_reports_include_activity",
+                help=(
+                    "Inclui OPs com separação, conferência ou baixa no período, "
+                    "mesmo sem faturamento válido ou com faturamento fora dele."
+                ),
+            )
+        with st.expander("03 · FILTROS ADICIONAIS · opcional", expanded=False):
+            col_status, col_type = st.columns(2, gap="medium")
+            with col_status:
+                available_statuses = [
+                    stages.FINALIZADO_PATIO, stages.FINALIZADO_ENTREGUE,
+                    stages.NF_EMITIDA, stages.FINALIZADO, stages.REPORTADO,
+                    stages.EM_CONFERENCIA, stages.EM_SEPARACAO,
+                    stages.AGUARDANDO_INICIO,
+                ]
+                extra["status"] = st.selectbox(
+                    "Status da OP", ["Todos os status"] + available_statuses,
+                    key="fm_reports_issue_status",
+                )
+            with col_type:
+                extra["types"] = st.multiselect(
+                    "Tipo de material", ["EP", "II", "MP", "PA", "PI", "NI"],
+                    key="fm_reports_types", placeholder="Todos os tipos",
+                )
+            try:
                 states = issue._states()
                 entry = states.get("endereco") or {}
                 token = (
@@ -116,89 +173,91 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     str(entry.get("last_update_at") or ""),
                 )
                 options = issue._warehouse_options(token)
-            else:
-                sources = movement_store.list_imports()
-                options = _known_warehouses(sources)
-        except Exception as exc:
-            options = []
-            st.caption(f"Armazéns disponíveis não puderam ser consultados: {exc}")
-        if options:
-            warehouses = st.multiselect(
-                "ARMAZÉNS (vazio = todos)", options, key="fm_reports_wh",
-            )
-
-    if choice == REPORT_NAMES[0]:
-        st.caption("O Dashboard utiliza competências mensais. Datas intermediárias selecionam os meses correspondentes, não saldos diários.")
-        if not imports:
-            st.warning("Ainda não existem competências de estoque disponíveis para exportação.")
-            return
-        sheet_count = 4
-    elif choice == REPORT_NAMES[1]:
-        st.caption(
-            "Espelho do R3 validado: 12 colunas do cabeçalho "
-            "da OP, seguidas de 13 colunas de materiais (inclui Valor "
-            "previsto da baixa em R$), "
-            "em uma única aba. OP + produto + lote diferentes geram linhas "
-            "distintas, com o cabeçalho repetido em cada uma. "
-            "A conciliação continua baseada no Geral e no OPS por OP/produto/lote. "
-            "Apenas produtos com alerta recebem destaque. "
-            "Por padrão, o período filtra SOMENTE a data de faturamento: "
-            "OPs NI ou com faturamento em outro mês ficam de fora. "
-            "Marque a opção abaixo somente se também quiser incluir OPs "
-            "com movimentações no período."
-        )
-        extra["include_activity"] = st.checkbox(
-            "INCLUIR TAMBÉM OPs COM MOVIMENTAÇÃO NO PERÍODO "
-            "(separação, conferência ou baixa, inclusive faturamento NI)",
-            value=False, key="fm_reports_include_activity",
-        )
-        available_statuses = [
-            stages.FINALIZADO_PATIO, stages.FINALIZADO_ENTREGUE,
-            stages.NF_EMITIDA, stages.FINALIZADO, stages.REPORTADO,
-            stages.EM_CONFERENCIA, stages.EM_SEPARACAO, stages.AGUARDANDO_INICIO,
-        ]
-        extra["status"] = st.selectbox(
-            "STATUS DA OP", ["Todos os status"] + available_statuses,
-            key="fm_reports_issue_status",
-        )
-        extra["alerts"] = st.checkbox(
-            "Somente OPs com alerta", key="fm_reports_alerts",
-        )
-        extra["types"] = st.multiselect(
-            "TIPOS DE MATERIAL (vazio = todos)", ["EP", "II", "MP", "PA", "PI", "NI"],
-            key="fm_reports_types",
-        )
+            except Exception as exc:
+                options = []
+                st.caption("Armazéns indisponíveis: " + str(exc))
+            if options:
+                warehouses = st.multiselect(
+                    "Armazéns", options, key="fm_reports_wh",
+                    placeholder="Todos os armazéns",
+                )
+        active = []
+        if extra["alerts"]:
+            active.append("somente OPs com alerta")
+        if extra["include_activity"]:
+            active.append("atividade incluída")
+        if extra["status"] != "Todos os status":
+            active.append("status: " + extra["status"])
         if extra["types"]:
-            st.caption("O filtro de tipo limita os produtos exportados. Sem filtro, a OP selecionada sempre inclui todos os seus produtos.")
+            active.append("tipos: " + ", ".join(extra["types"]))
+        if warehouses:
+            active.append("armazéns: " + ", ".join(warehouses))
+        if active:
+            st.caption("Filtros ativos · " + " · ".join(active))
         sheet_count = 1
+
     else:
-        extra["summary_only"] = st.radio(
-            "NÍVEL DE APRESENTAÇÃO", ["Completo — grupos, OPs e movimentações",
-                                      "Resumo gerencial — grupos e TES"],
+        st.caption("Movimentações do KARDEX no período, por grupo e TES.")
+        extra["summary_only"] = st.selectbox(
+            "Apresentação",
+            ["Completo — grupos, OPs e movimentações",
+             "Resumo gerencial — grupos e TES"],
             key="fm_reports_detail",
         ).startswith("Resumo")
-        extra["types"] = st.multiselect(
-            "TIPOS DE MATERIAL (vazio = todos)", ["EP", "II", "MP", "PA", "PI"],
-            key="fm_reports_kardex_types",
-        )
-        try:
-            group_cfg = movement._groups_read()
-            group_options = [entry["nome"] for entry in group_cfg.get("grupos", [])]
-            group_options.append("SEM GRUPO")
-        except Exception:
-            group_options = []
-        extra["groups"] = st.multiselect(
-            "GRUPOS GERENCIAIS (vazio = todos)", group_options,
-            key="fm_reports_groups",
-        )
-        extra["tes"] = st.text_input(
-            "TES (opcional, códigos separados por vírgula)", key="fm_reports_tes",
-            placeholder="Ex.: 020, 520",
-        )
+        with st.expander("03 · FILTROS ADICIONAIS · opcional", expanded=False):
+            try:
+                sources = movement_store.list_imports()
+                options = _known_warehouses(sources)
+            except Exception as exc:
+                options = []
+                st.caption("Armazéns indisponíveis: " + str(exc))
+            if options:
+                warehouses = st.multiselect(
+                    "Armazéns", options, key="fm_reports_wh",
+                    placeholder="Todos os armazéns",
+                )
+            col_types, col_groups = st.columns(2, gap="medium")
+            with col_types:
+                extra["types"] = st.multiselect(
+                    "Tipos de material", ["EP", "II", "MP", "PA", "PI"],
+                    key="fm_reports_kardex_types", placeholder="Todos os tipos",
+                )
+            try:
+                group_cfg = movement._groups_read()
+                group_options = [
+                    entry["nome"] for entry in group_cfg.get("grupos", [])
+                ]
+                group_options.append("SEM GRUPO")
+            except Exception:
+                group_options = []
+            with col_groups:
+                extra["groups"] = st.multiselect(
+                    "Grupos gerenciais", group_options,
+                    key="fm_reports_groups", placeholder="Todos os grupos",
+                )
+            extra["tes"] = st.text_input(
+                "TES (opcional)", key="fm_reports_tes",
+                placeholder="Ex.: 020, 520, 550",
+            )
+        active = []
+        if warehouses:
+            active.append("armazéns: " + ", ".join(warehouses))
+        if extra["types"]:
+            active.append("tipos: " + ", ".join(extra["types"]))
+        if extra["groups"]:
+            active.append("grupos: " + ", ".join(extra["groups"]))
+        if extra["tes"].strip():
+            active.append("TES: " + extra["tes"])
+        if active:
+            st.caption("Filtros ativos · " + " · ".join(active))
         sheet_count = 1 if extra["summary_only"] else 3
 
-    st.info(f"**{choice.upper()}** · {sheet_count} aba(s) · " +
-            ("histórico completo" if start is None else f"{start:%d/%m/%Y} a {end:%d/%m/%Y}"))
+    period_label = (
+        "Histórico completo" if start is None
+        else f"{start:%d/%m/%Y} a {end:%d/%m/%Y}"
+    )
+    st.caption(f"**Resumo da exportação:** {choice} · {period_label} · {sheet_count} aba(s)")
+
     report_key = hashlib.sha256(repr((
         reports.EXPORT_SCHEMA_VERSION,
         choice, period_key, tuple(warehouses), extra,
