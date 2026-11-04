@@ -384,6 +384,27 @@ def _band():
     [class*="st-key-fm_issue_op_ok_"] [data-testid="stButton"] button {
       border-left-color:#1d2b40!important;border-bottom-color:#ecf0f5!important;
     }
+    /* Atenção operacional não é sinônimo de alerta crítico. */
+    [class*="st-key-fm_issue_op_attention_"] {
+      margin:.3rem 0 .65rem!important;
+      border:1px solid #f3d69d!important;border-radius:14px!important;
+      background:#fffbf1!important;
+      box-shadow:0 4px 14px rgba(15,23,42,.035)!important;
+      overflow:hidden!important;
+    }
+    [class*="st-key-fm_issue_op_attention_"] [data-testid="stButton"] button {
+      width:100%!important;min-height:54px!important;text-align:left!important;
+      justify-content:flex-start!important;
+      padding:.9rem 1rem!important;border-radius:0!important;
+      border-width:0 0 1px 5px!important;
+      border-left-color:#d69a24!important;border-bottom-color:#f3e4c8!important;
+      background:transparent!important;color:#8b5a0a!important;
+      box-shadow:none!important;
+    }
+    [class*="st-key-fm_issue_op_attention_"] [data-testid="stButton"] button p {
+      font-size:.78rem!important;font-weight:800!important;line-height:1.45!important;
+      white-space:normal!important;
+    }
     [class*="st-key-fm_issue_op_alert_"] [data-testid="stButton"] button p,
     [class*="st-key-fm_issue_op_ok_"] [data-testid="stButton"] button p {
       font-size:.78rem!important;font-weight:800!important;line-height:1.45!important;
@@ -1040,13 +1061,29 @@ def _ops(model, view, token):
             confirmed = int(context["conferidos"])
             discharged = int(context.get("baixados", 0))
             issues = int(context["divergencias"])
-            summary = "ORDEM COM ALERTA" if issues else "ORDEM OK"
+            result_column = "resultado_lote" if "resultado_lote" in group else "status"
+            attention_count = int(
+                group[result_column].astype(str).isin(
+                    lot_conference.ATTENTION_RESULTS
+                ).sum()
+            )
+            summary = (
+                "ORDEM COM ALERTA" if issues
+                else "ORDEM EM ATENÇÃO" if attention_count
+                else "ORDEM OK"
+            )
             title = (
                 f"OP {number} | {total} PRODUTOS | {separated} SEPARADOS | "
                 f"{confirmed} CONFERIDOS | {discharged} BAIXADOS | "
-                f"{issues} ALERTAS — {summary}"
+                f"{issues} ALERTAS"
+                + (f" | {attention_count} ATENÇÕES" if attention_count else "")
+                + f" — {summary}"
             )
-            css_key = "fm_issue_op_alert_" if issues else "fm_issue_op_ok_"
+            css_key = (
+                "fm_issue_op_alert_" if issues
+                else "fm_issue_op_attention_" if attention_count
+                else "fm_issue_op_ok_"
+            )
             is_open = st.session_state.get("fm_issue_open_op") == number
             with st.container(key=css_key + number):
                 st.button(
