@@ -51,8 +51,9 @@ def _lot_status(*, material: dict, required: Decimal, separated: Decimal,
     if ambiguity:
         return (
             status.BAIXA_LOTE_DIVERGENTE,
-            "BAIXAS EM LOTES DIVERGENTES; PENDÊNCIA REAL NÃO ATRIBUÍVEL A UM LOTE "
-            f"SEM VERIFICAÇÃO (FALTA NO LOTE: {gross_missing})",
+            "BAIXAS EM LOTES DIVERGENTES; HÁ PENDÊNCIA QUANTITATIVA REAL, "
+            "MAS SUA DISTRIBUIÇÃO ENTRE LOTES NÃO PODE SER COMPROVADA. "
+            f"FALTA BRUTA NESTE LOTE: {gross_missing}",
             True,
         )
     if wrong_lots:
@@ -213,8 +214,10 @@ def build(model: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
             f"BAIXA EM LOTE NÃO PREVISTO {lot or '(SEM LOTE)'}: {qty}"
             for lot, qty in remaining_extras
         )
+        # FALTA sem qualquer lote com excesso é uma baixa realmente
+        # pendente, não uma divergência de vínculo entre lotes.
         product_has_mismatch = bool(remaining_extras) or any(
-            raw_short[k] > EPS or raw_excess[k] > EPS for k in keys
+            raw_excess[k] > EPS for k in keys
         )
         for key in keys:
             _, _, lot = key
