@@ -134,9 +134,11 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
         sheet_count = 4
     elif choice == REPORT_NAMES[1]:
         st.caption(
-            "Relatório Geral preservado linha a linha (OP + produto + lote). "
-            "Quantidade atendida com conferente = conferida; sem conferente = separada. "
-            "O OPS acrescenta exclusivamente a baixa da mesma chave. "
+            "Espelho da tela de Conferência de Baixas: 12 colunas do cabeçalho "
+            "da OP, seguidas de 12 colunas da tabela expandida de produtos, "
+            "em uma única aba. O cabeçalho se repete por material. "
+            "A conciliação continua baseada no Geral e no OPS por OP/produto/lote. "
+            "Apenas produtos com alerta recebem destaque. "
             "O período seleciona OPs com atividade e exclui, por padrão, "
             "faturamentos anteriores à data inicial."
         )
@@ -283,7 +285,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     prefix = "KARDEX"
             st.session_state["fm_reports_ready"] = (
                 report_key, data,
-                f"{prefix}_SETTA_{period_key}_R7.xlsx"
+                f"{prefix}_SETTA_{period_key}_R8.xlsx"
                 if choice == REPORT_NAMES[1]
                 else f"{prefix}_SETTA_{period_key}.xlsx",
                 records
