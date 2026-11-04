@@ -72,8 +72,29 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertEqual(len([b for b in app.button if "OP 2600" in b.label]), 1)
         self.assertTrue(any("ORDEM OK" in b.label for b in app.button))
-        self.assertTrue(any("PREPARAR EXCEL ENXUTO" in b.label for b in app.button))
+        self.assertTrue(any("PREPARAR EXCEL · ESPELHO DA CONFERÊNCIA" in b.label for b in app.button))
 
+
+    def test_result_color_only_for_real_material_alert(self):
+        import issue_check_ui as ui
+        self.assertEqual(
+            ui._result_style({
+                "status": "PRODUTO CONSUMIDO",
+                "divergente": False, "historico_incompleto": True,
+            }), "",
+        )
+        self.assertEqual(
+            ui._result_style({
+                "status": "PRODUTO NÃO CONSUMIDO SEM SALDO PARA CONSUMO",
+                "divergente": True, "historico_incompleto": False,
+            }),
+            "background-color:#fef2f2;color:#991b1b",
+        )
+        self.assertEqual(
+            ui._result_style({
+                "status": "PRODUTO CONSUMIDO", "divergente": False,
+            }), "",
+        )
 
     def test_responsive_filters_cards_and_all_warehouses_without_manual_controls(self):
         import issue_check_ui as ui
