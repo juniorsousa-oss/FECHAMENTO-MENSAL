@@ -344,7 +344,9 @@ class LotReportTests(unittest.TestCase):
         row = result["lot_items"].iloc[0]
         self.assertEqual(row["pendente"], 0)
         self.assertEqual(row["baixada"], 0)
-        self.assertTrue(row["divergente"])
+        self.assertFalse(row["divergente"])
+        self.assertTrue(row["divergencia_lote_informativa"])
+        self.assertEqual(row["pendente_demanda_produto"], Decimal("0"))
         self.assertEqual(row["resultado_lote"], "BAIXA A MENOR NESTE LOTE")
         self.assertIn(LOT_C, row["detalhe_resultado_lote"])
         self.assertIn("COMPENSADA", row["detalhe_resultado_lote"])
