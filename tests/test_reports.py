@@ -56,7 +56,7 @@ class ReportsTests(unittest.TestCase):
         diagnosis = reports.selection_diagnostics(model, start, end)
         self.assertEqual(diagnosis["selected"], {"26000101001"})
         self.assertEqual(reports.issue_rows(model, start, end)[0][0], "26000101001")
-        old = reports.issue_rows(model, start, end, include_prior_billing=True)
+        old = reports.issue_rows(model, start, end, include_activity=True)
         self.assertEqual({r[0] for r in old}, {"25027101001", "26000101001"})
         self.assertEqual(len(reports.OP_COLUMNS), 24)
         self.assertEqual(reports.OP_COLUMNS[:12], [
@@ -74,6 +74,84 @@ class ReportsTests(unittest.TestCase):
         self.assertNotIn("Separações inferidas da conferência", reports.OP_COLUMNS)
         self.assertNotIn("Valor previsto da baixa (R$)", reports.OP_COLUMNS)
         self.assertNotIn("Data última atividade no período", reports.OP_COLUMNS)
+
+    def test_october_billing_only_excludes_ni_and_other_months(self):
+        """Relatório de outubro sem movimentações inclui SÓ faturamento em outubro."""
+        info = [
+            ("26001000001", "10/10/2026", ""),       # faturado outubro
+            ("26001000002", "31/10/2026", ""),       # faturado outubro no limite
+            ("26001000003", "NI", "2026-10-14"),     # movimentação outubro, sem NF
+            ("26001000004", "N/I", "2026-10-15"),    # outra forma de NI
+            ("26001000005", "", "2026-10-16"),       # faturamento vazio
+            ("26001000006", "19/09/2026", "2026-10-20"), # NF anterior, atividade outubro
+            ("26001000007", "01/11/2026", "2026-10-21"), # NF posterior, atividade outubro
+            ("26001000008", "29/10/2026", None),     # NF outubro sem atividade
+            ("26001000009", "DATA INVALIDA", "2026-10-25"),
+        ]
+        model = {
+            "as_of": "2026-10-31",
+            "baixas_fonte": "OPS", "history_available": True,
+            "ops": pd.DataFrame([
+                {"op": op, "data_faturamento": faturamento,
+                 "status_op": "NF EMITIDA", "itens": 1,
+                 "separados": 1, "conferidos": 1,
+                 "baixados": 1, "divergencias": 0}
+                for op, faturamento, _ in info
+            ]),
+            "items": pd.DataFrame([
+                {"op": op, "codigo": "06050080", "lotes": "000000000",
+                 "descricao": "MATERIAL", "necessaria": 1, "separada": 1,
+                 "conferida": 1, "baixada": 1, "pendente": 0,
+                 "status": "PRODUTO CONSUMIDO", "divergente": False}
+                for op, _, _ in info
+            ]),
+            "general": [
+                {"op": op, "separacao": activity, "conferencia": None}
+                for op, _, activity in info if activity
+            ],
+            "movements": [],
+        }
+        start, end = date(2026, 10, 1), date(2026, 10, 31)
+        only_billing = {"26001000001", "26001000002", "26001000008"}
+        diagnosis = reports.selection_diagnostics(model, start, end)
+        self.assertEqual(diagnosis["selected"], only_billing)
+        self.assertEqual(len(diagnosis["excluded_missing_billing"]), 4)
+        self.assertEqual(len(diagnosis["excluded_outside_billing"]), 2)
+        self.assertEqual({r[0] for r in reports.issue_rows(model, start, end)},
+                         only_billing)
+        wb = load_workbook(
+            BytesIO(reports.export_issues(model, start, end)),
+            read_only=True, data_only=True,
+        )
+        try:
+            rows = list(wb.active.values)
+            self.assertEqual(len(rows), 4)
+            self.assertEqual({r[0] for r in rows[1:]}, only_billing)
+            self.assertEqual(len(rows[0]), 24)
+        finally:
+            wb.close()
+        with_activity = reports.selection_diagnostics(
+            model, start, end, include_activity=True)
+        self.assertEqual(
+            with_activity["selected"],
+            {op for op, _, _ in info},
+        )
+        self.assertEqual(len(with_activity["added_by_activity"]), 6)
+        self.assertEqual(
+            {r[0] for r in reports.issue_rows(
+                model, start, end, include_activity=True)},
+            {op for op, _, _ in info},
+        )
+
+    def test_reports_ui_shows_explicit_movement_checkbox_default_false(self):
+        from pathlib import Path
+        content = (Path(__file__).resolve().parents[1] / "reports_ui.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("fm_reports_include_activity", content)
+        self.assertIn("INCLUIR TAMBÉM OPs COM MOVIMENTAÇÃO NO PERÍODO", content)
+        self.assertIn("value=False, key=\"fm_reports_include_activity\"", content)
+        self.assertNotIn("fm_reports_prior_billing", content)
 
     def test_excel_mirrors_expanded_op_and_colors_only_real_alerts(self):
         """Repetir cabeçalho e as 12 colunas expandidas; sem amarelo para OK."""
