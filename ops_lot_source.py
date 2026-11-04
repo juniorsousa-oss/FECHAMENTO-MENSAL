@@ -23,7 +23,10 @@ import movements as mv
 
 KEY = "fm_conferencia_ops_lotes_v1"
 FORMAT = "setta_ops_lotes_v1"
-VERSION = "2026-11-04.1-HEADER-MAPPING"
+# A versão da FONTE permanece igual porque nenhuma regra de movimento mudou.
+# A versão do LEITOR invalida apenas a prévia/cache de XLSX/XLTX.
+VERSION = "2026-11-03.2"
+PARSER_VERSION = "2026-11-04.1-HEADER-MAPPING"
 # Na base OPS, RE1/TES 999 também representa baixa associada à OP.
 # A exclusão anterior omitia 9.785 lançamentos do arquivo de referência,
 # inclusive 16 UN do 06050080 na OP 26017801001 (20/10/2026).
@@ -38,7 +41,7 @@ REQUIRED = {"B": "ORDPRODUCAO", "D": "PRODUTO", "F": "QUANTIDADE",
 # O (TES). O Protheus pode alterar o texto ou a ordem das colunas: a
 # conciliação precisa reconhecer o cabeçalho REAL, não supor posições.
 HEADER_ALIASES = {
-    "op": {"ORDPRODUCAO", "ORDEMPRODUCAO", "ORDDEPRODUCAO",
+    "op": {"ORDPRODUCAO", "ORDEMPRODUCAO", "ORDEMDEPRODUCAO", "ORDDEPRODUCAO",
            "ORDPROD", "ORDEMPROD", "OP", "NUMOP", "NUMERODAOP"},
     "codigo": {"PRODUTO", "CODPRODUTO", "CODIGOPRODUTO",
                "CODMATERIAL", "CODIGOMATERIAL", "CODIGOITEM"},
