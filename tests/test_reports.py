@@ -58,10 +58,84 @@ class ReportsTests(unittest.TestCase):
         self.assertEqual(reports.issue_rows(model, start, end)[0][0], "26000101001")
         old = reports.issue_rows(model, start, end, include_prior_billing=True)
         self.assertEqual({r[0] for r in old}, {"25027101001", "26000101001"})
-        self.assertEqual(len(reports.OP_COLUMNS), 10)
+        self.assertEqual(len(reports.OP_COLUMNS), 24)
+        self.assertEqual(reports.OP_COLUMNS[:12], [
+            "OP", "Produtos totais", "Produtos separados",
+            "Produtos conferidos", "Produtos baixados", "Produtos com alerta",
+            "Cliente", "Condição", "Nota fiscal", "Faturamento", "Pátio",
+            "Status da OP",
+        ])
+        self.assertEqual(reports.OP_COLUMNS[12:], [
+            "Produto", "Descrição", "Lotes", "Qtd necessária",
+            "Qtd separada", "Qtd conferida", "Qtd baixada",
+            "Qtd pendente baixa", "Saldo no lote conferido",
+            "Saldo G9-PROD", "Outros endereços", "Resultado",
+        ])
         self.assertNotIn("Separações inferidas da conferência", reports.OP_COLUMNS)
         self.assertNotIn("Valor previsto da baixa (R$)", reports.OP_COLUMNS)
         self.assertNotIn("Data última atividade no período", reports.OP_COLUMNS)
+
+    def test_excel_mirrors_expanded_op_and_colors_only_real_alerts(self):
+        """Repetir cabeçalho e as 12 colunas expandidas; sem amarelo para OK."""
+        model = {
+            "as_of": "2026-10-31",
+            "baixas_fonte": "OPS", "history_available": True,
+            "ops": pd.DataFrame([{
+                "op": "26015901001", "itens": 2, "separados": 2,
+                "conferidos": 2, "baixados": 1, "divergencias": 1,
+                "cliente": "SERRA VERDE", "condicao": "FINALIZADO",
+                "nota_fiscal": "10255", "data_faturamento": "16/10/2026",
+                "dias_patio": 18, "status_op": "FINALIZADO EM PÁTIO",
+            }]),
+            "items": pd.DataFrame([
+                {"op": "26015901001", "codigo": "00000196",
+                 "descricao": "CABO DE CONEXAO", "lotes": "058405",
+                 "necessaria": 6, "separada": 6, "conferida": 6,
+                 "baixada": 6, "pendente": 0,
+                 "saldo": 45, "saldo_g9_prod": 41,
+                 "outros_enderecos": "", "status": "PRODUTO CONSUMIDO",
+                 "historico_incompleto": True, "divergente": False,
+                 "tipo_material": "MP"},
+                {"op": "26015901001", "codigo": "00041468",
+                 "descricao": "LONGARINA", "lotes": "062285, 062984",
+                 "necessaria": 24, "separada": 12, "conferida": 10,
+                 "baixada": 10, "pendente": 2,
+                 "saldo": 0, "saldo_g9_prod": 0,
+                 "outros_enderecos": "S2/G9-SEPA",
+                 "status": "PRODUTO NÃO CONSUMIDO SEM SALDO PARA CONSUMO",
+                 "historico_incompleto": False, "divergente": True,
+                 "tipo_material": "MP"},
+            ]),
+        }
+        records = reports.issue_detail_rows(model, {"26015901001"})
+        self.assertEqual(len(records), 2)
+        self.assertFalse(records[0][1])
+        self.assertTrue(records[1][1])
+        self.assertEqual(len(records[0][0]), 24)
+        self.assertEqual(records[0][0][:12], records[1][0][:12])
+        self.assertEqual(records[0][0][0], "26015901001")
+        self.assertEqual(records[0][0][12], "00000196")
+        self.assertEqual(records[0][0][-1], "PRODUTO CONSUMIDO")
+
+        data = reports.export_issues(model)
+        excel = load_workbook(BytesIO(data), data_only=True)
+        try:
+            self.assertEqual(excel.sheetnames, ["Conferência de Baixas"])
+            ws = excel.active
+            self.assertEqual(ws.max_column, 24)
+            self.assertEqual(ws.max_row, 3)
+            self.assertEqual([c.value for c in ws[1]], reports.OP_COLUMNS)
+            self.assertEqual([c.value for c in ws[2]], records[0][0])
+            self.assertEqual([c.value for c in ws[3]], records[1][0])
+            self.assertIsNone(ws["X2"].fill.patternType)
+            self.assertEqual(ws["X3"].fill.patternType, "solid")
+            self.assertTrue(ws["X3"].fill.fgColor.rgb.endswith("FDE8E8"))
+            self.assertEqual(ws["M2"].number_format, "General")
+            self.assertEqual(ws["T3"].number_format, "General")
+            self.assertEqual(ws.freeze_panes, "A2")
+            self.assertEqual(ws.auto_filter.ref, "A1:X3")
+        finally:
+            excel.close()
 
     def test_future_activity_beyond_mes_snapshot_is_excluded(self):
         model = {
