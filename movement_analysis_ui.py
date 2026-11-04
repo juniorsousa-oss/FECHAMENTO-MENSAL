@@ -929,12 +929,11 @@ def render_results(model, imports):
         "Cadastros": ("03 · CADASTROS", "GRUPOS, TES E SUBGRUPOS",
                       "Gerencie as TES e a fila de condições que define os subgrupos."),
         "Fontes e relatórios": ("04 · FONTES E RELATÓRIOS",
-                               "HISTÓRICO, IMPORTAÇÃO E EXPORTAÇÃO",
+                               "HISTÓRICO E EXPORTAÇÃO",
                                "Registros originais, histórico de importações e relatórios completos."),
     }
     band(*headers[area])
     if area == "Fontes e relatórios":
-        _import_controls(imports, model)
         _import_registry(model)
         _exports(scope, model, _view_token(scope))
         if model["duplicates"]:
@@ -965,8 +964,7 @@ def render_movement_analysis():
         st.button("RECARREGAR HISTÓRICO", key="fm_mov_retry", on_click=_reload)
         return
     if not imports:
-        _import_controls(imports)
-        st.info("Importe os relatórios KARDEX para iniciar a análise e formar o histórico.")
+        st.info("Para iniciar a análise, importe os relatórios KARDEX em CONFIGURAÇÕES → ALIMENTADORES → KARDEX.")
         return
     try:
         with st.spinner("Carregando o histórico de movimentações..."):
@@ -979,7 +977,28 @@ def render_movement_analysis():
     frame = model["frame"]
     if frame.empty:
         st.info("O histórico não possui movimentações.")
-        _import_controls(imports, model)
         _import_registry(model)
         return
     render_results(model, imports)
+
+
+def render_kardex_feeder():
+    """Única tela de importação KARDEX, disponível em Configurações/Alimentadores."""
+    band("ALIMENTADORES", "KARDEX",
+         "Importação e substituição controlada por competência e armazém.")
+    try:
+        imports = _imports()
+    except Exception as exc:
+        st.error(f"Não foi possível consultar o histórico do KARDEX: {exc}")
+        return
+    model = None
+    if imports:
+        try:
+            tokens = tuple((i["chave"], i.get("atualizado_em", ""),
+                            i.get("meta") or {}) for i in imports)
+            model = _model(tokens, mv.rules()["versao"] + history.VERSION)
+        except Exception as exc:
+            st.warning(f"Prévia de sobreposição indisponível: {exc}")
+    _import_controls(imports, model)
+    if model is not None:
+        _import_registry(model)
