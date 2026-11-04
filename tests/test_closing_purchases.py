@@ -27,7 +27,7 @@ class ClosingPurchasesTests(unittest.TestCase):
                 source_row(cf="2102", amount="200.00", armazem="EP"),
                 source_row(cf="1152", description="TRANSFERENCIA DE ARMAZEM", amount="300"),
                 source_row(cf="1202", description="DEVOLUCAO DE VENDA", amount="50"),
-                source_row(cf="5102", description="", amount="80"),
+                source_row(cf="1252", description="", amount="80"),
             ],
         }
         summary = summarize_purchases(model)["2026-10"]
