@@ -25,7 +25,7 @@ MONEY_FORMAT = '#,##0.00;[Red](#,##0.00)'
 # separador decimal isolado que o formato #,##0.###### gerava no pt-BR.
 QUANTITY_FORMAT = "General"
 QUANTITY_INTEGER_FORMAT = "General"
-EXPORT_SCHEMA_VERSION = "2026-11-04.6-CATEGORIAS-FIXAS-R13"
+EXPORT_SCHEMA_VERSION = "2026-11-04.7-ATENCAO-R14"
 PERCENT_FORMAT = '0.00%;[Red](0.00%)'
 
 # Formato homologado: cabeçalho da OP repetido e, à direita, a mesma
@@ -239,7 +239,8 @@ class _Excel:
         self.add(name, headers, header=True)
         return ws
 
-    def add(self, name, values, *, header=False, alert=False):
+    def add(self, name, values, *, header=False, alert=False,
+            attention=False):
         ws, headers, money, quantities, percents, alert_column, count = self.sheets[name]
         row = []
         for i, value in enumerate(values):
@@ -253,7 +254,11 @@ class _Excel:
                 c.alignment = Alignment(vertical="center", wrap_text=True)
             else:
                 c.font = Font(name="Aptos", size=10, color="17243B")
-                if alert and (alert_column is None or alert_column == i):
+                if attention and (alert_column is None or alert_column == i):
+                    c.fill = PatternFill("solid", fgColor="FFF3D6")
+                    if alert_column == i:
+                        c.font = Font(name="Aptos", size=10, color="92400E", bold=True)
+                elif alert and (alert_column is None or alert_column == i):
                     c.fill = PatternFill("solid", fgColor=WARNING)
                     if alert_column == i:
                         c.font = Font(name="Aptos", size=10, color="991B1B", bold=True)
@@ -538,8 +543,13 @@ def export_issues(model: dict, start: date | None = None, end: date | None = Non
         money={OP_COLUMNS.index(name) for name in ISSUE_MONEY_NAMES},
         alert_column=OP_COLUMNS.index("Resultado"),
     )
+    import lot_conference
     for values, has_alert in records:
-        wb.add("Conferência de Baixas", values, alert=has_alert)
+        wb.add(
+            "Conferência de Baixas", values,
+            alert=has_alert,
+            attention=lot_conference.is_attention_result(values[-1]),
+        )
     return wb.save()
 
 
