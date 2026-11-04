@@ -25,7 +25,7 @@ MONEY_FORMAT = '#,##0.00;[Red](#,##0.00)'
 # separador decimal isolado que o formato #,##0.###### gerava no pt-BR.
 QUANTITY_FORMAT = "General"
 QUANTITY_INTEGER_FORMAT = "General"
-EXPORT_SCHEMA_VERSION = "2026-11-04.3-R3-25-COLS-R10"
+EXPORT_SCHEMA_VERSION = "2026-11-04.4-R3-FORECAST-STAGES-R11"
 PERCENT_FORMAT = '0.00%;[Red](0.00%)'
 
 # Formato homologado: cabeçalho da OP repetido e, à direita, a mesma
@@ -360,31 +360,67 @@ def export_stock(summaries: list[dict], imports: list[dict],
 
 
 def _valor_previsto_baixa(item: dict, prices: dict) -> float | None:
-    """Valor estimado somente para material com alerta e pendência positiva.
+    """Previsão financeira operacional: quantidade ainda não baixada × custo.
 
-    Base: preço unitário ULT. PRECO do CADASTROS x quantidade pendente.
-    Ausência de preço, divergência de dados ou histórico incompleto não
-    devem virar valores monetários artificiais.
+    Aguardando separação/conferência: necessidade − baixa OPS, pois a
+    pendência de conferência pode ser zero mesmo sem consumo realizado.
+    Não consumido: mantém a pendência de baixa já calculada pelo MES/OPS.
+    Demais alertas preservam a lógica prévia (pendência positiva).
+    Falta de preço ou de quantidade/baixa conhecida não vira zero fictício.
     """
-    if not bool(item.get("divergente")):
+    import operational_status as stages
+
+    status = str(item.get("status") or "").strip()
+    awaiting = {
+        stages.AGUARDANDO_SEPARACAO,
+        stages.SEPARADO_SEM_CONFERENCIA,
+    }
+    not_consumed = {
+        stages.NAO_CONSUMIDO_G9,
+        stages.NAO_CONSUMIDO_SEM,
+        stages.NAO_CONSUMIDO_OUTRO,
+    }
+    if status not in awaiting | not_consumed and not bool(item.get("divergente")):
         return None
     try:
-        pendente = item.get("pendente")
         codigo = str(item.get("codigo") or "").strip()
-        if pendente is None or not codigo:
+        if not codigo:
             return None
         if codigo.isdecimal() and len(codigo) <= 8:
             codigo = codigo.zfill(8)
-        preco_bruto = prices.get(codigo)
-        if preco_bruto is None or str(preco_bruto).strip() == "":
+        price_raw = prices.get(codigo)
+        if price_raw is None or str(price_raw).strip() == "":
             return None
-        quantidade = Decimal(str(pendente))
-        preco_unitario = Decimal(str(preco_bruto))
-        if not quantidade.is_finite() or not preco_unitario.is_finite():
+        unit_price = Decimal(str(price_raw))
+        if not unit_price.is_finite() or unit_price <= 0:
             return None
-        if quantidade <= 0 or preco_unitario <= 0:
-            return None
-        return float((quantidade * preco_unitario).quantize(
+
+        if status in awaiting:
+            # O OPS pode registrar baixas antes da separação/conferência.
+            # Não assumir baixa zero quando a fonte não a informou.
+            required_raw = item.get("necessaria")
+            issued_raw = item.get("baixada")
+            if required_raw is None or issued_raw is None:
+                return None
+            required = Decimal(str(required_raw))
+            issued = Decimal(str(issued_raw))
+            if not required.is_finite() or not issued.is_finite():
+                return None
+            remaining = max(required - issued, Decimal("0"))
+        else:
+            pending_raw = item.get("pendente")
+            if pending_raw is None:
+                return None
+            remaining = Decimal(str(pending_raw))
+            if not remaining.is_finite():
+                return None
+            remaining = max(remaining, Decimal("0"))
+            # A classificação antiga de outros alertas só previa
+            # dinheiro para pendências positivas.
+            if status not in not_consumed and remaining <= 0:
+                return None
+
+        return float((remaining * unit_price).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP))
     except (ValueError, ArithmeticError, TypeError):
         return None
