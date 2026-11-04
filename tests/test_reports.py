@@ -352,7 +352,8 @@ class ReportsTests(unittest.TestCase):
             ws = wb.active
             self.assertEqual(ws.max_column, 25)
             self.assertEqual(ws["U2"].value, 87.50)
-            self.assertIsNone(ws["Y2"].fill.patternType)
+            self.assertEqual(ws["Y2"].fill.patternType, "solid")
+            self.assertTrue(ws["Y2"].fill.fgColor.rgb.endswith("FFF3D6"))
             self.assertIn("0.00", ws["U2"].number_format)
         finally:
             wb.close()
