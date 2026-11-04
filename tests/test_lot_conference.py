@@ -144,7 +144,9 @@ class LotReportTests(unittest.TestCase):
             (2, 2, 3, 0),
         )
         self.assertEqual(result["items"].iloc[0]["pendente"], 0)
-        self.assertTrue(all(lot_items["divergente"]))
+        self.assertFalse(lot_items["divergente"].any())
+        self.assertTrue(lot_items["divergencia_lote_informativa"].all())
+        self.assertTrue((lot_items["pendente_demanda_produto"] == Decimal("0")).all())
         self.assertEqual(lots.loc[LOT_A, "resultado_lote"], "BAIXA A MENOR NESTE LOTE")
         self.assertEqual(lots.loc[LOT_B, "resultado_lote"], "BAIXA A MAIOR NESTE LOTE")
         self.assertIn("COMPENSADA EM OUTRO LOTE",
@@ -153,7 +155,7 @@ class LotReportTests(unittest.TestCase):
                       lots.loc[LOT_B, "detalhe_resultado_lote"])
         head = result["lot_ops"].iloc[0]
         self.assertEqual((head["itens"], head["separados"], head["conferidos"],
-                          head["divergencias"]), (2, 2, 2, 2))
+                          head["divergencias"]), (2, 2, 2, 0))
         rows = reports.issue_rows(result)
         self.assertEqual(len(rows), 2)
         self.assertEqual({r[14] for r in rows}, {LOT_A, LOT_B})
@@ -175,8 +177,89 @@ class LotReportTests(unittest.TestCase):
             self.assertEqual(sheet["T3"].value, 0)
             self.assertEqual(sheet["Y2"].fill.patternType, "solid")
             self.assertEqual(sheet["Y3"].fill.patternType, "solid")
+            self.assertTrue(sheet["Y2"].fill.fgColor.rgb.endswith("FFF3D6"))
+            self.assertTrue(sheet["Y3"].fill.fgColor.rgb.endswith("FFF3D6"))
+            self.assertEqual(sheet["F2"].value, 0)
+            self.assertEqual(sheet["F3"].value, 0)
         finally:
             book.close()
+
+    def test_unfulfilled_demand_makes_lot_mismatch_an_active_alert(self):
+        result = model(
+            [mes(LOT_A, 3), mes(LOT_B, 2)],
+            [move(LOT_A, 1), move(LOT_B, 3)],
+        )
+        lots = result["lot_items"]
+        self.assertTrue(lots["divergente"].all())
+        self.assertFalse(lots["divergencia_lote_informativa"].any())
+        self.assertTrue((lots["pendente_demanda_produto"] == Decimal("1")).all())
+        self.assertEqual(result["lot_ops"].iloc[0]["divergencias"], 2)
+        self.assertEqual(result["items"].iloc[0]["pendente"], 1)
+        self.assertEqual(
+            {r[-1] for r in reports.issue_rows(result)},
+            {"BAIXA A MENOR NESTE LOTE", "BAIXA A MAIOR NESTE LOTE"},
+        )
+        # Mesmo quando há alerta ativo, as duas categorias têm tom
+        # âmbar: a condição de gravidade é registrada separadamente.
+        wb = load_workbook(BytesIO(reports.export_issues(result)), data_only=True)
+        try:
+            self.assertTrue(wb.active["Y2"].fill.fgColor.rgb.endswith("FFF3D6"))
+            self.assertTrue(wb.active["Y3"].fill.fgColor.rgb.endswith("FFF3D6"))
+            self.assertEqual(wb.active["F2"].value, 2)
+        finally:
+            wb.close()
+
+    def test_total_required_includes_not_yet_conferred_lot(self):
+        # 4 unidades conferidas/baixadas não atendem a necessidade de 5.
+        # O sistema não pode quitar o alerta só porque conferidas=baixadas.
+        lines = [
+            mes(LOT_A, 3),
+            mes(LOT_B, 2, confirmed=False),
+        ]
+        result = model(lines, [move(LOT_A, 4)])
+        lot_a = result["lot_items"].set_index("lote").loc[LOT_A]
+        self.assertEqual(lot_a["conferida"], 3)
+        self.assertEqual(lot_a["baixada"], 4)
+        self.assertEqual(lot_a["pendente_total_produto"], 0)
+        self.assertEqual(lot_a["pendente_demanda_produto"], 1)
+        self.assertTrue(lot_a["divergente"])
+        self.assertEqual(lot_a["resultado_lote"], "BAIXA A MAIOR NESTE LOTE")
+
+    def test_attention_states_are_fixed_colors_without_creating_lot_errors(self):
+        for state in (
+            stages.AGUARDANDO_SEPARACAO,
+            stages.SEPARADO_SEM_CONFERENCIA,
+            "BAIXA A MAIOR NESTE LOTE",
+            "BAIXA A MENOR NESTE LOTE",
+            "DIVERGÊNCIA DE LOTE",
+        ):
+            with self.subTest(state=state):
+                self.assertTrue(lot_conference.is_attention_result(state))
+        self.assertFalse(
+            lot_conference.is_attention_result(stages.NAO_CONSUMIDO_SEM)
+        )
+        waiting = model([mes(LOT_A, 2, confirmed=False)], [])
+        item = waiting["lot_items"].iloc[0]
+        self.assertEqual(item["resultado_lote"],
+                         stages.SEPARADO_SEM_CONFERENCIA)
+        wb = load_workbook(BytesIO(reports.export_issues(waiting)), data_only=True)
+        try:
+            self.assertTrue(wb.active["Y2"].fill.fgColor.rgb.endswith("FFF3D6"))
+        finally:
+            wb.close()
+
+    def test_lot_mismatch_resolved_is_excluded_from_alerts_only_export(self):
+        result = model(
+            [mes(LOT_A, 3), mes(LOT_B, 2)],
+            [move(LOT_A, 2), move(LOT_B, 3)],
+        )
+        self.assertEqual(result["lot_ops"].iloc[0]["divergencias"], 0)
+        # Exibir normalmente no relatório completo, mas NÃO no relatório
+        # filtrado por OPs com alertas.
+        self.assertEqual(len(reports.issue_rows(result)), 2)
+        self.assertEqual(
+            reports.issue_rows(result, alerts_only=True), []
+        )
 
     def test_one_real_missing_baixa_is_attributed_to_correct_lot(self):
         result = model(
