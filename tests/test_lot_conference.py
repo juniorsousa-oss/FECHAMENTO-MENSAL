@@ -66,6 +66,65 @@ def model(lines, ops, *, with_prices=True):
 
 
 class LotReportTests(unittest.TestCase):
+    def test_large_ops_history_uses_indexed_lookup_per_product(self):
+        """Carga sintética: muitos materiais e baixas sem multiplicar varreduras."""
+        import time
+
+        n = 2500
+        general, items, ops, moves = [], [], [], []
+        for k in range(n):
+            op = f"{26000000000+k}"
+            code = f"{k:08d}"
+            product_id = f"{op}:{code}"
+            general.append({
+                "op": op, "codigo": code, "lote": "000000001",
+                "necessaria": Decimal("1"), "atendida": Decimal("1"),
+                "responsavel_conferencia": "CONFERENTE",
+                "descricao": "MATERIAL",
+            })
+            items.append({
+                "op": op, "codigo": code, "item_id": product_id,
+                "descricao": "MATERIAL", "tipo_material": "MP",
+                "status": stages.PRODUTO_CONSUMIDO,
+                "enderecos_alternativos": [],
+            })
+            ops.append({
+                "op": op, "itens": 1, "produtos": 1, "separados": 1,
+                "conferidos": 1, "baixados": 1, "divergencias": 0,
+            })
+            moves.append({
+                "op": op, "codigo": code, "lote": "000000001",
+                "natureza": "BAIXA / DEVOLUÇÃO",
+                "qtd_saida": "1", "qtd_entrada": "0",
+            })
+        # Movimentações adicionais do histórico, sem OP correspondente
+        # à base Geral atual, não podem disparar nova busca para cada item.
+        for k in range(8000):
+            moves.append({
+                "op": f"{30000000000+k}", "codigo": f"{k:08d}",
+                "lote": "000000002", "natureza": "BAIXA / DEVOLUÇÃO",
+                "qtd_saida": "1", "qtd_entrada": "0",
+            })
+        source = {
+            "general": general,
+            "items": pd.DataFrame(items),
+            "ops": pd.DataFrame(ops),
+            "lots": pd.DataFrame(),
+            "movements": moves,
+            "history_available": True,
+        }
+        beginning = time.perf_counter()
+        lines, headers = lot_conference.build(source)
+        elapsed = time.perf_counter() - beginning
+        self.assertEqual(len(lines), n)
+        self.assertEqual(len(headers), n)
+        self.assertTrue((lines["pendente"] == Decimal("0")).all())
+        self.assertTrue((lines["baixada"] == Decimal("1")).all())
+        self.assertFalse(lines["divergente"].any())
+        # Limite generoso de CI, mas evita regressão quadrática
+        # (>25 milhões de verificações desnecessárias).
+        self.assertLess(elapsed, 18.0)
+
     def test_swapped_lots_3_2_vs_2_3_have_zero_real_pending_but_both_alert(self):
         result = model(
             [mes(LOT_A, 3), mes(LOT_B, 2)],
