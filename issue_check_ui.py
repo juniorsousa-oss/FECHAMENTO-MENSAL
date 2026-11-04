@@ -1472,34 +1472,19 @@ def _history_warehouses(imports: list[dict]) -> set[str]:
     return found
 
 
-def render_issue_check():
-    _band()
-    st.markdown("#### FONTE DAS BAIXAS · RELATÓRIO OPS")
+def render_ops_feeder():
+    """Fonte OPS: importa e substitui períodos apenas em Configurações."""
+    st.markdown("#### ALIMENTADOR OPS · MOVIMENTAÇÕES COM LOTE")
     try:
         current_ops = _ops_meta()
     except Exception as exc:
+        st.error("Não foi possível consultar a fonte OPS: " + str(exc))
         current_ops = {}
-        st.error("Não foi possível consultar a fonte OPS salva: " + str(exc))
     if current_ops:
         st.caption(
-            f"Fonte ativa: {current_ops.get('arquivo_nome') or 'OPS'} · "
-            f"{count(current_ops.get('registros_consolidados_por_dia', 0))} registros consolidados · "
-            f"período {day(current_ops.get('periodo_inicio'))} a "
-            f"{day(current_ops.get('periodo_fim'))}. "
-            "Novos arquivos substituem somente seu intervalo de datas."
-        )
-        if current_ops.get("versao") != ops_lot_source.VERSION:
-            st.error(
-                "ESTA VERSÃO DA FONTE OPS PRECISA SER REPROCESSADA. "
-                "As regras anteriores descartavam RE1/TES 999 (inclusive a "
-                "baixa de 16 unidades do produto 06050080). "
-                "Abra a importação abaixo, carregue o MESMO OPS.xltx "
-                "e confirme a substituição para recalcular as baixas."
-            )
-    else:
-        st.warning(
-            "Nenhum Relatório OPS foi importado para esta conferência. "
-            "Sem esta fonte, nenhuma baixa será considerada comprovada."
+            "Fonte vigente: " + str(current_ops.get("arquivo_nome") or "OPS")
+            + " · período " + day(current_ops.get("periodo_inicio"))
+            + " a " + day(current_ops.get("periodo_fim"))
         )
     with st.expander("IMPORTAR / SUBSTITUIR RELATÓRIO OPS COM LOTE",
                      expanded=not bool(current_ops)):
@@ -1655,6 +1640,41 @@ def render_issue_check():
     flash = st.session_state.pop("_fm_issue_ops_flash", None)
     if flash:
         st.success(flash)
+
+
+def render_issue_check():
+    _band()
+    st.markdown("#### FONTE DAS BAIXAS · RELATÓRIO OPS")
+    try:
+        current_ops = _ops_meta()
+    except Exception as exc:
+        current_ops = {}
+        st.error("Não foi possível consultar a fonte OPS salva: " + str(exc))
+    if current_ops:
+        st.caption(
+            f"Fonte ativa: {current_ops.get('arquivo_nome') or 'OPS'} · "
+            f"{count(current_ops.get('registros_consolidados_por_dia', 0))} registros consolidados · "
+            f"período {day(current_ops.get('periodo_inicio'))} a "
+            f"{day(current_ops.get('periodo_fim'))}. "
+            "Novos arquivos substituem somente seu intervalo de datas."
+        )
+        if current_ops.get("versao") != ops_lot_source.VERSION:
+            st.error(
+                "ESTA VERSÃO DA FONTE OPS PRECISA SER REPROCESSADA. "
+                "As regras anteriores descartavam RE1/TES 999 (inclusive a "
+                "baixa de 16 unidades do produto 06050080). "
+                "Abra a importação abaixo, carregue o MESMO OPS.xltx "
+                "e confirme a substituição para recalcular as baixas."
+            )
+    else:
+        st.warning(
+            "Nenhum Relatório OPS foi importado para esta conferência. "
+            "Sem esta fonte, nenhuma baixa será considerada comprovada."
+        )
+    st.info(
+        "A importação do Relatório OPS foi movida para "
+        "CONFIGURAÇÕES → ALIMENTADORES → OPS. A conferência usa a versão vigente."
+    )
     try:
         states = _states()
         for key in SOURCE_KEYS:
