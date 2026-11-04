@@ -73,6 +73,100 @@ def ops_record(lot=LOT_A, qty="1", day="2026-10-05", code=CODE, op=OP):
 
 
 class OpsSourceTests(unittest.TestCase):
+    def test_new_header_aliases_and_reordered_columns_are_recognized_safely(self):
+        wb = Workbook()
+        sh = wb.active
+        sh.title = "Novas OPS"
+        # Exportação modificada: cabeçalhos com nomes alternativos e
+        # todas as colunas deslocadas uma posição, mantendo RE/DE e TES.
+        sh.append(["Relatório de Produção OPS"])
+        cols = [
+            "Centro Custo", "Ordem de Produção", "Tipo Movimento",
+            "Código Produto", "Descricao", "Qtd Movimentada", "UM",
+            "Custo Unitario", "Custo", "Documento",
+            "Data Movimento", "Custo Stand.", "TotalSTD",
+            "Número Lote", "TES", "Custo",
+        ]
+        sh.append(["Adicional"] + cols)
+        sh.append(["IGNORAR"] + line(op="26017801001", code="06050080",
+                                    kind="RE1", tes="999", qty=16,
+                                    lot="000000000", day=46315))
+        sh.append(["IGNORAR"] + line(op="26017801001", code="06050080",
+                                    kind="RE0", tes="550", qty=2,
+                                    lot="000000000", day=46316))
+        out = BytesIO()
+        wb.save(out)
+        wb.close()
+        parsed = src.parse(out.getvalue(), "OPS.xltx")
+        self.assertEqual(parsed["meta"]["movimentos_validos"], 2)
+        self.assertEqual(parsed["meta"]["re1_999_reconhecidos"], 1)
+        self.assertEqual(sum(Decimal(x["quantidade"]) for x in parsed["rows"]),
+                         Decimal("18"))
+        self.assertEqual(parsed["meta"]["mapeamento_colunas"]["Novas OPS"]["op"], "C")
+        self.assertEqual(parsed["meta"]["mapeamento_colunas"]["Novas OPS"]["codigo"], "E")
+        self.assertEqual(parsed["meta"]["mapeamento_colunas"]["Novas OPS"]["quantidade"], "G")
+        self.assertEqual(parsed["meta"]["mapeamento_colunas"]["Novas OPS"]["data"], "L")
+        self.assertEqual(parsed["meta"]["mapeamento_colunas"]["Novas OPS"]["lote"], "O")
+        self.assertEqual(parsed["meta"]["mapeamento_colunas"]["Novas OPS"]["tes"], "P")
+        self.assertEqual(parsed["meta"]["versao"], src.VERSION)
+
+    def test_old_format_still_works_without_changing_classification_version(self):
+        parsed = src.parse(xltx_bytes([line(kind="RE1", tes="999", qty=16)]),
+                           "OPS.xltx")
+        self.assertEqual(parsed["meta"]["mapeamento_colunas"]["Sheet"]["op"], "B")
+        self.assertEqual(parsed["meta"]["mapeamento_colunas"]["Sheet"]["codigo"], "D")
+        self.assertEqual(parsed["meta"]["mapeamento_colunas"]["Sheet"]["quantidade"], "F")
+        self.assertEqual(parsed["meta"]["mapeamento_colunas"]["Sheet"]["data"], "K")
+        self.assertEqual(parsed["meta"]["mapeamento_colunas"]["Sheet"]["lote"], "N")
+        self.assertEqual(parsed["meta"]["versao"], src.VERSION)
+
+    def test_missing_tes_or_re_de_must_never_fabricate_baixa(self):
+        wb = Workbook()
+        sh = wb.active
+        sh.append(["OP", "Produto", "Quantidade", "Data baixa", "Lote"])
+        sh.append([OP, CODE, 16, "20/10/2026", LOT_A])
+        out = BytesIO()
+        wb.save(out)
+        wb.close()
+        with self.assertRaisesRegex(ValueError, "Necessário identificar OP"):
+            src.parse(out.getvalue(), "OPS.xlsx")
+
+    def test_incompatible_header_reports_readable_column_sample(self):
+        wb = Workbook()
+        sh = wb.active
+        sh.title = "Base"
+        sh.append(["Centro", "Ordem de Produção", "Tipo RE/DE",
+                   "Produto", "Descrição", "Saldo", "Un", "Custo",
+                   "Total", "Doc", "DT Emissão", "outro", "outro",
+                   "Lote", "TP Movimento"])
+        out = BytesIO()
+        wb.save(out)
+        wb.close()
+        with self.assertRaisesRegex(ValueError, "Saldo"):
+            src.parse(out.getvalue(), "OPS.xltx")
+
+    def test_partial_history_is_blocked_even_when_dates_look_complete(self):
+        parsed = src.parse(xltx_bytes([line(kind="RE1", tes="999", qty=16)]),
+                           "OPS.xltx")
+        older = {
+            **parsed["meta"],
+            "sha256": "other-file",
+            "movimentos_validos": 112195,
+        }
+        with patch.object(src.db, "rpc") as rpc:
+            with self.assertRaisesRegex(ValueError, "redução superior a 20%"):
+                src.save(parsed, current=older)
+            rpc.assert_not_called()
+
+    def test_parser_cache_version_is_distinct_from_saved_classification(self):
+        import issue_check_ui as ui
+        raw = xltx_bytes([line(kind="RE1", tes="999", qty=16)])
+        parsed = ui._parse_ops_upload(raw, "OPS.xltx", src.VERSION,
+                                      src.PARSER_VERSION)
+        self.assertEqual(parsed["meta"]["versao"], src.VERSION)
+        with self.assertRaisesRegex(RuntimeError, "Versão do leitor OPS"):
+            ui._parse_ops_upload(raw, "OPS.xltx", src.VERSION, "OLD-PARSER")
+
     def test_reader_captures_lots_and_counts_re1_999_without_production(self):
         raw = xltx_bytes([
             line(qty=5, day=46220),
