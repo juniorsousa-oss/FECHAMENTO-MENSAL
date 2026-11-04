@@ -55,6 +55,7 @@ LABELS = {"op": "OP", "codigo": "Produto", "descricao": "Descrição", "lotes": 
           "saldo": "Saldo no lote conferido",
           "saldo_g9_prod": "Saldo G9-PROD", "outros_enderecos": "Outros endereços", "sem_saldo": "Sem cobertura de saldo ou baixa",
           "em_g9_prod": "Pendente com saldo G9-PROD", "status": "Resultado",
+          "resultado_lote": "Resultado",
           "historico_incompleto": "Histórico incompleto", "saldo_compartilhado": "Saldo compartilhado",
           "conflito_saldo": "Demanda compartilhada maior que saldo", "itens": "Registros",
           "itens_separados": "Separados", "itens_conferidos": "Conferidos",
