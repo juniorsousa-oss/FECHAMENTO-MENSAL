@@ -450,9 +450,9 @@ class OpsSourceTests(unittest.TestCase):
 
     def test_no_duplicate_when_same_file_is_reimported(self):
         parsed = src.parse(xltx_bytes([line()]), "ops.xlsx")
-        old = {**parsed["meta"], "atualizado_em": "2026-11-03T15:00:00Z"}
-        with patch.object(src.db, "rpc") as rpc:
-            result = src.save(parsed, current=old)
+        with patch.object(src, "load", return_value=parsed), \
+             patch.object(src.db, "rpc") as rpc:
+            result = src.save(parsed)
         self.assertFalse(result["saved"])
         rpc.assert_not_called()
 
