@@ -17,7 +17,7 @@ import operational_status as status
 
 ZERO = Decimal("0")
 EPS = Decimal("0.000001")
-VERSION = "2026-11-04.2-INDEXED-OPS-LOTS"
+VERSION = "2026-11-04.3-RESULTADO-AGRUPADO"
 
 
 def _positive(value: Decimal) -> Decimal:
@@ -93,6 +93,29 @@ def _lot_status(*, material: dict, required: Decimal, separated: Decimal,
                     status.SEPARADO_SEM_CONFERENCIA, True)
         return status.AGUARDANDO_SEPARACAO, status.AGUARDANDO_SEPARACAO, False
     return status.PRODUTO_CONSUMIDO, status.PRODUTO_CONSUMIDO, False
+
+
+def _result_category(canonical: str, detail: str, *,
+                     gross_missing: Decimal, gross_excess: Decimal,
+                     wrong_lots: str, ambiguity: bool) -> str:
+    """Categoria fixa para tela e filtro do Excel, sem valores variáveis.
+
+    Preserva a explicação completa separadamente em detalhe_resultado_lote
+    para auditoria e evidência. A classificação e os cálculos não mudam.
+    """
+    if ambiguity:
+        return "DIVERGÊNCIA DE LOTES — PENDÊNCIA A APURAR"
+    if gross_missing > EPS and wrong_lots:
+        return "BAIXA A MENOR NESTE LOTE"
+    if gross_excess > EPS:
+        return "BAIXA A MAIOR NESTE LOTE"
+    if wrong_lots:
+        return "DIVERGÊNCIA DE LOTE"
+    if canonical == status.BAIXA_LOTE_DIVERGENTE:
+        if "SEM CONFERENTE" in detail:
+            return "BAIXA SEM CONFERENTE REGISTRADO"
+        return "DIVERGÊNCIA DE LOTE"
+    return canonical
 
 
 def build(model: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -248,7 +271,7 @@ def build(model: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
                 None if not known or (ambiguity and shortage > EPS)
                 else real_pending[key]
             )
-            canonical, outcome, divergent = _lot_status(
+            canonical, detail, divergent = _lot_status(
                 material=main,
                 required=info["necessaria"],
                 separated=info["separada"], confirmed=info["conferida"],
@@ -257,6 +280,11 @@ def build(model: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
                 wrong_lots=note, ambiguity=bool(ambiguity and shortage > EPS),
                 saldo_prod=_valid_qty(stock.get("saldo_g9_prod")),
                 saldo=_valid_qty(stock.get("saldo")),
+            )
+            outcome = _result_category(
+                canonical, detail, gross_missing=shortage,
+                gross_excess=excess, wrong_lots=note,
+                ambiguity=bool(ambiguity and shortage > EPS),
             )
             row = dict(main)
             row.update({
@@ -279,6 +307,7 @@ def build(model: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
                 ),
                 "status": canonical,
                 "resultado_lote": outcome,
+                "detalhe_resultado_lote": detail,
                 "divergente": divergent,
                 "falta_bruta_lote": shortage if known else None,
                 "excesso_lote": excess if known else None,
