@@ -17,7 +17,7 @@ import operational_status as status
 
 ZERO = Decimal("0")
 EPS = Decimal("0.000001")
-VERSION = "2026-11-04.5-SEM-DEMANDA-NEUTRO"
+VERSION = "2026-11-04.6-SEM-DEMANDA-NEUTRO-R2"
 
 # As mesmas categorias recebem atenção âmbar na tela e na exportação.
 # Não usar quantidade ou status de alerta para decidir a cor desses resultados.
@@ -131,6 +131,10 @@ def _result_category(canonical: str, detail: str, *,
     Preserva a explicação completa separadamente em detalhe_resultado_lote
     para auditoria e evidência. A classificação e os cálculos não mudam.
     """
+    if canonical == "SEM DEMANDA OU MOVIMENTAÇÃO NO LOTE":
+        # Não sobrescrever a categoria neutra com uma divergência herdada
+        # de outros lotes do mesmo produto.
+        return canonical
     if ambiguity:
         return "DIVERGÊNCIA DE LOTES — PENDÊNCIA A APURAR"
     if gross_missing > EPS and wrong_lots:
