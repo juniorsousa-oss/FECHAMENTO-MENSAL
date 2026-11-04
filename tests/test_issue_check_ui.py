@@ -96,6 +96,26 @@ class IssueCheckUITests(unittest.TestCase):
             }), "",
         )
 
+    def test_lot_results_render_under_result_header_with_red_only_if_alert(self):
+        import pandas as pd
+        from unittest.mock import patch
+        import issue_check_ui as ui
+        grid = pd.DataFrame([
+            {"op": "26015901001", "codigo": "00041468", "lotes": "062285",
+             "resultado_lote": "BAIXA A MENOR NO LOTE", "divergente": True},
+            {"op": "26015901001", "codigo": "00041468", "lotes": "062984",
+             "resultado_lote": "PRODUTO CONSUMIDO", "divergente": False},
+        ])
+        with patch.object(ui.st, "dataframe") as display:
+            ui._table(grid, ["codigo", "lotes", "resultado_lote"])
+        style = display.call_args.args[0]
+        self.assertEqual(list(style.data.columns),
+                         ["Produto", "Lotes", "Resultado"])
+        html = style.to_html()
+        self.assertIn("background-color: #fef2f2", html)
+        self.assertIn("PRODUTO CONSUMIDO", html)
+        self.assertEqual(html.count("background-color: #fef2f2"), 1)
+
     def test_responsive_filters_cards_and_all_warehouses_without_manual_controls(self):
         import issue_check_ui as ui
         source = (Path(__file__).resolve().parents[1] / "issue_check_ui.py").read_text("utf-8")
