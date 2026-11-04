@@ -17,7 +17,7 @@ import operational_status as status
 
 ZERO = Decimal("0")
 EPS = Decimal("0.000001")
-VERSION = "2026-11-04.4-ATENCAO-SEM-FALSO-ALERTA"
+VERSION = "2026-11-04.5-SEM-DEMANDA-NEUTRO"
 
 # As mesmas categorias recebem atenção âmbar na tela e na exportação.
 # Não usar quantidade ou status de alerta para decidir a cor desses resultados.
@@ -67,6 +67,14 @@ def _lot_status(*, material: dict, required: Decimal, separated: Decimal,
         return status.MATERIAL_CONSUMO, status.MATERIAL_CONSUMO, False
     if issued is None:
         return status.AGUARDANDO_OPS, status.AGUARDANDO_OPS, False
+
+    # Linha do Geral sem demanda, separação, conferência ou baixa OPS não
+    # pode herdar alerta do lote de outra linha do mesmo produto. A linha
+    # permanece consultável para investigar sua origem, mas é neutra.
+    if (required <= EPS and separated <= EPS and confirmed <= EPS
+            and abs(issued) <= EPS):
+        result = "SEM DEMANDA OU MOVIMENTAÇÃO NO LOTE"
+        return result, result, False
 
     if ambiguity:
         return (
