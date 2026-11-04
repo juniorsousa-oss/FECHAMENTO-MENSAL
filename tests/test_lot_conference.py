@@ -1,0 +1,221 @@
+"""Regressões da conferência por OP + produto + lote (MES + OPS).
+
+Nenhuma base de produção é modificada. Os três testes de falta diferenciam
+ausência real de quantidade e diferença somente no vínculo do lote.
+"""
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+from io import BytesIO
+import unittest
+
+import pandas as pd
+from openpyxl import load_workbook
+
+import issue_check
+import lot_conference
+import operational_status as stages
+import reports
+
+
+OP = "26015901001"
+CODE = "00041468"
+LOT_A = "062285"
+LOT_B = "062984"
+LOT_C = "062985"
+META = {
+    "arquivo_nome": "OPS.xlsx",
+    "periodo_inicio": "2026-01-01",
+    "periodo_fim": "2026-11-04",
+    "movimentos_validos": 3,
+}
+
+
+def mes(lot: str, quantity: int, *, confirmed=True):
+    return {
+        "Projeto": OP, "Código": CODE,
+        "Descrição": "LONGARINA",
+        "Lote": lot,
+        "Qtd. necessária": quantity,
+        "Qtd. atendida": quantity,
+        "Data de separação": "03/10/2026",
+        "Resp. Conferencia": "MOISÉS" if confirmed else "",
+        "Data de conferência": "03/10/2026" if confirmed else "",
+    }
+
+
+def move(lot: str, qty: int, day="2026-10-04"):
+    return {
+        "op": OP, "codigo": CODE, "lote": lot,
+        "tipo_movimento": "RE0", "tes": "550",
+        "data": day, "quantidade": str(qty),
+        "documento": "DOC",
+    }
+
+
+def model(lines, ops, *, with_prices=True):
+    parsed = issue_check.parse_general(pd.DataFrame(lines))
+    reconciled = issue_check.reconcile_ops(
+        parsed, [], ops, ops_meta=META, as_of="2026-11-04"
+    )
+    result = stages.apply(reconciled)
+    if with_prices:
+        result["catalog_prices"] = {CODE: 20.0}
+    return result
+
+
+class LotReportTests(unittest.TestCase):
+    def test_swapped_lots_3_2_vs_2_3_have_zero_real_pending_but_both_alert(self):
+        result = model(
+            [mes(LOT_A, 3), mes(LOT_B, 2)],
+            [move(LOT_A, 2), move(LOT_B, 3)],
+        )
+        lot_items = result["lot_items"]
+        self.assertEqual(len(lot_items), 2)
+        lots = lot_items.set_index("lote")
+        self.assertEqual(
+            (lots.loc[LOT_A, "necessaria"], lots.loc[LOT_A, "conferida"],
+             lots.loc[LOT_A, "baixada"], lots.loc[LOT_A, "pendente"]),
+            (3, 3, 2, 0),
+        )
+        self.assertEqual(
+            (lots.loc[LOT_B, "necessaria"], lots.loc[LOT_B, "conferida"],
+             lots.loc[LOT_B, "baixada"], lots.loc[LOT_B, "pendente"]),
+            (2, 2, 3, 0),
+        )
+        self.assertEqual(result["items"].iloc[0]["pendente"], 0)
+        self.assertTrue(all(lot_items["divergente"]))
+        self.assertIn("BAIXA A MENOR", lots.loc[LOT_A, "resultado_lote"])
+        self.assertIn("COMPENSADA EM OUTRO LOTE", lots.loc[LOT_A, "resultado_lote"])
+        self.assertIn("BAIXA A MAIOR", lots.loc[LOT_B, "resultado_lote"])
+        head = result["lot_ops"].iloc[0]
+        self.assertEqual((head["itens"], head["separados"], head["conferidos"],
+                          head["divergencias"]), (2, 2, 2, 2))
+        rows = reports.issue_rows(result)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({r[14] for r in rows}, {LOT_A, LOT_B})
+        self.assertEqual(sum(r[17] for r in rows), 5)
+        self.assertEqual(sum(r[18] for r in rows), 5)
+        self.assertEqual(sum(r[19] for r in rows), 0)
+        self.assertTrue(all("BAIXA A" in r[24] for r in rows))
+        book = load_workbook(
+            BytesIO(reports.export_issues(result)),
+            read_only=False, data_only=True,
+        )
+        try:
+            sheet = book.active
+            self.assertEqual(sheet.max_column, 25)
+            self.assertEqual(sheet.max_row, 3)
+            self.assertEqual({sheet["O2"].value, sheet["O3"].value},
+                             {LOT_A, LOT_B})
+            self.assertEqual(sheet["T2"].value, 0)
+            self.assertEqual(sheet["T3"].value, 0)
+            self.assertEqual(sheet["Y2"].fill.patternType, "solid")
+            self.assertEqual(sheet["Y3"].fill.patternType, "solid")
+        finally:
+            book.close()
+
+    def test_one_real_missing_baixa_is_attributed_to_correct_lot(self):
+        result = model(
+            [mes(LOT_A, 3), mes(LOT_B, 2)],
+            [move(LOT_A, 2), move(LOT_B, 2)],
+        )
+        rows = result["lot_items"].set_index("lote")
+        self.assertEqual(rows.loc[LOT_A, "pendente"], 1)
+        self.assertEqual(rows.loc[LOT_B, "pendente"], 0)
+        self.assertIn("FALTAM 1 NESTE LOTE", rows.loc[LOT_A, "resultado_lote"])
+        self.assertEqual(rows.loc[LOT_B, "status"], stages.PRODUTO_CONSUMIDO)
+        self.assertFalse(rows.loc[LOT_B, "divergente"])
+        excel = reports.issue_rows(result)
+        a = next(r for r in excel if r[14] == LOT_A)
+        b = next(r for r in excel if r[14] == LOT_B)
+        self.assertEqual((a[19], b[19]), (1, 0))
+        self.assertEqual((a[20], b[20]), (20, None))
+        self.assertEqual(result["items"].iloc[0]["pendente"], 1)
+
+    def test_partial_cross_lot_credit_still_identifies_remainder(self):
+        result = model(
+            [mes(LOT_A, 3), mes(LOT_B, 2)],
+            [move(LOT_A, 1), move(LOT_B, 3)],
+        )
+        lots = result["lot_items"].set_index("lote")
+        self.assertEqual(lots.loc[LOT_A, "falta_bruta_lote"], 2)
+        self.assertEqual(lots.loc[LOT_A, "pendente"], 1)
+        self.assertEqual(lots.loc[LOT_B, "excesso_lote"], 1)
+        self.assertEqual(lots.loc[LOT_B, "pendente"], 0)
+        self.assertIn("PENDÊNCIA REAL 1", lots.loc[LOT_A, "resultado_lote"])
+        self.assertEqual(result["items"].iloc[0]["pendente"], 1)
+        self.assertEqual(
+            sum(r[19] or 0 for r in reports.issue_rows(result)), 1
+        )
+
+    def test_same_op_product_lot_multiple_general_lines_are_summed_once(self):
+        result = model(
+            [mes(LOT_A, 1), mes(LOT_A, 2), mes(LOT_B, 2)],
+            [move(LOT_A, 3), move(LOT_B, 2)],
+        )
+        lot_view = result["lot_items"]
+        self.assertEqual(len(lot_view), 2)
+        self.assertEqual(result["lot_ops"].iloc[0]["itens"], 2)
+        lot_a = lot_view.set_index("lote").loc[LOT_A]
+        self.assertEqual((lot_a["necessaria"], lot_a["separada"],
+                          lot_a["conferida"], lot_a["baixada"],
+                          lot_a["pendente"]), (3, 3, 3, 3, 0))
+
+    def test_multiple_candidate_lots_partial_credit_is_marked_ambiguous(self):
+        result = model(
+            [mes(LOT_A, 3), mes(LOT_B, 4), mes(LOT_C, 2)],
+            [move(LOT_A, 1), move(LOT_B, 3), move(LOT_C, 3)],
+        )
+        # Total confirmado 9, total baixa 7. Falta real 2, mas um excesso
+        # em C pode ser de A ou B; nenhum lote pode ser escolhido arbitrariamente.
+        view = result["lot_items"].set_index("lote")
+        self.assertEqual(result["items"].iloc[0]["pendente"], 2)
+        self.assertIsNone(view.loc[LOT_A, "pendente"])
+        self.assertIsNone(view.loc[LOT_B, "pendente"])
+        self.assertTrue(view.loc[LOT_A, "pendencia_indeterminada"])
+        self.assertTrue(view.loc[LOT_B, "pendencia_indeterminada"])
+        self.assertIn("NÃO PODE SER COMPROVADA",
+                      view.loc[LOT_A, "resultado_lote"])
+        self.assertEqual(view.loc[LOT_C, "pendente"], 0)
+        self.assertIsNone(
+            next(r for r in reports.issue_rows(result) if r[14] == LOT_A)[20]
+        )
+
+    def test_baixa_in_unexpected_lot_does_not_create_fake_shortage(self):
+        result = model(
+            [mes(LOT_A, 3)],
+            [move(LOT_C, 3)],
+        )
+        row = result["lot_items"].iloc[0]
+        self.assertEqual(row["pendente"], 0)
+        self.assertEqual(row["baixada"], 0)
+        self.assertTrue(row["divergente"])
+        self.assertIn(LOT_C, row["resultado_lote"])
+        self.assertIn("COMPENSADA", row["resultado_lote"])
+
+    def test_header_and_report_filter_count_each_lot_as_separate_product(self):
+        result = model(
+            [mes(LOT_A, 3), mes(LOT_B, 2)],
+            [move(LOT_A, 2), move(LOT_B, 3)],
+        )
+        start, end = date(2026, 10, 1), date(2026, 10, 31)
+        # Os dados da OP oriundos do FOR001 são ausentes na amostra:
+        # o período de faturamento só pode incluir OP com data real.
+        result["lot_ops"]["data_faturamento"] = "16/10/2026"
+        result["ops"]["data_faturamento"] = "16/10/2026"
+        filtered = reports.issue_rows(result, start, end)
+        self.assertEqual(len(filtered), 2)
+        self.assertEqual(
+            {r[14] for r in filtered}, {LOT_A, LOT_B}
+        )
+        selected = reports.issue_rows(
+            result, start, end, material_types={"MP"}
+        )
+        # Sem tipo cadastrado, não inventar que os materiais são MP.
+        self.assertEqual(selected, [])
+
+
+if __name__ == "__main__":
+    unittest.main()
