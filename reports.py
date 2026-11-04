@@ -25,7 +25,7 @@ MONEY_FORMAT = '#,##0.00;[Red](#,##0.00)'
 # separador decimal isolado que o formato #,##0.###### gerava no pt-BR.
 QUANTITY_FORMAT = "General"
 QUANTITY_INTEGER_FORMAT = "General"
-EXPORT_SCHEMA_VERSION = "2026-11-04.4-R3-FORECAST-STAGES-R11"
+EXPORT_SCHEMA_VERSION = "2026-11-04.5-OPS-LOT-DETAIL-R12"
 PERCENT_FORMAT = '0.00%;[Red](0.00%)'
 
 # Formato homologado: cabeçalho da OP repetido e, à direita, a mesma
@@ -434,7 +434,7 @@ def _issue_selection(model: dict, start: date | None, end: date | None,
         model, start, end, include_activity=include_activity
     )
     selected_ops = set(diagnostic["selected"])
-    ops = model.get("ops")
+    ops = model.get("lot_ops") if model.get("lot_ops") is not None else model.get("ops")
     if ops is not None and not ops.empty:
         if statuses:
             selected_ops &= set(
@@ -460,15 +460,15 @@ def _issue_selection(model: dict, start: date | None, end: date | None,
 def issue_detail_rows(model: dict, selected_ops: set[str],
                       *, selected_codes: set[tuple[str, str]] | None = None
                       ) -> list[tuple[list, bool]]:
-    """OP + produto exatamente como a tela expandida, com alerta por material.
+    """OP + produto + lote em linha individual, igual à grade expandida.
 
-    Modelo operacional é a MES/OPS já conciliada. Não recalcula indicadores,
-    não duplica linhas por lote e não aplica cores por histórico incompleto.
+    Usa os mesmos dados calculados da tela. Não soma lotes no Excel
+    nem multiplica baixas OPS quando o Geral repete a mesma chave.
     """
     if not selected_ops:
         return []
-    ops = model.get("ops")
-    items = model.get("items")
+    ops = model.get("lot_ops") if model.get("lot_ops") is not None else model.get("ops")
+    items = model.get("lot_items") if model.get("lot_items") is not None else model.get("items")
     if ops is None or items is None or ops.empty or items.empty:
         return []
     if model.get("baixas_fonte") == "OPS" and not model.get("history_available"):
@@ -491,7 +491,10 @@ def issue_detail_rows(model: dict, selected_ops: set[str],
             full_op.get(key) for _, key in OP_FIELDS
         ] + [
             _valor_previsto_baixa(item, prices)
-            if key == "valor_previsto_baixa" else item.get(key)
+            if key == "valor_previsto_baixa"
+            else item.get("resultado_lote", item.get("status"))
+            if key == "status"
+            else item.get(key)
             for _, key in ISSUE_ITEM_FIELDS
         ]
         # Não inferir alertas de texto, cores ou 'historico_incompleto'.
