@@ -28,6 +28,20 @@ def _summary_cards(meta: dict) -> None:
         col.metric(label, f"{int(meta.get(key) or 0):,}".replace(",", "."))
 
 
+def _source_signature(model: dict, tokens: tuple) -> str:
+    # Identifica a fotografia MES/ENDEREÇO + OPS e todas as revisões
+    # do KARDEX. Uma análise antiga não pode ser exportada após uma
+    # importação nova de qualquer uma dessas três fontes.
+    metadata = (
+        model.get("as_of"),
+        model.get("ops_meta", {}).get("sha256"),
+        model.get("source_meta"),
+        tokens,
+        candidates.VERSION,
+    )
+    return hashlib.sha256(repr(metadata).encode("utf-8")).hexdigest()
+
+
 def render(model: dict) -> None:
     st.markdown("---")
     st.markdown("### CONCILIAÇÃO ASSISTIDA · BAIXAS MANUAIS SEM OP")
@@ -143,6 +157,7 @@ def render(model: dict) -> None:
                 ).hexdigest()[:12]
                 st.session_state["fm_manual_candidate_ready"] = (
                     signature, result, workbook, start, end,
+                    _source_signature(model, tokens),
                 )
         except Exception as exc:
             st.error("A conciliação assistida não pôde ser gerada: " + str(exc))
@@ -156,7 +171,30 @@ def render(model: dict) -> None:
         )
         return
 
-    _, result, data, scope_start, scope_end = ready
+    if not calculate:
+        try:
+            active_imports = kardex._imports()
+            active_tokens = tuple(
+                (entry["chave"], entry.get("atualizado_em", ""),
+                 entry.get("meta") or {})
+                for entry in active_imports
+            )
+            if _source_signature(model, active_tokens) != ready[5]:
+                st.session_state.pop("fm_manual_candidate_ready", None)
+                st.warning(
+                    "As fontes MES, OPS ou KARDEX foram atualizadas desde "
+                    "a análise anterior. Gere novamente o relatório para "
+                    "evitar candidatos desatualizados."
+                )
+                return
+        except Exception as exc:
+            st.warning(
+                "Não foi possível verificar a atualização do KARDEX. "
+                "Recarregue as fontes antes de exportar: " + str(exc)
+            )
+            return
+
+    _, result, data, scope_start, scope_end, _source_tag = ready
     st.caption(
         f"Análise realizada para {scope_start:%d/%m/%Y} a "
         f"{scope_end:%d/%m/%Y} · referência MES: {reference:%d/%m/%Y}. "
