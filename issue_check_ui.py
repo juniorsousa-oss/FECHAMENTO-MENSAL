@@ -1426,9 +1426,10 @@ def render_issue_check():
     if current_ops:
         st.caption(
             f"Fonte ativa: {current_ops.get('arquivo_nome') or 'OPS'} · "
-            f"{count(current_ops.get('movimentos_validos', 0))} movimentações · "
-            f"até {day(current_ops.get('periodo_fim'))}. "
-            "Substituir a fonte não soma movimentos antigos novamente."
+            f"{count(current_ops.get('registros_consolidados_por_dia', 0))} registros consolidados · "
+            f"período {day(current_ops.get('periodo_inicio'))} a "
+            f"{day(current_ops.get('periodo_fim'))}. "
+            "Novos arquivos substituem somente seu intervalo de datas."
         )
         if current_ops.get("versao") != ops_lot_source.VERSION:
             st.error(
@@ -1449,8 +1450,10 @@ def render_issue_check():
             "Arquivo XLSX/XLTX do OPS: identifica automaticamente as colunas "
             "de OP, produto, quantidade, data, lote, tipo RE/DE e TES. "
             "O layout clássico usa B, D, F, K, N, C e O, respectivamente. "
-            "Somente arquivos de histórico acumulado completo podem substituir "
-            "a fonte atual. Não altera o KARDEX gerencial."
+            "A nova importação substitui apenas os movimentos cujas DATAS "
+            "estejam entre a primeira e a última data do arquivo (inclusive). "
+            "Movimentos fora do intervalo são preservados. "
+            "Não altera o KARDEX gerencial."
         )
         uploaded = st.file_uploader(
             "Relatório OPS", type=["xlsx", "xltx"],
@@ -1500,48 +1503,74 @@ def render_issue_check():
                         "Movimentos sem lote permanecem rastreáveis, mas não "
                         "comprovam baixas de lotes específicos."
                     )
-                # Mostrar antes de confirmar os mesmos bloqueios aplicados
-                # por save(). Uma exportação parcial não deve substituir o
-                # histórico OPS acumulado anteriormente.
-                blocking = []
-                if current_ops.get("periodo_inicio") and (
-                    metadata["periodo_inicio"] > str(current_ops["periodo_inicio"])
-                ):
-                    blocking.append(
-                        "O novo arquivo começa depois do início do histórico "
-                        "da fonte atual."
+                # Prévia da substituição: o histórico anterior é lido
+                # inteiro, mas somente o intervalo do NOVO XLSX é substituído.
+                # Cache por SHA da fonte garante que a prévia não seja de
+                # uma fotografia antiga quando outra pessoa fizer importação.
+                with st.spinner("Comparando o período com a base OPS histórica..."):
+                    previous_snapshot = (
+                        _ops_snapshot((
+                            str(current_ops["sha256"]),
+                            str(current_ops.get("atualizado_em") or ""),
+                        )) if current_ops else {}
                     )
-                if current_ops.get("periodo_fim") and (
-                    metadata["periodo_fim"] < str(current_ops["periodo_fim"])
-                ):
-                    blocking.append(
-                        "O novo arquivo termina antes do histórico existente."
+                    plan = ops_lot_source.plan_period_replace(
+                        parsed_ops, previous_snapshot,
                     )
-                previous_count = int(current_ops.get("movimentos_validos") or 0)
-                if previous_count >= 100 and (
-                    metadata["movimentos_validos"] < previous_count * 0.8
-                ):
-                    blocking.append(
-                        "A quantidade de movimentações válidas é muito menor "
-                        "que o histórico anterior ("
-                        + count(metadata["movimentos_validos"]) + " contra "
-                        + count(previous_count) + ")."
+                impact = plan["impact"]
+                st.markdown("##### PRÉVIA · SUBSTITUIR SOMENTE O PERÍODO")
+                st.caption(
+                    "Intervalo que será substituído: "
+                    + day(impact["periodo_inicio"]) + " a "
+                    + day(impact["periodo_fim"])
+                    + ". As datas de ambos os limites estão incluídas."
+                )
+                p1, p2, p3, p4 = st.columns(4)
+                p1.metric("REGISTROS PRESERVADOS", count(impact["preservados"]))
+                p2.metric("REGISTROS SUBSTITUÍDOS", count(impact["substituidos"]))
+                p3.metric("REGISTROS DO NOVO ARQUIVO", count(impact["novos"]))
+                p4.metric("TOTAL APÓS IMPORTAÇÃO", count(impact["apos_substituicao"]))
+                st.caption(
+                    "Histórico atual: " + count(impact["historico_anterior"])
+                    + " registros consolidados. O sistema não soma os mesmos "
+                    "movimentos antigos aos registros do arquivo novo. "
+                    "Uma cópia da fonte anterior é salva antes da alteração."
+                )
+                if impact["alerta_reducao_no_periodo"]:
+                    st.warning(
+                        "ATENÇÃO: o arquivo novo possui mais de 20% menos "
+                        "registros do que os existentes DENTRO DO INTERVALO "
+                        "informado. Confirme que o Excel exportou todas as "
+                        "baixas desse período, inclusive dias sem alterações."
                     )
-                if blocking:
-                    st.error(
-                        "SUBSTITUIÇÃO BLOQUEADA PARA PROTEGER O HISTÓRICO: "
-                        + " ".join(blocking)
-                        + " Exporte a base OPS acumulada e completa."
+                if not impact["alterou"]:
+                    st.success(
+                        "O conteúdo resultante é idêntico ao histórico salvo. "
+                        "Nenhuma substituição é necessária."
                     )
+                accept = st.checkbox(
+                    "CONFIRMO A SUBSTITUIÇÃO EXCLUSIVA DO PERÍODO "
+                    "MOSTRADO ACIMA E A PRESERVAÇÃO DAS OUTRAS DATAS",
+                    key=(
+                        "fm_ops_confirm_interval_"
+                        + str(metadata.get("sha256") or "")[:12] + "_"
+                        + str(current_ops.get("sha256") or "")[:12]
+                    ),
+                    value=False,
+                )
                 if st.button(
-                    "CONFIRMAR SUBSTITUIÇÃO DA FONTE OPS", type="primary",
+                    "CONFIRMAR SUBSTITUIÇÃO DO PERÍODO OPS", type="primary",
                     key="fm_issue_ops_save", use_container_width=True,
-                    disabled=bool(blocking),
+                    disabled=not accept or not impact["alterou"],
                 ):
-                    with st.spinner("Salvando fotografia OPS e conferindo versão..."):
-                        # Consultar o registro vigente diretamente do banco,
-                        # pois o painel de metadados utiliza cache de 30 s.
-                        saved_ops = ops_lot_source.save(parsed_ops)
+                    with st.spinner(
+                        "Criando backup, substituindo período e validando "
+                        "a integridade do histórico OPS..."
+                    ):
+                        saved_ops = ops_lot_source.save(
+                            parsed_ops,
+                            expected_previous_sha=impact["sha256_anterior"],
+                        )
                     _ops_meta.clear(); _ops_snapshot.clear(); _audit.clear()
                     _operational_snapshot.clear()
                     st.session_state.pop("fm_issue_report_ready", None)
@@ -1549,16 +1578,19 @@ def render_issue_check():
                     persisted = saved_ops["meta"]
                     if persisted.get("versao") != ops_lot_source.VERSION:
                         raise RuntimeError(
-                            "O banco não confirmou a versão de regras OPS. "
+                            "O banco não confirmou a versão das regras OPS. "
                             "A atualização não pode ser considerada concluída."
                         )
+                    effective = saved_ops["impact"]
                     st.session_state["_fm_issue_ops_flash"] = (
-                        ("Fonte OPS atualizada e verificada no banco. "
+                        ("Período OPS substituído e histórico validado no banco. "
                          if saved_ops["saved"]
-                         else "Fonte OPS já cadastrada e verificada no banco. ")
-                        + f"Regras {persisted['versao']} · "
-                        + f"RE1/999 reconhecidos: "
-                        + count(persisted.get("re1_999_reconhecidos", 0))
+                         else "Histórico OPS já estava atualizado. ")
+                        + "Preservados: " + count(effective["preservados"])
+                        + " · Substituídos: " + count(effective["substituidos"])
+                        + " · Importados: " + count(effective["novos"])
+                        + " · Total: " + count(effective["apos_substituicao"])
+                        + ". Backup da versão anterior armazenado."
                     )
                     st.rerun()
             except Exception as exc:
