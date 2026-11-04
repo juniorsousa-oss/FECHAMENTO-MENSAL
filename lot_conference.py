@@ -240,7 +240,10 @@ def build(model: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
             else:
                 note = ""
 
-            pending = None if not known or ambiguity else real_pending[key]
+            pending = (
+                None if not known or (ambiguity and shortage > EPS)
+                else real_pending[key]
+            )
             canonical, outcome, divergent = _lot_status(
                 material=main,
                 required=info["necessaria"],
