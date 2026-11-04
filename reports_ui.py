@@ -147,7 +147,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     "mesmo sem faturamento válido ou com faturamento fora dele."
                 ),
             )
-        with st.expander("03 · FILTROS ADICIONAIS · opcional", expanded=False):
+        with st.expander("FILTROS ADICIONAIS · opcional", expanded=False):
             col_status, col_type = st.columns(2, gap="medium")
             with col_status:
                 available_statuses = [
@@ -204,7 +204,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
              "Resumo gerencial — grupos e TES"],
             key="fm_reports_detail",
         ).startswith("Resumo")
-        with st.expander("03 · FILTROS ADICIONAIS · opcional", expanded=False):
+        with st.expander("FILTROS ADICIONAIS · opcional", expanded=False):
             try:
                 sources = movement_store.list_imports()
                 options = _known_warehouses(sources)
@@ -265,8 +265,15 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
          for row in imports] if choice == REPORT_NAMES[0] else None,
     )).encode("utf-8")).hexdigest()
 
-    if st.button("PREPARAR RELATÓRIO EXCEL", type="primary", use_container_width=True,
-                 key="fm_reports_prepare"):
+    st.markdown("**03 · EXPORTAR**")
+    btn_prepare, btn_download = st.columns(2, gap="medium")
+    with btn_prepare:
+        prepare_clicked = st.button(
+            "PREPARAR EXCEL", type="primary", use_container_width=True,
+            key="fm_reports_prepare",
+        )
+    if prepare_clicked:
+        audit_notes = []
         try:
             with st.spinner("Preparando as informações do relatório selecionado..."):
                 if choice == REPORT_NAMES[0]:
@@ -279,12 +286,12 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                 elif choice == REPORT_NAMES[1]:
                     model = _get_issue_model(tuple(warehouses))
                     if model.get("catalog_meta", {}).get("erro"):
-                        st.warning(
+                        audit_notes.append(
                             "CADASTROS indisponível: a classificação "
                             "de tipo de material pode estar incompleta."
                         )
                     if model.get("catalog_price_meta", {}).get("erro"):
-                        st.warning(
+                        audit_notes.append(
                             "Preços do CADASTROS indisponíveis: o Valor previsto "
                             "da baixa ficará vazio para itens sem preço válido. "
                             + str(model["catalog_price_meta"]["erro"])
@@ -301,7 +308,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     missing = len(audit["excluded_missing_billing"])
                     outside = len(audit["excluded_outside_billing"])
                     if not extra["include_activity"] and (missing or outside):
-                        st.info(
+                        audit_notes.append(
                             f"Filtro somente por faturamento: {missing} OP(s) "
                             "sem data válida (NI ou inválida) e "
                             f"{outside} OP(s) faturadas fora do período "
@@ -309,13 +316,13 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                         )
                     if extra["include_activity"]:
                         added = len(audit["added_by_activity"])
-                        st.info(
+                        audit_notes.append(
                             f"Movimentações habilitadas: {added} OP(s) "
                             "adicionadas além das faturadas no período. "
                             "Essas OPs podem ter faturamento NI ou fora do mês."
                         )
                         if audit["unreadable_billing"]:
-                            st.warning(
+                            audit_notes.append(
                                 f"{len(audit['unreadable_billing'])} OP(s) "
                                 "incluídas por atividade têm faturamento "
                                 "não reconhecido. Confira a fonte."
@@ -324,7 +331,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                     if end and model.get("as_of"):
                         reference = reports._date(model["as_of"])
                         if reference and end > reference:
-                            st.info(
+                            audit_notes.append(
                                 f"A fonte de conferência está posicionada em "
                                 f"{reference:%d/%m/%Y}. Nenhum evento posterior "
                                 "a essa data será usado para selecionar OPs."
@@ -365,6 +372,9 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                         summary_only=extra["summary_only"])
                     records = len(frame)
                     prefix = "KARDEX"
+            st.session_state["fm_reports_audit_notes"] = (
+                report_key, tuple(audit_notes),
+            )
             st.session_state["fm_reports_ready"] = (
                 report_key, data,
                 f"{prefix}_SETTA_{period_key}_R14.xlsx"
@@ -374,12 +384,26 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
             )
         except Exception as exc:
             st.session_state.pop("fm_reports_ready", None)
+            st.session_state.pop("fm_reports_audit_notes", None)
             st.error(f"Não foi possível preparar o relatório: {exc}")
 
     prepared = st.session_state.get("fm_reports_ready")
     if prepared and prepared[0] == report_key:
-        st.success(f"Relatório preparado: {prepared[3]:,} registro(s).".replace(",", "."))
-        st.download_button(
-            "BAIXAR EXCEL", data=prepared[1], file_name=prepared[2], mime=MIME,
-            use_container_width=True, key="fm_reports_download")
-    st.caption("As exportações não alteram dados, regras, conferências ou os históricos persistidos.")
+        with btn_download:
+            st.download_button(
+                "BAIXAR EXCEL", data=prepared[1], file_name=prepared[2],
+                mime=MIME, type="primary",
+                use_container_width=True, key="fm_reports_download",
+            )
+        st.caption(
+            f"Arquivo pronto · {prepared[3]:,} registros · "
+            "dados originais preservados.".replace(",", ".")
+        )
+        notes = st.session_state.get("fm_reports_audit_notes")
+        if notes and notes[0] == report_key and notes[1]:
+            with st.expander("DETALHES DA SELEÇÃO E DAS FONTES", expanded=False):
+                for note in notes[1]:
+                    st.caption(note)
+    else:
+        st.caption("Prepare o Excel para habilitar o download.")
+
