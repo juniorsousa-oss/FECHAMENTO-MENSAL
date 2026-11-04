@@ -10,7 +10,7 @@ import pandas as pd
 
 import movements as mv
 
-VERSION = "2026-11-03.5"
+VERSION = "2026-11-04.1"
 EPSILON = Decimal("0.000001")
 ZERO = Decimal(0)
 MISSING = "CONFERIDO SEM SALDO E SEM BAIXA SUFICIENTE"
@@ -276,11 +276,12 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
         if not row["codigo"]:
             continue
         key = row["op"], row["codigo"], ops_source.lot(row["lote"])
-        # No OPS o MES usa o conferente informado, não datas inferidas.
+        # R3 validado: quantidade ATENDIDA também é SEPARADA mesmo se
+        # houver conferente. A conferência é uma etapa adicional, não
+        # substitui a separação; somente a QTD CONFERIDA depende dele.
+        necessary_by_lot[key][0] += row["atendida"]
         if text(row.get("responsavel_conferencia")):
             necessary_by_lot[key][1] += row["atendida"]
-        else:
-            necessary_by_lot[key][0] += row["atendida"]
 
     changes = {name: [] for name in (
         "saida_bruta", "devolvida", "baixada", "pendente",
@@ -325,8 +326,8 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
             returned = incoming[key]
             net = max(totals[key], ZERO)
             separated, confirmed = necessary_by_lot[key]
-            # Separado sem conferente NÃO é conferido. Comparar o OPS
-            # com a parcela efetivamente conferida, sem fabricar etapas.
+            # A separação registra a quantidade atendida; a conferência
+            # depende do conferente. A baixa OPS confronta o conferido.
             expected = confirmed
             total_separated += separated
             total_confirmed += confirmed
@@ -446,14 +447,12 @@ def reconcile_ops(general: list[dict], stock: list[dict], ops_records: list[dict
         }
         separated_codes = {
             r["codigo"] for r in source_rows
-            if not text(r.get("responsavel_conferencia"))
-            and r["atendida"] > EPSILON
-        } - confirmed_codes
+            if r["atendida"] > EPSILON
+        }
         base["ops"].at[row_index, "separados"] = len(separated_codes)
         base["ops"].at[row_index, "conferidos"] = len(confirmed_codes)
         base["ops"].at[row_index, "linhas_separadas_mes"] = sum(
-            not text(r.get("responsavel_conferencia"))
-            and r["atendida"] > EPSILON for r in source_rows
+            r["atendida"] > EPSILON for r in source_rows
         )
         base["ops"].at[row_index, "linhas_conferidas_mes"] = sum(
             bool(text(r.get("responsavel_conferencia"))) for r in source_rows
