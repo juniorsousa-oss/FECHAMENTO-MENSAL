@@ -1500,9 +1500,43 @@ def render_issue_check():
                         "Movimentos sem lote permanecem rastreáveis, mas não "
                         "comprovam baixas de lotes específicos."
                     )
+                # Mostrar antes de confirmar os mesmos bloqueios aplicados
+                # por save(). Uma exportação parcial não deve substituir o
+                # histórico OPS acumulado anteriormente.
+                blocking = []
+                if current_ops.get("periodo_inicio") and (
+                    metadata["periodo_inicio"] > str(current_ops["periodo_inicio"])
+                ):
+                    blocking.append(
+                        "O novo arquivo começa depois do início do histórico "
+                        "da fonte atual."
+                    )
+                if current_ops.get("periodo_fim") and (
+                    metadata["periodo_fim"] < str(current_ops["periodo_fim"])
+                ):
+                    blocking.append(
+                        "O novo arquivo termina antes do histórico existente."
+                    )
+                previous_count = int(current_ops.get("movimentos_validos") or 0)
+                if previous_count >= 100 and (
+                    metadata["movimentos_validos"] < previous_count * 0.8
+                ):
+                    blocking.append(
+                        "A quantidade de movimentações válidas é muito menor "
+                        "que o histórico anterior ("
+                        + count(metadata["movimentos_validos"]) + " contra "
+                        + count(previous_count) + ")."
+                    )
+                if blocking:
+                    st.error(
+                        "SUBSTITUIÇÃO BLOQUEADA PARA PROTEGER O HISTÓRICO: "
+                        + " ".join(blocking)
+                        + " Exporte a base OPS acumulada e completa."
+                    )
                 if st.button(
                     "CONFIRMAR SUBSTITUIÇÃO DA FONTE OPS", type="primary",
                     key="fm_issue_ops_save", use_container_width=True,
+                    disabled=bool(blocking),
                 ):
                     with st.spinner("Salvando fotografia OPS e conferindo versão..."):
                         # Consultar o registro vigente diretamente do banco,
