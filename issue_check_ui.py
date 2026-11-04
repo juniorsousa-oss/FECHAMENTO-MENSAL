@@ -774,7 +774,10 @@ def _material_at_position(group: pd.DataFrame, selection):
 
 
 def _result_style(row: dict) -> str:
-    """Único padrão de destaque para um produto com alerta verdadeiro."""
+    """Âmbar para atenção; vermelho reservado às demais ocorrências críticas."""
+    result = row.get("resultado_lote") or row.get("status") or row.get("Resultado")
+    if lot_conference.is_attention_result(result):
+        return "background-color:#fff3d6;color:#92400e"
     return ("background-color:#fef2f2;color:#991b1b"
             if row.get("divergente") is True or row.get("divergente") == True
             else "")
@@ -902,10 +905,20 @@ def _filter_op_status_invoice(view: pd.DataFrame, ops: pd.DataFrame,
 def _details(model, item):
     if item.get("alertas"):
         message = "\n\n".join(item["alertas"])
-        if item["historico_incompleto"]:
+        if lot_conference.is_attention_result(
+            item.get("resultado_lote") or item.get("status")
+        ):
+            st.warning(message)
+        elif item.get("historico_incompleto"):
             st.warning(message + ". A conclusão depende da atualização do KARDEX.")
         else:
             st.error(message)
+    elif item.get("divergencia_lote_informativa"):
+        st.warning(
+            "DIVERGÊNCIA INFORMATIVA ENTRE LOTES: a quantidade total "
+            "baixada atende à necessidade da OP e do produto. "
+            "Não foi contabilizada como alerta de baixa."
+        )
     st.markdown("**" + str(item["descricao"]) + "**")
     st.write(f"Conferida: **{quantity(item['conferida'])}** · Baixada líquida: **{quantity(item['baixada'])}** · Pendente: **{quantity(item['pendente'])}**")
     detailed = item.get("detalhe_resultado_lote")
@@ -1079,8 +1092,11 @@ def _ops(model, view, token):
                         )
                         if not preview_df.empty:
                             colors = [
-                                "background-color:#fef2f2;color:#991b1b"
-                                if alert else "" for _, alert in preview
+                                _result_style({
+                                    "Resultado": values[-1],
+                                    "divergente": alert,
+                                })
+                                for values, alert in preview
                             ]
                             styled_preview = preview_df.style.apply(
                                 lambda _: colors, axis=0, subset=["Resultado"]
@@ -1095,8 +1111,8 @@ def _ops(model, view, token):
                             "A prévia reproduz o cabeçalho da OP e os 13 campos "
                             "de materiais do R3 validado, com uma linha por "
                             "OP + produto + lote, incluindo a previsão "
-                            "financeira de baixa. Só resultados com alerta "
-                            "recebem destaque."
+                            "financeira de baixa. Atenções recebem amarelo; "
+                            "demais ocorrências críticas recebem vermelho."
                         )
                     st.markdown(
                         '<div class="fm-issue-mobile-hint">Deslize a tabela horizontalmente para consultar todas as colunas.</div>',
@@ -1386,7 +1402,7 @@ def render_results(model):
             st.session_state["fm_issue_report_ready"] = (report_key, data)
     with right:
         st.caption(
-            "Exportação R13 em uma única aba: 12 campos da OP e 13 do material, "
+            "Exportação R14 em uma única aba: 12 campos da OP e 13 do material, "
             "reproduzindo o R3 validado. Inclui Valor previsto da baixa "
             "(CADASTROS × quantidade pendente), saldos e resultado. "
             "Cada lote do mesmo produto aparece em sua própria linha. "
@@ -1397,7 +1413,7 @@ def render_results(model):
         st.download_button(
             "BAIXAR EXCEL · CONFERÊNCIA DE BAIXAS",
             data=prepared[1],
-            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R13.xlsx",
+            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R14.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="fm_issue_download_complete", use_container_width=True,
         )
