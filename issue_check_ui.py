@@ -792,7 +792,7 @@ def _table(frame: pd.DataFrame, columns=None, *, key=None, selectable=False):
         if col in source:
             fmt[LABELS.get(col, col)] = lambda v, field=col: "—" if pd.isna(v) else v.strftime("%d/%m/%Y" if field == "data" else "%d/%m/%Y %H:%M")
     styled = shown.style.format(fmt, na_rep="—")
-    if "status" in source:
+    if "status" in source or "resultado_lote" in source:
         # Resultado em destaque APENAS quando a análise operacional acusa
         # divergência. Fonte em datas diferentes é informação técnica, não
         # motivo para marcar PRODUTO CONSUMIDO como problema.
@@ -895,7 +895,7 @@ def _filter_op_status_invoice(view: pd.DataFrame, ops: pd.DataFrame,
 
 
 def _details(model, item):
-    if item["alertas"]:
+    if item.get("alertas"):
         message = "\n\n".join(item["alertas"])
         if item["historico_incompleto"]:
             st.warning(message + ". A conclusão depende da atualização do KARDEX.")
@@ -920,11 +920,22 @@ def _details(model, item):
         st.info("O saldo deste produto e lote também é consultado por outras OPs. A conferência não reserva nem distribui esse saldo automaticamente.")
     source_tab, stock_tab, ops_tab = st.tabs(["CONFERÊNCIA MES", "LOTES E ENDEREÇOS", "BAIXAS RELATÓRIO OPS"])
     with source_tab:
-        rows = pd.DataFrame([r for r in model["general"] if r["item_id"] == item["item_id"]])
+        item_source = item.get("item_id_produto") or item["item_id"]
+        selected_lot = ops_lot_source.lot(item.get("lote"))
+        rows = pd.DataFrame([
+            r for r in model["general"]
+            if r["item_id"] == item_source
+            and ("lote" not in item or ops_lot_source.lot(r.get("lote")) == selected_lot)
+        ])
         _table(rows, ["codigo", "lote", "necessaria", "atendida", "pendencia_mes", "separacao", "responsavel_separacao",
                       "conferencia", "responsavel_conferencia", "reportado", "reporte", "referencia", "linha_origem"])
     with stock_tab:
-        lots = model["lots"].loc[model["lots"]["item_id"] == item["item_id"]]
+        lot_source = item.get("item_id_produto") or item["item_id"]
+        lots = model["lots"].loc[model["lots"]["item_id"] == lot_source]
+        if "lote" in item:
+            lots = lots.loc[
+                lots["lote"].map(ops_lot_source.lot) == ops_lot_source.lot(item["lote"])
+            ]
         st.caption(
             "A diferença por lote indica lançamento em lote divergente. "
             "Ela não representa necessariamente quantidade faltante no produto. "
@@ -944,7 +955,11 @@ def _details(model, item):
             st.info(item["outros_enderecos"])
         _table(addresses, ["codigo", "lote", "armazem", "endereco", "saldo", "empenho", "linha_origem"])
     with ops_tab:
-        movements = pd.DataFrame([r for r in model["movements"] if r["op"] == item["op"] and r["codigo"] == item["codigo"]])
+        movements = pd.DataFrame([
+            r for r in model["movements"]
+            if r["op"] == item["op"] and r["codigo"] == item["codigo"]
+            and ("lote" not in item or ops_lot_source.lot(r.get("lote")) == ops_lot_source.lot(item["lote"]))
+        ])
         if not movements.empty:
             movements = movements.sort_values(["data", "documento"], kind="stable")
         st.caption("Fonte OPS: requisições e devoluções somadas por OP, produto e lote; datas diferentes são acumuladas.")
@@ -991,7 +1006,10 @@ def _ops(model, view, token):
         st.session_state.fm_issue_view_token = token
     page = min(int(st.session_state.get("fm_issue_page", 1)), pages)
     st.session_state.fm_issue_page = page
-    info = model["ops"].set_index("op").to_dict("index")
+    info_source = model.get("lot_ops")
+    if info_source is None:
+        info_source = model["ops"]
+    info = info_source.set_index("op").to_dict("index")
     with st.container(key="fm_issue_ops"):
         for number in numbers[(page - 1) * size:page * size]:
             group = view.loc[view["op"] == number]
@@ -1024,8 +1042,8 @@ def _ops(model, view, token):
                         st.caption(
                             f"{source_lines} linhas no Relatório Geral do MES "
                             f"consolidadas em {total} produtos distintos nesta OP. "
-                            "A tabela mostra uma linha por código; lotes e registros "
-                            "originais permanecem disponíveis nas evidências."
+                            "A tabela mostra uma linha por OP + código + lote; "
+                            "registros duplicados da mesma chave permanecem nas evidências."
                         )
                     if not bool(group.iloc[0]["op_possui_baixa"]):
                         st.caption("Não há consumo líquido identificado no histórico desta OP até a data de referência.")
@@ -1067,7 +1085,8 @@ def _ops(model, view, token):
                             st.info("Esta OP não possui materiais na fonte.")
                         st.caption(
                             "A prévia reproduz o cabeçalho da OP e os 13 campos "
-                            "de materiais do R3 validado, incluindo a previsão "
+                            "de materiais do R3 validado, com uma linha por "
+                            "OP + produto + lote, incluindo a previsão "
                             "financeira de baixa. Só resultados com alerta "
                             "recebem destaque."
                         )
@@ -1078,7 +1097,8 @@ def _ops(model, view, token):
                     selection = _table(
                         group, ["codigo", "descricao", "lotes", "necessaria", "separada",
                                 "conferida", "baixada", "pendente", "saldo", "saldo_g9_prod",
-                                "outros_enderecos", "status"],
+                                "outros_enderecos",
+                                "resultado_lote" if "resultado_lote" in group.columns else "status"],
                         key=f"fm_issue_material_row_{number}_{token}",
                         selectable=True,
                     )
@@ -1162,7 +1182,9 @@ def render_results(model):
         # Compatibilidade de chamadas diretas e modelos anteriores: nunca
         # apresentar alertas legados na interface operacional.
         model = op_rules.apply(model)
-    frame = model["items"]
+    frame = model.get("lot_items")
+    if frame is None:
+        frame = model["items"]
     period = model["coverage"]
     if not model["history_available"]:
         st.warning("Relatório OPS ainda não importado. As baixas são desconhecidas, não zero. Importe a fonte na área acima.")
@@ -1284,19 +1306,35 @@ def render_results(model):
     view = _filter_op_status_invoice(
         _filter(frame, query, choice), model["ops"], selected_status, invoice_period
     )
-    selected_pairs = set(zip(view["op"].astype(str), view["codigo"].astype(str)))
-    confirmed_pairs = {
-        (r["op"], r["codigo"]) for r in model["general"]
-        if str(r.get("responsavel_conferencia") or "").strip()
-    } & selected_pairs
-    separated_pairs = {
-        (r["op"], r["codigo"]) for r in model["general"]
-        if r["atendida"] > check.EPSILON
-    } & selected_pairs
+    if "lote" in view.columns:
+        selected_keys = set(zip(
+            view["op"].astype(str), view["codigo"].astype(str),
+            view["lote"].map(ops_lot_source.lot),
+        ))
+        confirmed_pairs = {
+            (r["op"], r["codigo"], ops_lot_source.lot(r.get("lote")))
+            for r in model["general"]
+            if str(r.get("responsavel_conferencia") or "").strip()
+        } & selected_keys
+        separated_pairs = {
+            (r["op"], r["codigo"], ops_lot_source.lot(r.get("lote")))
+            for r in model["general"]
+            if r["atendida"] > check.EPSILON
+        } & selected_keys
+    else:
+        selected_pairs = set(zip(view["op"].astype(str), view["codigo"].astype(str)))
+        confirmed_pairs = {
+            (r["op"], r["codigo"]) for r in model["general"]
+            if str(r.get("responsavel_conferencia") or "").strip()
+        } & selected_pairs
+        separated_pairs = {
+            (r["op"], r["codigo"]) for r in model["general"]
+            if r["atendida"] > check.EPSILON
+        } & selected_pairs
     with st.container(key="fm_issue_summary"):
         _cards([
             ("OPs encontradas", count(view["op"].nunique()), "Ordens no recorte"),
-            ("Produtos", count(len(view)), "Códigos distintos por OP"),
+            ("Produtos/lotes", count(len(view)), "Cada OP + produto + lote é um registro distinto"),
             ("Separados", count(len(separated_pairs)), "Quantidade atendida, inclusive materiais conferidos"),
             ("Conferidos", count(len(confirmed_pairs)), "Atendidos com conferente no Relatório Geral"),
         ])
@@ -1340,17 +1378,18 @@ def render_results(model):
             st.session_state["fm_issue_report_ready"] = (report_key, data)
     with right:
         st.caption(
-            "Exportação R11 em uma única aba: 12 campos da OP e 13 do material, "
+            "Exportação R12 em uma única aba: 12 campos da OP e 13 do material, "
             "reproduzindo o R3 validado. Inclui Valor previsto da baixa "
             "(CADASTROS × quantidade pendente), saldos e resultado. "
-            "Sem alteração das fontes ou da conciliação OPS."
+            "Cada lote do mesmo produto aparece em sua própria linha. "
+            "A diferença de lote é destacada separadamente da falta real de baixa."
         )
     prepared = st.session_state.get("fm_issue_report_ready")
     if prepared and prepared[0] == report_key:
         st.download_button(
             "BAIXAR EXCEL · CONFERÊNCIA DE BAIXAS",
             data=prepared[1],
-            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R11.xlsx",
+            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R12.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="fm_issue_download_complete", use_container_width=True,
         )
