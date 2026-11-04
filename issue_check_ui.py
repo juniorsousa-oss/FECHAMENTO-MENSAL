@@ -768,6 +768,13 @@ def _material_at_position(group: pd.DataFrame, selection):
     return group.iloc[rows[0]].to_dict()
 
 
+def _result_style(row: dict) -> str:
+    """Único padrão de destaque para um produto com alerta verdadeiro."""
+    return ("background-color:#fef2f2;color:#991b1b"
+            if row.get("divergente") is True or row.get("divergente") == True
+            else "")
+
+
 def _table(frame: pd.DataFrame, columns=None, *, key=None, selectable=False):
     if frame.empty:
         st.info("Nenhum registro neste recorte.")
@@ -786,9 +793,10 @@ def _table(frame: pd.DataFrame, columns=None, *, key=None, selectable=False):
             fmt[LABELS.get(col, col)] = lambda v, field=col: "—" if pd.isna(v) else v.strftime("%d/%m/%Y" if field == "data" else "%d/%m/%Y %H:%M")
     styled = shown.style.format(fmt, na_rep="—")
     if "status" in source:
-        colors = ["background-color:#fffbeb;color:#92400e" if bool(r.get("historico_incompleto"))
-                  else "background-color:#fef2f2;color:#991b1b" if bool(r.get("divergente")) else ""
-                  for r in frame.to_dict("records")]
+        # Resultado em destaque APENAS quando a análise operacional acusa
+        # divergência. Fonte em datas diferentes é informação técnica, não
+        # motivo para marcar PRODUTO CONSUMIDO como problema.
+        colors = [_result_style(r) for r in frame.to_dict("records")]
         styled = styled.apply(lambda _: colors, axis=0, subset=["Resultado"])
     opts = {
         "hide_index": True, "width": "stretch", "key": key,
@@ -1026,19 +1034,33 @@ def _ops(model, view, token):
                         "suas evidências. Selecione outra linha para trocar o produto."
                     )
                     if st.toggle(
-                        "PRÉVIA DO EXCEL ENXUTO · OP + PRODUTO + LOTE",
+                        "PRÉVIA DO EXCEL · MESMO FORMATO DA CONFERÊNCIA",
                         key="fm_issue_excel_preview_" + number, value=False,
                     ):
-                        from issue_line_report import COLUMNS, build_rows
-                        preview = build_rows(model, {number})
-                        st.dataframe(
-                            pd.DataFrame(preview, columns=COLUMNS),
-                            hide_index=True, use_container_width=True,
+                        from reports import OP_COLUMNS, issue_detail_rows
+                        preview = issue_detail_rows(model, {number})
+                        preview_df = pd.DataFrame(
+                            [values for values, _ in preview],
+                            columns=OP_COLUMNS,
                         )
+                        if not preview_df.empty:
+                            colors = [
+                                "background-color:#fef2f2;color:#991b1b"
+                                if alert else "" for _, alert in preview
+                            ]
+                            styled_preview = preview_df.style.apply(
+                                lambda _: colors, axis=0, subset=["Resultado"]
+                            )
+                            st.dataframe(
+                                styled_preview, hide_index=True,
+                                use_container_width=True,
+                            )
+                        else:
+                            st.info("Esta OP não possui materiais na fonte.")
                         st.caption(
-                            "Estes são os dez campos exportados no Excel. "
-                            "A soma baixada do produto pode estar correta "
-                            "mesmo quando os lotes apresentam divergência."
+                            "A prévia mostra os 12 campos do cabeçalho da OP "
+                            "e os 12 campos dos materiais. Só o Resultado "
+                            "de produtos com alerta recebe destaque."
                         )
                     st.markdown(
                         '<div class="fm-issue-mobile-hint">Deslize a tabela horizontalmente para consultar todas as colunas.</div>',
@@ -1297,19 +1319,19 @@ def render_results(model):
     ).encode()).hexdigest()
     left, right = st.columns([1, 2])
     with left:
-        if st.button("PREPARAR EXCEL ENXUTO · GERAL + OPS", use_container_width=True, key="fm_issue_prepare_report"):
+        if st.button("PREPARAR EXCEL · ESPELHO DA CONFERÊNCIA", use_container_width=True, key="fm_issue_prepare_report"):
             from reports import export_issues
-            with st.spinner("Preparando as dez colunas da conferência de baixas..."):
+            with st.spinner("Exportando os cabeçalhos das OPs e os produtos com os mesmos resultados da tela..."):
                 data = export_issues(model)
             st.session_state["fm_issue_report_ready"] = (report_key, data)
     with right:
-        st.caption("Exportação integral em uma única aba, linha por linha do Relatório Geral: OP + produto + lote, quantidades do Geral e baixa correspondente do OPS. Para filtros por período, utilize RELATÓRIOS no menu lateral.")
+        st.caption("Exportação em uma única aba: 12 colunas do cabeçalho da OP, seguidas das 12 colunas da tabela expandida de materiais. Os dados da OP se repetem em cada produto; somente resultados com alerta são destacados. Para filtrar por período, utilize RELATÓRIOS no menu lateral.")
     prepared = st.session_state.get("fm_issue_report_ready")
     if prepared and prepared[0] == report_key:
         st.download_button(
-            "BAIXAR EXCEL ENXUTO · CONFERÊNCIA",
+            "BAIXAR EXCEL · CONFERÊNCIA DE BAIXAS",
             data=prepared[1],
-            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R7.xlsx",
+            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R8.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="fm_issue_download_complete", use_container_width=True,
         )
