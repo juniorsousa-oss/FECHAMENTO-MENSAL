@@ -61,6 +61,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_lot_conference.py'
       - name: Validar conciliação assistida do KARDEX sem OP (somente leitura)
         run: python -m unittest discover -s tests -p 'test_manual_issue_candidates.py'
+      - name: Validar painel isolado de candidatos de baixas manuais
+        run: python -m unittest discover -s tests -p 'test_manual_issue_ui.py'
       - name: Validar fonte OPS e confronto por lote
         run: python -m unittest discover -s tests -p 'test_ops_lot_source.py'
       - name: Validar conferência de baixas e telas
