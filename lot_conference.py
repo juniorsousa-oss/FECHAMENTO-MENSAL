@@ -17,7 +17,7 @@ import operational_status as status
 
 ZERO = Decimal("0")
 EPS = Decimal("0.000001")
-VERSION = "2026-11-04.1-OP-PRODUTO-LOTE"
+VERSION = "2026-11-04.2-INDEXED-OPS-LOTS"
 
 
 def _positive(value: Decimal) -> Decimal:
@@ -164,6 +164,13 @@ def build(model: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     for key in key_order:
         grouped[key[:2]].append(key)
 
+    # Indexar OPS uma única vez por OP + produto. A implementação anterior
+    # percorria TODAS as baixas a cada produto (O(produtos × baixas)),
+    # congelando o Streamlit ao reprocessar >100 mil movimentos.
+    issued_index = defaultdict(dict)
+    for (op, code, lot), qty in by_issued.items():
+        issued_index[(op, code)][lot] = qty
+
     view_rows = []
     for product, keys in grouped.items():
         op, code = product
@@ -172,10 +179,7 @@ def build(model: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
             continue
 
         confirmed_total = sum((by_key[k]["conferida"] for k in keys), ZERO)
-        issued_for_product = {
-            lot: qty for (number, material, lot), qty in by_issued.items()
-            if number == op and material == code
-        }
+        issued_for_product = issued_index.get(product, {})
         issued_total = sum(issued_for_product.values(), ZERO)
         pending_total = _positive(confirmed_total - issued_total) if known else None
 
