@@ -252,7 +252,8 @@ class MovementAnalysisUITests(unittest.TestCase):
         )
         self.assertTrue(any("CONDIÇÕES E SUBGRUPOS" in x.value for x in app.markdown))
         self.area(app, "Fontes e relatórios")
-        self.assertEqual(len(app.file_uploader), 1)
+        # O alimentador foi transferido para Configurações; a análise fica em leitura.
+        self.assertEqual(len(app.file_uploader), 0)
         self.assertTrue(any("Situação" in table.value.columns for table in app.dataframe))
 
     def test_month_and_warehouse_scope(self):
