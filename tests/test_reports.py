@@ -125,8 +125,13 @@ class ReportsTests(unittest.TestCase):
             self.assertEqual(ws.max_column, 24)
             self.assertEqual(ws.max_row, 3)
             self.assertEqual([c.value for c in ws[1]], reports.OP_COLUMNS)
-            self.assertEqual([c.value for c in ws[2]], records[0][0])
-            self.assertEqual([c.value for c in ws[3]], records[1][0])
+            # O Excel representa string vazia como célula vazia (None).
+            self.assertEqual([c.value for c in ws[2]], [
+                None if value == "" else value for value in records[0][0]
+            ])
+            self.assertEqual([c.value for c in ws[3]], [
+                None if value == "" else value for value in records[1][0]
+            ])
             self.assertIsNone(ws["X2"].fill.patternType)
             self.assertEqual(ws["X3"].fill.patternType, "solid")
             self.assertTrue(ws["X3"].fill.fgColor.rgb.endswith("FDE8E8"))
