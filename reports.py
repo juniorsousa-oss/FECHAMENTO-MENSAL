@@ -401,12 +401,14 @@ def issue_detail_rows(model: dict, selected_ops: set[str],
     Modelo operacional é a MES/OPS já conciliada. Não recalcula indicadores,
     não duplica linhas por lote e não aplica cores por histórico incompleto.
     """
-    if model.get("baixas_fonte") == "OPS" and not model.get("history_available"):
-        raise ValueError("Relatório OPS indisponível: não exportar baixas desconhecidas.")
+    if not selected_ops:
+        return []
     ops = model.get("ops")
     items = model.get("items")
     if ops is None or items is None or ops.empty or items.empty:
         return []
+    if model.get("baixas_fonte") == "OPS" and not model.get("history_available"):
+        raise ValueError("Relatório OPS indisponível: não exportar baixas desconhecidas.")
     op_map = ops.set_index("op").to_dict("index")
     rows = []
     for item in items.to_dict("records"):
