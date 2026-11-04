@@ -1,8 +1,8 @@
 """Fonte persistente das baixas por OP, material e LOTE (Relatório OPS).
 
-Substitui o uso do KARDEX apenas na Conferência de Baixas. Cada nova
-importação representa uma fotografia histórica completa, nunca um
-incremento adicionado à anterior. O KARDEX gerencial permanece intacto.
+Substitui o uso do KARDEX apenas na Conferência de Baixas. Cada
+importação substitui SOMENTE as datas presentes no intervalo do arquivo;
+o histórico fora desse intervalo é preservado. O KARDEX permanece intacto.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import hashlib
 import io
 import json
 import re
+from datetime import timezone
 
 import requests
 
@@ -22,6 +23,7 @@ import inventory_db as db
 import movements as mv
 
 KEY = "fm_conferencia_ops_lotes_v1"
+BACKUP_KEY = "fm_conferencia_ops_lotes_backup_v1"
 FORMAT = "setta_ops_lotes_v1"
 # A versão da FONTE permanece igual porque nenhuma regra de movimento mudou.
 # A versão do LEITOR invalida apenas a prévia/cache de XLSX/XLTX.
@@ -289,47 +291,173 @@ def load() -> dict:
     return _unpack(values[0]["valor"])
 
 
-def save(parsed: dict, *, current: dict | None = None) -> dict:
-    # Nunca gravar uma prévia antiga resgatada pelo cache do Streamlit.
-    expected = parsed.get("meta") or {}
-    if expected.get("versao") != VERSION:
-        raise ValueError(
-            "A prévia OPS foi calculada com regras antigas. "
-            "Atualize a aplicação e reprocese o arquivo."
+def _record_key(row: dict) -> tuple:
+    return tuple(str(row.get(field) or "") for field in (
+        "op", "codigo", "lote", "data", "tipo_movimento", "tes",
+    ))
+
+
+def _rows_hash(rows: list[dict]) -> str:
+    """Fingerprint determinístico da fotografia COMPLETA, não só do upload."""
+    encoded = json.dumps(
+        [[str(row.get(k) or "") for k in (
+            "op", "codigo", "lote", "data", "tipo_movimento", "tes",
+            "quantidade", "documento", "linha_origem",
+        )] for row in rows],
+        separators=(",", ":"), ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def plan_period_replace(parsed: dict, existing: dict | None = None) -> dict:
+    """Simula substituição apenas entre a primeira e última data do arquivo.
+
+    O período é inclusivo. As movimentações de fora são PRESERVADAS;
+    as movimentações antigas DENTRO do período são substituídas por
+    todas as linhas válidas do novo arquivo. Nunca soma fotografias.
+    """
+    incoming_meta = parsed.get("meta") or {}
+    if incoming_meta.get("versao") != VERSION:
+        raise ValueError("Leitura OPS com regras desatualizadas; reimporte a planilha.")
+    fresh = parsed.get("rows") or []
+    if not fresh:
+        raise ValueError("Novo OPS sem movimentações válidas.")
+    if not all(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(r.get("data") or ""))
+               for r in fresh):
+        raise ValueError("A fonte OPS contém datas inválidas.")
+    start, end = min(r["data"] for r in fresh), max(r["data"] for r in fresh)
+    if (incoming_meta.get("periodo_inicio") != start
+            or incoming_meta.get("periodo_fim") != end):
+        raise ValueError("Datas do manifesto OPS divergentes dos registros.")
+    old_source = existing or {}
+    old_rows = old_source.get("rows") or []
+    old_meta = old_source.get("meta") or {}
+    if old_source and (old_meta.get("versao") != VERSION
+                       or not isinstance(old_rows, list)):
+        raise ValueError("Fonte OPS anterior incompatível. A base não será alterada.")
+
+    retained = [r for r in old_rows if not start <= r["data"] <= end]
+    replaced = [r for r in old_rows if start <= r["data"] <= end]
+    # O mesmo registro não pode coexistir em dois intervalos ou duplicar
+    # quantidades. Permite reprocessar o mesmo arquivo quantas vezes quiser.
+    merged = sorted([*retained, *fresh], key=_record_key)
+    if len({_record_key(r) for r in merged}) != len(merged):
+        raise ValueError("OPS duplicado após união dos períodos. Gravação bloqueada.")
+    if len(merged) != len(retained) + len(fresh):
+        raise RuntimeError("Falha na conservação dos registros históricos.")
+    if any(start <= r["data"] <= end for r in retained):
+        raise RuntimeError("Movimentação preservada pertence ao período substituído.")
+
+    digest = _rows_hash(merged)
+    previous_digest = _rows_hash(sorted(old_rows, key=_record_key)) if old_rows else ""
+    changed = digest != previous_digest
+    # O conteúdo é o controle de idempotência, não o nome nem o SHA do XLSX.
+    updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    manifest = list(old_meta.get("importacoes_periodo") or [])[-29:]
+    new_manifest = {
+        "inicio": start, "fim": end,
+        "arquivo": incoming_meta.get("arquivo_nome") or "",
+        "sha256_arquivo": incoming_meta.get("sha256") or "",
+        "preservados": len(retained),
+        "substituidos": len(replaced),
+        "novos": len(fresh),
+        "total_apos": len(merged),
+        "executado_em": updated_at,
+    }
+    if changed:
+        manifest.append(new_manifest)
+    result_meta = {
+        **incoming_meta,
+        "arquivo_nome": incoming_meta.get("arquivo_nome") or "OPS",
+        "sha256": digest,
+        "sha256_ultimo_arquivo": incoming_meta.get("sha256") or "",
+        "movimentos_validos": len(merged),
+        "registros_consolidados_por_dia": len(merged),
+        "movimentos_validos_ultimo_arquivo": int(
+            incoming_meta.get("movimentos_validos") or 0
+        ),
+        "re1_999_reconhecidos": sum(
+            1 for r in merged
+            if r.get("tipo_movimento") == "RE1" and r.get("tes") == "999"
+        ),
+        "movimentos_sem_lote": sum(1 for r in merged if not r.get("lote")),
+        "periodo_inicio": min(r["data"] for r in merged),
+        "periodo_fim": max(r["data"] for r in merged),
+        "politica": "SUBSTITUIR_SOMENTE_PERIODO_INCLUSIVO",
+        "intervalo_ultima_importacao": {"inicio": start, "fim": end},
+        "registros_preservados_ultima_importacao": len(retained),
+        "registros_substituidos_ultima_importacao": len(replaced),
+        "registros_novos_ultima_importacao": len(fresh),
+        "importacoes_periodo": manifest,
+    }
+    if not changed and old_meta:
+        result_meta = old_meta  # evitar alterar metadados em reenvio idêntico
+    return {
+        "candidate": {"meta": result_meta, "rows": merged},
+        "impact": {
+            "periodo_inicio": start, "periodo_fim": end,
+            "historico_anterior": len(old_rows),
+            "preservados": len(retained),
+            "substituidos": len(replaced),
+            "novos": len(fresh),
+            "apos_substituicao": len(merged),
+            "alterou": changed,
+            "sha256_anterior": old_meta.get("sha256") or "",
+            "alerta_reducao_no_periodo": (
+                len(replaced) > 0 and len(fresh) < len(replaced) * 0.8
+            ),
+        },
+    }
+
+
+def save(parsed: dict, *, expected_previous_sha: str | None = None) -> dict:
+    """Atualiza o período inclusivo do arquivo com cópia de segurança.
+
+    Carrega a versão MAIS RECENTE no banco no ato de salvar. Se a tela foi
+    aberta antes de outra importação, interrompe em vez de sobrepor dados.
+    A verificação extra anterior ao RPC reduz a janela de concorrência;
+    o mecanismo legado de configuração é o único escritor efetivo.
+    """
+    current = load()
+    previous = (current.get("meta") or {}).get("sha256") or ""
+    if expected_previous_sha is not None and previous != expected_previous_sha:
+        raise RuntimeError(
+            "A fonte OPS mudou desde a prévia. Recarregue a página para "
+            "recalcular os períodos antes de confirmar."
         )
-    old = current if current is not None else read_meta()
-    if (old.get("sha256") == parsed["meta"]["sha256"]
-            and old.get("versao") == parsed["meta"]["versao"]):
-        return {"saved": False, "meta": old}
-    # A fonte OPS é uma fotografia histórica completa: não deixar que
-    # uma exportação parcial substitua o histórico e pareça ausência de baixa.
-    if old.get("periodo_inicio") and parsed["meta"]["periodo_inicio"] > str(old["periodo_inicio"]):
-        raise ValueError(
-            "A nova planilha OPS começa depois da fonte vigente. "
-            "Exporte o histórico completo antes de substituí-la."
+    planned = plan_period_replace(parsed, current)
+    if not planned["impact"]["alterou"]:
+        return {"saved": False, "meta": current["meta"],
+                "impact": planned["impact"]}
+    # O backup é criado ANTES de qualquer modificação da fonte principal.
+    # Se a gravação falhar, o histórico anterior permanece restaurável.
+    if current:
+        db.rpc(
+            "fm_salvar_configuracao",
+            {"p_chave": BACKUP_KEY, "p_valor": _pack(current)},
+            timeout=120,
         )
-    if old.get("periodo_fim") and parsed["meta"]["periodo_fim"] < str(old["periodo_fim"]):
-        raise ValueError(
-            "A nova planilha OPS termina antes da fonte vigente. "
-            "Confira se a exportação é acumulada e atualizada."
+    # Não prosseguir se outra operação atualizou a base enquanto
+    # preparávamos o backup.
+    latest = read_meta()
+    if (latest.get("sha256") or "") != previous:
+        raise RuntimeError(
+            "Outra importação OPS alterou a fonte durante a gravação. "
+            "Nada foi substituído; refaça a conferência da prévia."
         )
-    old_valid = int(old.get("movimentos_validos") or 0)
-    new_valid = int(parsed["meta"].get("movimentos_validos") or 0)
-    if old_valid >= 100 and new_valid < old_valid * 0.8:
-        raise ValueError(
-            "Importação OPS bloqueada: a nova fonte possui "
-            f"{new_valid} movimentos válidos contra {old_valid} da fonte "
-            "atual (redução superior a 20%). Confirme que o arquivo foi "
-            "exportado com histórico acumulado completo antes de substituir. "
-            "A base vigente permanece preservada."
-        )
-    db.rpc("fm_salvar_configuracao",
-           {"p_chave": KEY, "p_valor": _pack(parsed)}, timeout=120)
+    candidate = planned["candidate"]
+    db.rpc(
+        "fm_salvar_configuracao",
+        {"p_chave": KEY, "p_valor": _pack(candidate)},
+        timeout=120,
+    )
     actual = read_meta()
-    if (actual.get("sha256") != parsed["meta"]["sha256"]
-            or actual.get("versao") != parsed["meta"]["versao"]):
-        raise RuntimeError("A gravação OPS não retornou a versão ou as regras de processamento esperadas.")
-    return {"saved": True, "meta": actual}
+    if (actual.get("sha256") != candidate["meta"]["sha256"]
+            or actual.get("versao") != VERSION):
+        raise RuntimeError(
+            "A gravação OPS não foi confirmada com a assinatura esperada."
+        )
+    return {"saved": True, "meta": actual, "impact": planned["impact"]}
 
 
 def movements_as_of(records: list[dict], reference: str, *, ops: set[str]) -> tuple[list[dict], int]:
