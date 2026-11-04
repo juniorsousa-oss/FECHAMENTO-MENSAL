@@ -25,7 +25,7 @@ MONEY_FORMAT = '#,##0.00;[Red](#,##0.00)'
 # separador decimal isolado que o formato #,##0.###### gerava no pt-BR.
 QUANTITY_FORMAT = "General"
 QUANTITY_INTEGER_FORMAT = "General"
-EXPORT_SCHEMA_VERSION = "2026-11-04.2-FATURAMENTO-PERIODO-R9"
+EXPORT_SCHEMA_VERSION = "2026-11-04.3-R3-25-COLS-R10"
 PERCENT_FORMAT = '0.00%;[Red](0.00%)'
 
 # Formato homologado: cabeçalho da OP repetido e, à direita, a mesma
@@ -55,6 +55,7 @@ ISSUE_ITEM_FIELDS = [
     ("Qtd conferida", "conferida"),
     ("Qtd baixada", "baixada"),
     ("Qtd pendente baixa", "pendente"),
+    ("Valor previsto da baixa (R$)", "valor_previsto_baixa"),
     ("Saldo no lote conferido", "saldo"),
     ("Saldo G9-PROD", "saldo_g9_prod"),
     ("Outros endereços", "outros_enderecos"),
@@ -69,6 +70,7 @@ ISSUE_COUNT_NAMES = {
     "Produtos totais", "Produtos separados", "Produtos conferidos",
     "Produtos baixados", "Produtos com alerta",
 }
+ISSUE_MONEY_NAMES = {"Valor previsto da baixa (R$)"}
 
 def _cell(value):
     if value is None:
@@ -436,6 +438,7 @@ def issue_detail_rows(model: dict, selected_ops: set[str],
     if model.get("baixas_fonte") == "OPS" and not model.get("history_available"):
         raise ValueError("Relatório OPS indisponível: não exportar baixas desconhecidas.")
     op_map = ops.set_index("op").to_dict("index")
+    prices = model.get("catalog_prices") or {}
     rows = []
     for item in items.to_dict("records"):
         op = str(item.get("op") or "")
@@ -451,7 +454,9 @@ def issue_detail_rows(model: dict, selected_ops: set[str],
         values = [
             full_op.get(key) for _, key in OP_FIELDS
         ] + [
-            item.get(key) for _, key in ISSUE_ITEM_FIELDS
+            _valor_previsto_baixa(item, prices)
+            if key == "valor_previsto_baixa" else item.get(key)
+            for _, key in ISSUE_ITEM_FIELDS
         ]
         # Não inferir alertas de texto, cores ou 'historico_incompleto'.
         # A mesma flag divergente utilizada no filtro e resumo da tela
@@ -480,7 +485,7 @@ def export_issues(model: dict, start: date | None = None, end: date | None = Non
                   *, statuses: set[str] | None = None, alerts_only: bool = False,
                   material_types: set[str] | None = None,
                   include_activity: bool = False) -> bytes:
-    """Espelha as 12 colunas da OP e 12 da tabela de materiais; uma só aba."""
+    """Espelha cabeçalho da OP + campos validados do R3, inclusive previsão."""
     selected_ops, selected_codes = _issue_selection(
         model, start, end, statuses=statuses, alerts_only=alerts_only,
         material_types=material_types,
@@ -491,6 +496,7 @@ def export_issues(model: dict, start: date | None = None, end: date | None = Non
     wb.sheet(
         "Conferência de Baixas", OP_COLUMNS,
         quantity={OP_COLUMNS.index(name) for name in ISSUE_QUANTITY_NAMES | ISSUE_COUNT_NAMES},
+        money={OP_COLUMNS.index(name) for name in ISSUE_MONEY_NAMES},
         alert_column=OP_COLUMNS.index("Resultado"),
     )
     for values, has_alert in records:
