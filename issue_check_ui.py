@@ -1439,7 +1439,7 @@ def render_results(model):
             st.session_state["fm_issue_report_ready"] = (report_key, data)
     with right:
         st.caption(
-            "Exportação R14 em uma única aba: 12 campos da OP e 13 do material, "
+            "Exportação R15 em uma única aba: 12 campos da OP e 13 do material, "
             "reproduzindo o R3 validado. Inclui Valor previsto da baixa "
             "(CADASTROS × quantidade pendente), saldos e resultado. "
             "Cada lote do mesmo produto aparece em sua própria linha. "
@@ -1450,7 +1450,7 @@ def render_results(model):
         st.download_button(
             "BAIXAR EXCEL · CONFERÊNCIA DE BAIXAS",
             data=prepared[1],
-            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R14.xlsx",
+            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R15.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="fm_issue_download_complete", use_container_width=True,
         )
