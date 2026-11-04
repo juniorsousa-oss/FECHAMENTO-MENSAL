@@ -679,11 +679,14 @@ def _ops_meta() -> dict:
 
 
 @st.cache_data(show_spinner=False, max_entries=2)
-def _parse_ops_upload(raw: bytes, name: str, rules_version: str) -> dict:
-    # A versão entra na CHAVE do cache. Um OPS.xltx de bytes idênticos
-    # deve ser reprocessado quando a classificação dos movimentos muda.
+def _parse_ops_upload(raw: bytes, name: str, rules_version: str,
+                      parser_version: str = "") -> dict:
+    # Versões diferentes do algoritmo de leitura invalidam o CACHE mesmo
+    # sem alterar a versão das regras de classificação já gravadas.
     if rules_version != ops_lot_source.VERSION:
         raise RuntimeError("Versão das regras OPS divergente; atualize a página.")
+    if parser_version and parser_version != ops_lot_source.PARSER_VERSION:
+        raise RuntimeError("Versão do leitor OPS divergente; atualize a página.")
     parsed = ops_lot_source.parse(raw, name)
     if parsed["meta"].get("versao") != rules_version:
         raise RuntimeError("Leitura OPS retornou regras antigas; recarregue o arquivo.")
@@ -1443,9 +1446,11 @@ def render_issue_check():
     with st.expander("IMPORTAR / SUBSTITUIR RELATÓRIO OPS COM LOTE",
                      expanded=not bool(current_ops)):
         st.caption(
-            "Arquivo XLSX/XLTX com OP na coluna B, produto em D, quantidade "
-            "em F, data em K e lote em N. Importação de fotografia completa: "
-            "a nova versão substitui a anterior. Não altera o KARDEX gerencial."
+            "Arquivo XLSX/XLTX do OPS: identifica automaticamente as colunas "
+            "de OP, produto, quantidade, data, lote, tipo RE/DE e TES. "
+            "O layout clássico usa B, D, F, K, N, C e O, respectivamente. "
+            "Somente arquivos de histórico acumulado completo podem substituir "
+            "a fonte atual. Não altera o KARDEX gerencial."
         )
         uploaded = st.file_uploader(
             "Relatório OPS", type=["xlsx", "xltx"],
@@ -1457,6 +1462,7 @@ def render_issue_check():
                     parsed_ops = _parse_ops_upload(
                         uploaded.getvalue(), uploaded.name,
                         ops_lot_source.VERSION,
+                        ops_lot_source.PARSER_VERSION,
                     )
                 metadata = parsed_ops["meta"]
                 if metadata.get("versao") != ops_lot_source.VERSION:
@@ -1466,9 +1472,20 @@ def render_issue_check():
                     )
                 st.caption(
                     "Regras de processamento: " + metadata["versao"]
+                    + " · versão do leitor: " + ops_lot_source.PARSER_VERSION
                     + " · versão salva: "
                     + str(current_ops.get("versao") or "nenhuma")
                 )
+                mappings = metadata.get("mapeamento_colunas") or {}
+                if mappings:
+                    with st.expander("CONFERIR MAPEAMENTO DO ARQUIVO OPS"):
+                        for tab, roles in mappings.items():
+                            st.caption(
+                                str(tab) + ": "
+                                + ", ".join(
+                                    f"{role} → {col}" for role, col in roles.items()
+                                )
+                            )
                 st.write(
                     f"**{count(metadata['movimentos_validos'])} movimentos válidos** · "
                     f"{count(metadata['registros_consolidados_por_dia'])} registros consolidados "
