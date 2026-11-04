@@ -58,7 +58,7 @@ class ReportsTests(unittest.TestCase):
         self.assertEqual(reports.issue_rows(model, start, end)[0][0], "26000101001")
         old = reports.issue_rows(model, start, end, include_activity=True)
         self.assertEqual({r[0] for r in old}, {"25027101001", "26000101001"})
-        self.assertEqual(len(reports.OP_COLUMNS), 24)
+        self.assertEqual(len(reports.OP_COLUMNS), 25)
         self.assertEqual(reports.OP_COLUMNS[:12], [
             "OP", "Produtos totais", "Produtos separados",
             "Produtos conferidos", "Produtos baixados", "Produtos com alerta",
@@ -68,11 +68,12 @@ class ReportsTests(unittest.TestCase):
         self.assertEqual(reports.OP_COLUMNS[12:], [
             "Produto", "Descrição", "Lotes", "Qtd necessária",
             "Qtd separada", "Qtd conferida", "Qtd baixada",
-            "Qtd pendente baixa", "Saldo no lote conferido",
-            "Saldo G9-PROD", "Outros endereços", "Resultado",
+            "Qtd pendente baixa", "Valor previsto da baixa (R$)",
+            "Saldo no lote conferido", "Saldo G9-PROD",
+            "Outros endereços", "Resultado",
         ])
         self.assertNotIn("Separações inferidas da conferência", reports.OP_COLUMNS)
-        self.assertNotIn("Valor previsto da baixa (R$)", reports.OP_COLUMNS)
+        self.assertIn("Valor previsto da baixa (R$)", reports.OP_COLUMNS)
         self.assertNotIn("Data última atividade no período", reports.OP_COLUMNS)
 
     def test_october_billing_only_excludes_ni_and_other_months(self):
@@ -127,7 +128,7 @@ class ReportsTests(unittest.TestCase):
             rows = list(wb.active.values)
             self.assertEqual(len(rows), 4)
             self.assertEqual({r[0] for r in rows[1:]}, only_billing)
-            self.assertEqual(len(rows[0]), 24)
+            self.assertEqual(len(rows[0]), 25)
         finally:
             wb.close()
         with_activity = reports.selection_diagnostics(
@@ -165,6 +166,7 @@ class ReportsTests(unittest.TestCase):
                 "nota_fiscal": "10255", "data_faturamento": "16/10/2026",
                 "dias_patio": 18, "status_op": "FINALIZADO EM PÁTIO",
             }]),
+            "catalog_prices": {"00041468": 21.76, "00000196": 21.76},
             "items": pd.DataFrame([
                 {"op": "26015901001", "codigo": "00000196",
                  "descricao": "CABO DE CONEXAO", "lotes": "058405",
@@ -189,7 +191,10 @@ class ReportsTests(unittest.TestCase):
         self.assertEqual(len(records), 2)
         self.assertFalse(records[0][1])
         self.assertTrue(records[1][1])
-        self.assertEqual(len(records[0][0]), 24)
+        self.assertEqual(len(records[0][0]), 25)
+        self.assertIsNone(records[0][0][20])
+        self.assertEqual(records[1][0][20], 43.52)
+        self.assertEqual(records[1][0][19], 2)
         self.assertEqual(records[0][0][:12], records[1][0][:12])
         self.assertEqual(records[0][0][0], "26015901001")
         self.assertEqual(records[0][0][12], "00000196")
@@ -200,7 +205,7 @@ class ReportsTests(unittest.TestCase):
         try:
             self.assertEqual(excel.sheetnames, ["Conferência de Baixas"])
             ws = excel.active
-            self.assertEqual(ws.max_column, 24)
+            self.assertEqual(ws.max_column, 25)
             self.assertEqual(ws.max_row, 3)
             self.assertEqual([c.value for c in ws[1]], reports.OP_COLUMNS)
             # O Excel representa string vazia como célula vazia (None).
@@ -210,15 +215,47 @@ class ReportsTests(unittest.TestCase):
             self.assertEqual([c.value for c in ws[3]], [
                 None if value == "" else value for value in records[1][0]
             ])
-            self.assertIsNone(ws["X2"].fill.patternType)
-            self.assertEqual(ws["X3"].fill.patternType, "solid")
-            self.assertTrue(ws["X3"].fill.fgColor.rgb.endswith("FDE8E8"))
+            self.assertIsNone(ws["Y2"].fill.patternType)
+            self.assertEqual(ws["Y3"].fill.patternType, "solid")
+            self.assertTrue(ws["Y3"].fill.fgColor.rgb.endswith("FDE8E8"))
+            self.assertEqual(ws["U3"].value, 43.52)
+            self.assertIn("0.00", ws["U3"].number_format)
+            self.assertIsNone(ws["U2"].value)
             self.assertEqual(ws["M2"].number_format, "General")
             self.assertEqual(ws["T3"].number_format, "General")
             self.assertEqual(ws.freeze_panes, "A2")
-            self.assertEqual(ws.auto_filter.ref, "A1:X3")
+            self.assertEqual(ws.auto_filter.ref, "A1:Y3")
         finally:
             excel.close()
+
+    def test_expected_value_matches_validated_r3_example(self):
+        sample = {
+            "as_of": "2026-10-31", "baixas_fonte": "OPS",
+            "history_available": True,
+            "catalog_prices": {"00703783": 21.76},
+            "ops": pd.DataFrame([{
+                "op": "26010006005", "itens": 1, "separados": 1,
+                "conferidos": 1, "baixados": 0, "divergencias": 1,
+                "data_faturamento": "30/09/2026",
+            }]),
+            "items": pd.DataFrame([{
+                "op": "26010006005", "codigo": "00703783",
+                "descricao": "FUSÍVEL NH", "lotes": "000000000",
+                "necessaria": 3, "separada": 3, "conferida": 3,
+                "baixada": 0, "pendente": 3, "divergente": True,
+                "status": "PRODUTO NÃO CONSUMIDO COM SALDO NA PRODUÇÃO",
+            }]),
+        }
+        row = reports.issue_rows(sample)[0]
+        self.assertEqual(row[16], 3)  # Qtd separada
+        self.assertEqual(row[17], 3)  # Qtd conferida
+        self.assertEqual(row[19], 3)  # Qtd pendente baixa
+        self.assertEqual(row[20], 65.28)  # CADASTROS 21,76 x 3 = R$65,28
+        sample["catalog_prices"] = {}
+        self.assertIsNone(reports.issue_rows(sample)[0][20])
+        sample["catalog_prices"] = {"00703783": 21.76}
+        sample["items"]["divergente"] = False
+        self.assertIsNone(reports.issue_rows(sample)[0][20])
 
     def test_future_activity_beyond_mes_snapshot_is_excluded(self):
         model = {
