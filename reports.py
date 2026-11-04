@@ -25,11 +25,50 @@ MONEY_FORMAT = '#,##0.00;[Red](#,##0.00)'
 # separador decimal isolado que o formato #,##0.###### gerava no pt-BR.
 QUANTITY_FORMAT = "General"
 QUANTITY_INTEGER_FORMAT = "General"
-EXPORT_SCHEMA_VERSION = "2026-11-03.5-LOT-BALANCE-R7"
+EXPORT_SCHEMA_VERSION = "2026-11-04.1-MIRROR-TABLE-R8"
 PERCENT_FORMAT = '0.00%;[Red](0.00%)'
 
-# Mantém somente as colunas essenciais da base Geral + confronto OPS.
-from issue_line_report import COLUMNS as OP_COLUMNS
+# Formato homologado: cabeçalho da OP repetido e, à direita, a mesma
+# tabela de materiais que aparece ao expandir a OP na Conferência de Baixas.
+# Cada linha representa um produto da OP, com lotes já consolidados pelo MES.
+# A base Geral, suas linhas e a conciliação por lote NÃO são alteradas aqui.
+OP_FIELDS = [
+    ("OP", "op"),
+    ("Produtos totais", "itens"),
+    ("Produtos separados", "separados"),
+    ("Produtos conferidos", "conferidos"),
+    ("Produtos baixados", "baixados"),
+    ("Produtos com alerta", "divergencias"),
+    ("Cliente", "cliente"),
+    ("Condição", "condicao"),
+    ("Nota fiscal", "nota_fiscal"),
+    ("Faturamento", "data_faturamento"),
+    ("Pátio", "dias_patio"),
+    ("Status da OP", "status_op"),
+]
+ISSUE_ITEM_FIELDS = [
+    ("Produto", "codigo"),
+    ("Descrição", "descricao"),
+    ("Lotes", "lotes"),
+    ("Qtd necessária", "necessaria"),
+    ("Qtd separada", "separada"),
+    ("Qtd conferida", "conferida"),
+    ("Qtd baixada", "baixada"),
+    ("Qtd pendente baixa", "pendente"),
+    ("Saldo no lote conferido", "saldo"),
+    ("Saldo G9-PROD", "saldo_g9_prod"),
+    ("Outros endereços", "outros_enderecos"),
+    ("Resultado", "status"),
+]
+OP_COLUMNS = [name for name, _ in OP_FIELDS + ISSUE_ITEM_FIELDS]
+ISSUE_QUANTITY_NAMES = {
+    "Qtd necessária", "Qtd separada", "Qtd conferida", "Qtd baixada",
+    "Qtd pendente baixa", "Saldo no lote conferido", "Saldo G9-PROD",
+}
+ISSUE_COUNT_NAMES = {
+    "Produtos totais", "Produtos separados", "Produtos conferidos",
+    "Produtos baixados", "Produtos com alerta",
+}
 
 def _cell(value):
     if value is None:
@@ -188,7 +227,11 @@ class _Excel:
                 c.font = Font(name="Aptos", size=10, color="17243B")
                 if alert and (alert_column is None or alert_column == i):
                     c.fill = PatternFill("solid", fgColor=WARNING)
-                elif count % 2 == 0:
+                    if alert_column == i:
+                        c.font = Font(name="Aptos", size=10, color="991B1B", bold=True)
+                elif count % 2 == 0 and i != alert_column:
+                    # Na Conferência, Resultado sem alerta fica sem
+                    # demarcação (inclusive nas linhas alternadas).
                     c.fill = PatternFill("solid", fgColor=LINE)
                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                     if i in money:
@@ -319,62 +362,111 @@ def _valor_previsto_baixa(item: dict, prices: dict) -> float | None:
         return None
 
 
-def issue_rows(model: dict, start: date | None = None, end: date | None = None,
-               *, statuses: set[str] | None = None, alerts_only: bool = False,
-               material_types: set[str] | None = None,
-               include_prior_billing: bool = False) -> list[list]:
-    """Uma linha por registro do Geral; OPS compara pela mesma OP/produto/lote."""
-    from issue_line_report import build_rows
-    diagnosis = selection_diagnostics(
+def _issue_selection(model: dict, start: date | None, end: date | None,
+                     *, statuses: set[str] | None, alerts_only: bool,
+                     material_types: set[str] | None,
+                     include_prior_billing: bool) -> tuple[set[str], set[tuple[str, str]] | None]:
+    diagnostic = selection_diagnostics(
         model, start, end, include_prior_billing=include_prior_billing
     )
-    selected = set(diagnosis["selected"])
+    selected_ops = set(diagnostic["selected"])
     ops = model.get("ops")
     if ops is not None and not ops.empty:
         if statuses:
-            selected &= set(
+            selected_ops &= set(
                 ops.loc[ops["status_op"].astype(str).isin(statuses), "op"].astype(str)
             )
         if alerts_only:
-            selected &= set(
+            selected_ops &= set(
                 ops.loc[ops["divergencias"].fillna(0).gt(0), "op"].astype(str)
             )
     selected_codes = None
     if material_types:
         items = model.get("items")
         if items is None or items.empty or "tipo_material" not in items:
-            return []
-        selected_codes = set(
-            zip(items.loc[items["tipo_material"].astype(str).str.upper().isin(material_types), "op"].astype(str),
-                items.loc[items["tipo_material"].astype(str).str.upper().isin(material_types), "codigo"].astype(str))
+            return set(), set()
+        kinds = items["tipo_material"].astype(str).str.upper().isin(material_types)
+        selected_codes = set(zip(
+            items.loc[kinds, "op"].astype(str),
+            items.loc[kinds, "codigo"].astype(str),
+        ))
+    return selected_ops, selected_codes
+
+
+def issue_detail_rows(model: dict, selected_ops: set[str],
+                      *, selected_codes: set[tuple[str, str]] | None = None
+                      ) -> list[tuple[list, bool]]:
+    """OP + produto exatamente como a tela expandida, com alerta por material.
+
+    Modelo operacional é a MES/OPS já conciliada. Não recalcula indicadores,
+    não duplica linhas por lote e não aplica cores por histórico incompleto.
+    """
+    if model.get("baixas_fonte") == "OPS" and not model.get("history_available"):
+        raise ValueError("Relatório OPS indisponível: não exportar baixas desconhecidas.")
+    ops = model.get("ops")
+    items = model.get("items")
+    if ops is None or items is None or ops.empty or items.empty:
+        return []
+    op_map = ops.set_index("op").to_dict("index")
+    rows = []
+    for item in items.to_dict("records"):
+        op = str(item.get("op") or "")
+        code = str(item.get("codigo") or "")
+        if op not in selected_ops:
+            continue
+        if selected_codes is not None and (op, code) not in selected_codes:
+            continue
+        header = op_map.get(op)
+        if header is None:
+            continue
+        full_op = {"op": op, **header}
+        values = [
+            full_op.get(key) for _, key in OP_FIELDS
+        ] + [
+            item.get(key) for _, key in ISSUE_ITEM_FIELDS
+        ]
+        # Não inferir alertas de texto, cores ou 'historico_incompleto'.
+        # A mesma flag divergente utilizada no filtro e resumo da tela
+        # é a única condição que destaca o Resultado no Excel.
+        rows.append((values, bool(item.get("divergente", False))))
+    return rows
+
+
+def issue_rows(model: dict, start: date | None = None, end: date | None = None,
+               *, statuses: set[str] | None = None, alerts_only: bool = False,
+               material_types: set[str] | None = None,
+               include_prior_billing: bool = False) -> list[list]:
+    selected_ops, selected_codes = _issue_selection(
+        model, start, end, statuses=statuses, alerts_only=alerts_only,
+        material_types=material_types,
+        include_prior_billing=include_prior_billing,
+    )
+    return [
+        values for values, _ in issue_detail_rows(
+            model, selected_ops, selected_codes=selected_codes,
         )
-    return build_rows(model, selected, selected_codes=selected_codes)
+    ]
 
 
 def export_issues(model: dict, start: date | None = None, end: date | None = None,
                   *, statuses: set[str] | None = None, alerts_only: bool = False,
                   material_types: set[str] | None = None,
                   include_prior_billing: bool = False) -> bytes:
-    """Somente 10 colunas, sem indicadores ou inferências extras."""
-    rows = issue_rows(
+    """Espelha as 12 colunas da OP e 12 da tabela de materiais; uma só aba."""
+    selected_ops, selected_codes = _issue_selection(
         model, start, end, statuses=statuses, alerts_only=alerts_only,
-        material_types=material_types, include_prior_billing=include_prior_billing,
+        material_types=material_types,
+        include_prior_billing=include_prior_billing,
     )
+    records = issue_detail_rows(model, selected_ops, selected_codes=selected_codes)
     wb = _Excel()
     wb.sheet(
         "Conferência de Baixas", OP_COLUMNS,
-        quantity={OP_COLUMNS.index(field) for field in (
-            "Qtd necessária", "Qtd separada", "Qtd conferida",
-            "Qtd baixada", "Qtd pendente baixa",
-        )},
+        quantity={OP_COLUMNS.index(name) for name in ISSUE_QUANTITY_NAMES | ISSUE_COUNT_NAMES},
         alert_column=OP_COLUMNS.index("Resultado"),
     )
-    for row in rows:
-        outcome = str(row[-1])
-        wb.add("Conferência de Baixas", row, alert=(
-            "PENDENTE" in outcome or "VERIFICAR" in outcome
-            or "SUPERIOR" in outcome
-        ))
+    for values, has_alert in records:
+        wb.add("Conferência de Baixas", values, alert=has_alert)
     return wb.save()
 
 
