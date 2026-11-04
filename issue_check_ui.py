@@ -1690,7 +1690,12 @@ def render_issue_check():
             op_rules.VERSION + "|" + lot_conference.VERSION,
             model, master_records, types,
         )
-        render_results({**model, "master_plan_meta": master_meta, "catalog_meta": catalog_meta})
+        view_model = {**model, "master_plan_meta": master_meta, "catalog_meta": catalog_meta}
+        render_results(view_model)
+        # Isolado e somente leitura: a carga histórica KARDEX só ocorre
+        # após a confirmação explícita no painel de conciliação assistida.
+        import manual_issue_ui
+        manual_issue_ui.render(view_model)
     except Exception as exc:
         st.error(f"Não foi possível concluir a conferência: {exc}")
         st.info("A ausência de uma fonte não é tratada como saldo zero ou ausência de baixa. Regularize a fonte no Monitor de APIs e recarregue o aplicativo.")
