@@ -254,8 +254,108 @@ class ReportsTests(unittest.TestCase):
         sample["catalog_prices"] = {}
         self.assertIsNone(reports.issue_rows(sample)[0][20])
         sample["catalog_prices"] = {"00703783": 21.76}
+        # Essas cinco condições possuem previsão mesmo quando a flag
+        # de alerta estiver falsa: o estágio já justifica o cálculo.
         sample["items"]["divergente"] = False
-        self.assertIsNone(reports.issue_rows(sample)[0][20])
+        self.assertEqual(reports.issue_rows(sample)[0][20], 65.28)
+
+    def test_five_requested_conditions_receive_expected_value_forecast(self):
+        import operational_status as stages
+
+        price = {"00060006": 12.50}
+        statuses = [
+            (stages.AGUARDANDO_SEPARACAO, 10, 0, 0, 125.00),
+            (stages.AGUARDANDO_SEPARACAO, 10, 3, 0, 87.50),
+            (stages.SEPARADO_SEM_CONFERENCIA, 10, 2, 0, 100.00),
+            (stages.NAO_CONSUMIDO_G9, 10, 2, 6, 75.00),
+            (stages.NAO_CONSUMIDO_SEM, 10, 2, 6, 75.00),
+            (stages.NAO_CONSUMIDO_OUTRO, 10, 2, 6, 75.00),
+        ]
+        for status, needed, issued, pending, expected in statuses:
+            with self.subTest(status=status, issued=issued):
+                item = {
+                    "codigo": "00060006", "status": status,
+                    "necessaria": needed, "baixada": issued,
+                    "pendente": pending, "divergente": False,
+                }
+                self.assertEqual(
+                    reports._valor_previsto_baixa(item, price), expected
+                )
+
+    def test_forecast_does_not_invent_zero_or_double_count_ops_baixa(self):
+        import operational_status as stages
+
+        item = {
+            "codigo": "00060006",
+            "status": stages.AGUARDANDO_SEPARACAO,
+            "necessaria": 10,
+            "baixada": None,
+            "pendente": 0,
+            "divergente": True,
+        }
+        self.assertIsNone(
+            reports._valor_previsto_baixa(item, {"00060006": 12.50})
+        )
+        item["baixada"] = 10
+        self.assertEqual(
+            reports._valor_previsto_baixa(item, {"00060006": 12.50}), 0
+        )
+        item["baixada"] = 11
+        self.assertEqual(
+            reports._valor_previsto_baixa(item, {"00060006": 12.50}), 0
+        )
+        item["baixada"] = 1
+        self.assertIsNone(reports._valor_previsto_baixa(item, {}))
+        self.assertIsNone(
+            reports._valor_previsto_baixa(item, {"00060006": 0})
+        )
+        item["status"] = stages.PRODUTO_CONSUMIDO
+        item["divergente"] = False
+        self.assertIsNone(
+            reports._valor_previsto_baixa(item, {"00060006": 12.50})
+        )
+
+    def test_forecast_export_preserves_r3_25_columns_and_uses_same_model(self):
+        import operational_status as stages
+
+        model = {
+            "as_of": "2026-10-31",
+            "baixas_fonte": "OPS", "history_available": True,
+            "catalog_prices": {"00060006": 12.50},
+            "ops": pd.DataFrame([{
+                "op": "26001000001", "itens": 1, "separados": 0,
+                "conferidos": 0, "baixados": 0, "divergencias": 0,
+                "data_faturamento": "10/10/2026",
+            }]),
+            "items": pd.DataFrame([{
+                "op": "26001000001", "codigo": "00060006",
+                "descricao": "MATERIAL AGUARDANDO", "lotes": "000000000",
+                "necessaria": 10, "separada": 0, "conferida": 0,
+                "baixada": 3, "pendente": 0,
+                "status": stages.AGUARDANDO_SEPARACAO,
+                "divergente": False,
+            }]),
+            "general": [], "movements": [],
+        }
+        row = reports.issue_rows(
+            model, date(2026, 10, 1), date(2026, 10, 31)
+        )[0]
+        self.assertEqual(len(row), 25)
+        self.assertEqual(row[20], 87.50)
+        wb = load_workbook(
+            BytesIO(reports.export_issues(
+                model, date(2026, 10, 1), date(2026, 10, 31)
+            )),
+            data_only=True
+        )
+        try:
+            ws = wb.active
+            self.assertEqual(ws.max_column, 25)
+            self.assertEqual(ws["U2"].value, 87.50)
+            self.assertIsNone(ws["Y2"].fill.patternType)
+            self.assertIn("0.00", ws["U2"].number_format)
+        finally:
+            wb.close()
 
     def test_validated_r3_october_op_with_no_october_activity_is_included(self):
         # R3 continha 26015901001 / 00705997, NF em 16/10/2026.
