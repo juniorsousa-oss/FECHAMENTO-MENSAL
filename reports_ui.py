@@ -63,7 +63,8 @@ def _get_issue_model(selected_warehouses: tuple[str, ...] = ()) -> dict:
     catalog_version = str(catalog_meta.get("source_version", catalog_meta.get("version", ""))) + str(catalog_meta.get("content_sha256") or catalog_meta.get("erro") or "")
     enriched = issue._operational_snapshot(
         tokens, history_tokens, chosen, master_version, catalog_version,
-        stages.VERSION, model, master_records, catalog_types)
+        stages.VERSION + "|" + issue.lot_conference.VERSION,
+        model, master_records, catalog_types)
     prices, price_meta = issue._optional_catalog_prices()
     return {**enriched, "master_plan_meta": master_meta,
             "catalog_meta": catalog_meta,
