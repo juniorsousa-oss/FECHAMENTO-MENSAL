@@ -96,15 +96,44 @@ class IssueCheckUITests(unittest.TestCase):
             }), "",
         )
 
-    def test_lot_results_render_under_result_header_with_red_only_if_alert(self):
+    def test_five_attention_categories_have_amber_even_when_alert_is_active(self):
+        import issue_check_ui as ui
+        for outcome in [
+            "PRODUTO AGUARDANDO SEPARAÇÃO",
+            "PRODUTO SEPARADO AGUARDANDO CONFERÊNCIA",
+            "BAIXA A MAIOR NESTE LOTE",
+            "BAIXA A MENOR NESTE LOTE",
+            "DIVERGÊNCIA DE LOTE",
+        ]:
+            for alert in (True, False):
+                with self.subTest(outcome=outcome, alert=alert):
+                    self.assertEqual(
+                        ui._result_style({
+                            "resultado_lote": outcome,
+                            "divergente": alert,
+                        }),
+                        "background-color:#fff3d6;color:#92400e",
+                    )
+        self.assertEqual(
+            ui._result_style({
+                "resultado_lote": "DIVERGÊNCIA DE LOTES — PENDÊNCIA A APURAR",
+                "divergente": True,
+            }),
+            "background-color:#fef2f2;color:#991b1b",
+        )
+
+    def test_lot_results_render_amber_attention_and_red_only_for_other_errors(self):
         import pandas as pd
         from unittest.mock import patch
         import issue_check_ui as ui
         grid = pd.DataFrame([
             {"op": "26015901001", "codigo": "00041468", "lotes": "062285",
-             "resultado_lote": "BAIXA A MENOR NO LOTE", "divergente": True},
+             "resultado_lote": "BAIXA A MENOR NESTE LOTE", "divergente": False},
             {"op": "26015901001", "codigo": "00041468", "lotes": "062984",
              "resultado_lote": "PRODUTO CONSUMIDO", "divergente": False},
+            {"op": "26015901001", "codigo": "00041468", "lotes": "062985",
+             "resultado_lote": "PRODUTO NÃO CONSUMIDO SEM SALDO PARA CONSUMO",
+             "divergente": True},
         ])
         with patch.object(ui.st, "dataframe") as display:
             ui._table(grid, ["codigo", "lotes", "resultado_lote"])
@@ -113,8 +142,10 @@ class IssueCheckUITests(unittest.TestCase):
                          ["Produto", "Lotes", "Resultado"])
         html = style.to_html()
         self.assertIn("background-color: #fef2f2", html)
+        self.assertIn("background-color: #fff3d6", html)
         self.assertIn("PRODUTO CONSUMIDO", html)
         self.assertEqual(html.count("background-color: #fef2f2"), 1)
+        self.assertEqual(html.count("background-color: #fff3d6"), 1)
 
     def test_responsive_filters_cards_and_all_warehouses_without_manual_controls(self):
         import issue_check_ui as ui
