@@ -51,6 +51,7 @@ def save_month(month: str, total: int, count: int, note: str = "") -> dict:
         "itens_sem_ajuste": int(total) - int(count),
         "acuracia": round(rate * 100, 6),
         "status": "FECHADO",
+        "armazem": "S2",
         "observacao": str(note or "").strip()[:400],
     }
     data = {"versao": 1, "meses": months}
@@ -80,6 +81,7 @@ def render() -> None:
         for month, row in sorted(records.items(), reverse=True):
             display.append({
                 "Competência": month[5:7] + "/" + month[:4],
+                "Armazém": row.get("armazem") or "S2",
                 "Itens conferidos": row.get("itens_conferidos"),
                 "Ajustes confirmados": row.get("ajustes_confirmados"),
                 "Itens sem ajuste": row.get("itens_sem_ajuste"),
@@ -96,7 +98,7 @@ def render() -> None:
         )
         latest = display[0]
         left, mid, right = st.columns(3)
-        left.metric("ACURÁCIA · " + latest["Competência"],
+        left.metric("ACURÁCIA · " + latest["Armazém"] + " · " + latest["Competência"],
                     f"{float(latest['Acurácia (%)']):.2f}%".replace(".", ","))
         mid.metric("ITENS CONFERIDOS", latest["Itens conferidos"])
         right.metric("AJUSTES REAIS", latest["Ajustes confirmados"])
