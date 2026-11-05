@@ -15,6 +15,10 @@ on:
       - 'db.py'
       - 'ui.py'
       - 'movements.py'
+      - 'kardex_adjustments.py'
+      - 'kardex_conditions.py'
+      - 'kardex_group_config.py'
+      - 'stock_accuracy.py'
       - 'movement_store.py'
       - 'kardex_history.py'
       - 'movement_analysis_ui.py'
@@ -51,7 +55,7 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
       - name: Compilar
-        run: python -m py_compile competence_calendar.py streamlit_app.py central_fechamento_data.py inventory_db.py report_parser.py cb_parser.py ui.py movements.py movement_store.py movement_analysis_ui.py issue_check.py issue_line_report.py lot_conference.py issue_check_ui.py issue_check_export.py ops_lot_source.py master_plan.py operational_status.py catalog_types.py kardex_history.py reports.py reports_ui.py manual_issue_candidates.py manual_issue_ui.py cb_balance_math.py closing_purchases.py
+        run: python -m py_compile competence_calendar.py streamlit_app.py central_fechamento_data.py inventory_db.py report_parser.py cb_parser.py ui.py movements.py movement_store.py movement_analysis_ui.py issue_check.py issue_line_report.py lot_conference.py issue_check_ui.py issue_check_export.py ops_lot_source.py master_plan.py operational_status.py catalog_types.py kardex_history.py reports.py reports_ui.py manual_issue_candidates.py manual_issue_ui.py cb_balance_math.py closing_purchases.py kardex_adjustments.py kardex_conditions.py kardex_group_config.py stock_accuracy.py
       - name: Validar fórmula das baixas e compras do KARDEX
         run: python -m unittest discover -s tests -p 'test_closing_purchases.py'
       - name: Validar análise de movimentações
@@ -88,6 +92,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_competence_calendar.py'
       - name: Validar cache, carregamento sob demanda e concorrência
         run: python -m unittest discover -s tests -p 'test_runtime_performance.py'
+      - name: Validar marcação laranja e acurácia de estoque
+        run: python -m unittest discover -s tests -p 'test_kardex_adjustments.py'
       - name: Validar substituição mensal dos arquivos KARDEX
         run: python -m unittest discover -s tests -p 'test_kardex*.py'
       - name: Testar relatório completo de contagens
