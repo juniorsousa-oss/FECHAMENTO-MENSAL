@@ -3940,13 +3940,16 @@ with _fm_page_surface.container():
 
             history_view = st.segmented_control(
                 "Visualização do histórico",
-                ["FECHAMENTOS", "VALOR DAS BAIXAS"],
+                ["FECHAMENTOS", "VALOR DAS BAIXAS", "ACURÁCIA DO ESTOQUE"],
                 default="FECHAMENTOS",
                 key="fm_history_view",
                 width="stretch",
                 label_visibility="collapsed",
             )
-            if history_view != "VALOR DAS BAIXAS":
+            if history_view == "ACURÁCIA DO ESTOQUE":
+                from stock_accuracy import render as render_stock_accuracy
+                render_stock_accuracy()
+            elif history_view == "FECHAMENTOS":
                 st.markdown(
                     history_table_html(
                         history_months,
