@@ -174,4 +174,7 @@ def classify(frame: pd.DataFrame, config: dict) -> pd.DataFrame:
         out.loc[mask, "condicao_id"] = item["id"]
         out.loc[mask, "condicao_ordem"] = priority
         pending &= ~mask
-    return out
+    import kardex_adjustments as adjustment_registry
+    return adjustment_registry.apply_confirmed(
+        out, config.get("_ajustes_confirmados")
+    )
