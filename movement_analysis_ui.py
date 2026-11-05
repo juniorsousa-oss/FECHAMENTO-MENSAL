@@ -15,6 +15,7 @@ import streamlit as st
 import movement_store as store
 import movements as mv
 import kardex_history as history
+import kardex_adjustments as adjustments
 import kardex_group_config as groups
 import kardex_conditions as conditions
 
@@ -1002,3 +1003,104 @@ def render_kardex_feeder():
     _import_controls(imports, model)
     if model is not None:
         _import_registry(model)
+
+
+def render_adjustments_feeder():
+    """Valida Excel com marcação laranja e persiste as competências aprovadas."""
+    band("ALIMENTADORES", "AJUSTES DE ESTOQUE CONFIRMADOS",
+         "Somente os movimentos destacados em laranja entram na acurácia.")
+    try:
+        registry = adjustments.load_registry()
+    except Exception as exc:
+        st.error(f"Não foi possível carregar os ajustes confirmados: {exc}")
+        return
+
+    months = registry.get("meses") or {}
+    if months:
+        st.dataframe(
+            pd.DataFrame([
+                {"Competência": _br_month(month), "Ajustes confirmados": len(keys)}
+                for month, keys in sorted(months.items(), reverse=True)
+            ]),
+            hide_index=True, use_container_width=True,
+        )
+    else:
+        st.info("Ainda não existe competência com ajustes confirmados.")
+
+    st.caption(
+        "Use o Excel exportado em ANÁLISE DE MOVIMENTAÇÕES, aba Movimentações. "
+        "Somente linhas com a célula G (Subgrupo = AJUSTE DE ESTOQUE) "
+        "preenchida em laranja serão consideradas ajustes reais."
+    )
+    upload = st.file_uploader(
+        "Relatório KARDEX com marcações laranja",
+        type=["xlsx", "xltx"],
+        key="fm_kardex_adjustment_upload",
+    )
+    if upload is None:
+        return
+    try:
+        marked = adjustments.parse_orange_marked_excel(upload.getvalue())
+        by_month = adjustments.group_by_month(marked)
+    except Exception as exc:
+        st.error(f"Não foi possível validar as marcações: {exc}")
+        return
+    if not marked:
+        st.warning("O arquivo não contém movimentos de AJUSTE DE ESTOQUE em laranja.")
+        return
+
+    st.metric("Ajustes confirmados no Excel", len(marked))
+    st.dataframe(
+        pd.DataFrame(marked)[["data", "codigo", "armazem", "tes", "documento", "entrada", "saida"]].rename(
+            columns={"data": "Data", "codigo": "Código", "armazem": "Armazém",
+                     "tes": "TES", "documento": "Documento", "entrada": "Entrada (R$)",
+                     "saida": "Saída (R$)"}
+        ),
+        hide_index=True, use_container_width=True, height=350,
+    )
+    try:
+        imports = _imports()
+        tokens = tuple((i["chave"], i.get("atualizado_em", ""),
+                        i.get("meta") or {}) for i in imports)
+        model = _model(tokens, mv.rules()["versao"] + history.VERSION)
+        available = {
+            adjustments.row_key(r.data, r.codigo, r.armazem, r.tes, r.documento)
+            for r in model["frame"].itertuples(index=False)
+        }
+        missing = sorted(set(item["chave"] for item in marked) - available)
+    except Exception as exc:
+        st.error("A base KARDEX vigente não pôde ser conferida: " + str(exc))
+        return
+    if missing:
+        st.error(
+            f"{len(missing)} movimento(s) laranja não constam do KARDEX vigente. "
+            "Atualize o alimentador KARDEX ou confira os documentos. "
+            "Nenhuma confirmação será gravada."
+        )
+        st.dataframe(pd.DataFrame({"Movimentos sem correspondência": missing[:100]}),
+                     hide_index=True)
+        return
+    scope = ", ".join(_br_month(month) + f" ({len(keys)})"
+                      for month, keys in sorted(by_month.items()))
+    st.warning(
+        "A gravação substituirá apenas as confirmações das competências "
+        + scope + ". Não altera movimentos originais nem períodos diferentes."
+    )
+    approved = st.checkbox(
+        "CONFIRMO QUE AS CÉLULAS LARANJA INDICAM OS AJUSTES FÍSICOS REAIS",
+        key="fm_confirm_orange_stock_adjustments",
+    )
+    if st.button(
+        "GRAVAR AJUSTES CONFIRMADOS", type="primary",
+        disabled=not approved, key="fm_save_orange_adjustments",
+    ):
+        try:
+            saved = adjustments.save_registry(by_month)
+            _groups_read.clear()
+            st.session_state["fm_mov_flash"] = (
+                f"Ajustes confirmados gravados para {len(by_month)} competência(s), "
+                f"{sum(len(saved['meses'][m]) for m in by_month)} movimentos."
+            )
+            st.rerun()
+        except Exception as exc:
+            st.error("Falha ao confirmar os ajustes: " + str(exc))
