@@ -74,6 +74,17 @@ class StockAdjustmentsTests(unittest.TestCase):
         self.assertEqual(result[["valor_entrada","valor_saida"]].sum().tolist(),[25,85])
         self.assertEqual(len(result),len(data))
 
+    def test_historico_anterior_a_outubro_preservado(self):
+        anterior = pd.DataFrame([{
+            "data":"2026-09-30", "codigo":"00090129", "armazem":"S2",
+            "tes":"520", "documento":"99OLD1",
+            "subgrupo_usuario":"AJUSTE DE ESTOQUE",
+            "condicao_id":"kardex_cond_14_ajuste_520_sem_op",
+        }])
+        result = adj.apply_confirmed(anterior, adj.empty_registry())
+        self.assertEqual(result.iloc[0]["subgrupo_usuario"], "AJUSTE DE ESTOQUE")
+        self.assertFalse(bool(result.iloc[0]["ajuste_reclassificado_consumo"]))
+
     def test_somente_mes_e_chave_exatos(self):
         registry = adj.normalize_registry({"meses":{"2026-10":[
             "2026-10-30|S2|020|00090129|99LNZR"
