@@ -487,7 +487,9 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None, *, summa
     import kardex_group_config as gc
     import kardex_conditions as conditions
 
-    config = gc.validated(group_config if group_config is not None else gc.empty())
+    original_config = group_config if group_config is not None else gc.empty()
+    config = gc.validated(original_config)
+    config["_ajustes_confirmados"] = original_config.get("_ajustes_confirmados") or {}
     owner = gc.group_owner(config)
     active = conditions.classify(effective(frame), config)
     wb = Workbook(write_only=True)
@@ -515,7 +517,7 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None, *, summa
         return sheet
 
     def write(sheet, values, *, style="detail", level=0, collapsed=False,
-              date_cols=(), money_cols=(), quantity_cols=()):
+              date_cols=(), money_cols=(), quantity_cols=(), highlight_col=None):
         counters[sheet.title] += 1
         number = counters[sheet.title]
         if level:
@@ -548,6 +550,8 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None, *, summa
                 cell.fill = PatternFill("solid", fgColor=group_color if style == "group" else total_color)
             elif style == "child":
                 cell.fill = PatternFill("solid", fgColor=detail_color)
+            if index == highlight_col:
+                cell.fill = PatternFill("solid", fgColor="FFCC99")
             cell.alignment = Alignment(
                 vertical="center", wrap_text=style == "header",
                 indent=1 if level and index == 1 else 0,
@@ -679,7 +683,8 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None, *, summa
                 float(row.valor_entrada), float(row.valor_saida),
                 str(row.ae_original), str(row.descricao_tes),
                 str(row.tipo_analise), str(row.documento),
-            ], date_cols=(1,), money_cols=(8, 9))
+            ], date_cols=(1,), money_cols=(8, 9),
+               highlight_col=7 if bool(row.ajuste_confirmado) else None)
     ledger_sheet.auto_filter.ref = f"A1:M{max(counters['Movimentações'], 1)}"
 
     buffer = io.BytesIO()
