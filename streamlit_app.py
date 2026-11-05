@@ -5510,7 +5510,7 @@ with _fm_page_surface.container():
         if settings_view == "ALIMENTADORES":
             feeder = st.segmented_control(
                 "Fonte de alimentação",
-                ["KARDEX", "ANALÍTICO", "CHAPAS E BARRAMENTOS", "OPS"],
+                ["KARDEX", "AJUSTES DE ESTOQUE", "ANALÍTICO", "CHAPAS E BARRAMENTOS", "OPS"],
                 default="KARDEX",
                 key="fm_feeder_type",
                 width="stretch",
@@ -5518,6 +5518,9 @@ with _fm_page_surface.container():
             if feeder == "KARDEX":
                 from movement_analysis_ui import render_kardex_feeder
                 render_kardex_feeder()
+            elif feeder == "AJUSTES DE ESTOQUE":
+                from movement_analysis_ui import render_adjustments_feeder
+                render_adjustments_feeder()
             elif feeder == "OPS":
                 from issue_check_ui import render_ops_feeder
                 render_ops_feeder()
