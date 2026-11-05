@@ -126,6 +126,10 @@ def apply_confirmed(frame: pd.DataFrame, registry: dict | None) -> pd.DataFrame:
         return out
     approved = normalize_registry(registry)["meses"]
     residual = out["subgrupo_usuario"].eq(STOCK_ADJUSTMENT)
+    # A regra revisada inicia em outubro/2026. Não reescrever
+    # competências históricas anteriores sem inventário validado.
+    if "data" in out.columns:
+        residual &= out["data"].astype(str).str[:10].ge("2026-10-01")
     if not residual.any():
         return out
     keys = out.loc[residual].apply(
