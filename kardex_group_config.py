@@ -277,6 +277,9 @@ def load() -> dict:
     records = response.json() or []
     payload = records[0]["valor"] if records else empty()
     data = validated(payload)
+    # O registro físico possui persistência própria e não é alterado pela TES.
+    import kardex_adjustments as adjustment_registry
+    data["_ajustes_confirmados"] = adjustment_registry.load_registry()
     if records and int(payload.get("versao") or 1) < 7:
         # Migração persistente V7; respeita regras excluídas.
         db.rpc("fm_salvar_configuracao", {"p_chave": CONFIG_KEY, "p_valor": data}, timeout=45)
