@@ -49,7 +49,7 @@ class ConditionsTests(unittest.TestCase):
             "5":cond.SHEET_BAR, "6":cond.SHEET_BAR,
             "7":cond.COST, "8":cond.COST, "9":cond.MANAGEMENT,
             "10":cond.CONSUMPTION, "11":cond.CONSUMPTION,
-            "12":cond.STOCK_ADJUSTMENT, "13":"SEM GRUPO",
+            "12":cond.CONSUMABLE, "13":"SEM GRUPO",
             "14":"SEM GRUPO", "15":cond.CONSUMABLE,
         }
         self.assertEqual(tagged["subgrupo_usuario"].to_dict(), expected)
@@ -58,7 +58,7 @@ class ConditionsTests(unittest.TestCase):
         self.assertEqual(tagged["valor_entrada"].sum(), frame["valor_entrada"].sum())
         self.assertEqual(tagged.loc["1", "condicao_ordem"], 3)
         self.assertEqual(tagged.loc["11", "condicao_ordem"], 4)
-        self.assertEqual(tagged.loc["12", "condicao_id"], "kardex_cond_14_ajuste_520_sem_op")
+        self.assertEqual(tagged.loc["12", "condicao_id"], "kardex_consumo_sem_ajuste_confirmado")
         self.assertEqual(tagged.loc["13", "condicao_id"], "")
         self.assertTrue(pd.isna(tagged.loc["13", "condicao_ordem"]))
 
@@ -81,11 +81,11 @@ class ConditionsTests(unittest.TestCase):
             "bucha_1":cond.CONSUMABLE,"bucha_2":cond.CONSUMABLE,
             "bucha_3":cond.CONSUMABLE,"cc_diferente":cond.MANAGEMENT,
             "epi_ep":cond.EPI,"tc_tp":cond.CONSUMABLE,
-            "chapa":cond.CONSUMPTION,"outro_codigo":cond.STOCK_ADJUSTMENT,
+            "chapa":cond.CONSUMPTION,"outro_codigo":cond.CONSUMABLE,
             "com_op":cond.CONSUMPTION,"outra_tes":cond.MANAGEMENT,
-            "com_op_sem_saida":cond.STOCK_ADJUSTMENT,
+            "com_op_sem_saida":cond.CONSUMABLE,
         })
-        self.assertEqual(result.loc["outro_codigo","condicao_id"],"kardex_cond_14_ajuste_520_sem_op")
+        self.assertEqual(result.loc["outro_codigo","condicao_id"],"kardex_consumo_sem_ajuste_confirmado")
         self.assertEqual(result["valor_saida"].sum(),samples["valor_saida"].sum())
         self.assertEqual(len(result),len(samples))
 
@@ -103,12 +103,12 @@ class ConditionsTests(unittest.TestCase):
         result = cond.classify(rows,promoted).set_index("id_registro")
         self.assertEqual(result["subgrupo_usuario"].to_dict(),{
             "epi":cond.EPI,"ii":cond.CONSUMABLE,
-            "cc":cond.MANAGEMENT,"residual":cond.STOCK_ADJUSTMENT,
+            "cc":cond.MANAGEMENT,"residual":cond.CONSUMABLE,
         })
         removed = cfg.delete_condition(promoted,"kardex_cond_04_material_consumo",
                                        known_tes=self.known)
         result2 = cond.classify(rows,removed).set_index("id_registro")
-        self.assertEqual(result2.loc["ii","condicao_id"],residual_id)
+        self.assertEqual(result2.loc["ii","condicao_id"],"kardex_consumo_sem_ajuste_confirmado")
 
     def test_v5_migration_replaces_old_consumable_exception_once(self):
         old = cfg.empty()
@@ -184,8 +184,8 @@ class ConditionsTests(unittest.TestCase):
             "epi520":cond.EPI, "epi540":cond.EPI,
             "epi_over_op":cond.CONSUMPTION,
             "tc_tp":cond.CONSUMABLE, "tc_tp_desc":cond.CONSUMABLE,
-            "tp_only":cond.STOCK_ADJUSTMENT, "not_epi":cond.MANAGEMENT,
-            "adjust_020":cond.STOCK_ADJUSTMENT, "adjust_520":cond.STOCK_ADJUSTMENT,
+            "tp_only":cond.CONSUMABLE, "not_epi":cond.MANAGEMENT,
+            "adjust_020":cond.CONSUMABLE, "adjust_520":cond.CONSUMABLE,
             "return_040":cond.PRODUCTION_RETURN,
             "production_precedes_return":cond.PRODUCTION,
             "sheet_precedes_return":cond.SHEET_BAR,
@@ -226,9 +226,9 @@ class ConditionsTests(unittest.TestCase):
         self.assertEqual(tagged.loc["transfer_no_saida", "subgrupo_usuario"], cond.TRANSFER)
         self.assertEqual(tagged.loc["sheet520", "subgrupo_usuario"], cond.CONSUMPTION)
         self.assertEqual(tagged.loc["sheet520_ii", "subgrupo_usuario"], cond.CONSUMPTION)
-        self.assertEqual(tagged.loc["sheet520_no_baixa", "subgrupo_usuario"], cond.STOCK_ADJUSTMENT)
+        self.assertEqual(tagged.loc["sheet520_no_baixa", "subgrupo_usuario"], cond.CONSUMABLE)
         self.assertEqual(tagged.loc["sheet550", "subgrupo_usuario"], cond.SHEET_BAR)
-        self.assertEqual(tagged.loc["default_547_untouched", "subgrupo_usuario"], cond.STOCK_ADJUSTMENT)
+        self.assertEqual(tagged.loc["default_547_untouched", "subgrupo_usuario"], cond.CONSUMABLE)
         self.assertEqual(tagged["valor_saida"].sum(), frame["valor_saida"].sum())
         self.assertEqual(len(tagged), len(frame))
 
