@@ -54,18 +54,73 @@ def move(lot: str, qty: int, day="2026-10-04"):
     }
 
 
-def model(lines, ops, *, with_prices=True):
+def model(lines, ops, *, with_prices=True, stocks=None, master=None):
     parsed = issue_check.parse_general(pd.DataFrame(lines))
-    reconciled = issue_check.reconcile_ops(
-        parsed, [], ops, ops_meta=META, as_of="2026-11-04"
+    stock_rows = (
+        issue_check.parse_stock(pd.DataFrame(stocks))
+        if stocks else []
     )
-    result = stages.apply(reconciled)
+    reconciled = issue_check.reconcile_ops(
+        parsed, stock_rows, ops, ops_meta=META, as_of="2026-11-04"
+    )
+    result = stages.apply(reconciled, {OP: master} if master else {})
     if with_prices:
         result["catalog_prices"] = {CODE: 20.0}
     return result
 
 
 class LotReportTests(unittest.TestCase):
+    def test_conference_with_stock_at_g9_waits_without_false_alert(self):
+        row = mes(LOT_A, 5)
+        stock = [{
+            "Produto": CODE, "Lote": LOT_A, "Armazem": "S2",
+            "Endereco": "G9-PROD", "Quantidade": 5,
+        }]
+        result = model([row], [], stocks=stock)
+        product = result["items"].iloc[0]
+        lot = result["lot_items"].iloc[0]
+        self.assertEqual(result["ops"].iloc[0].status_op, stages.EM_CONFERENCIA)
+        self.assertEqual(product.status, stages.CONFERIDO_AGUARDANDO_REPORTE)
+        self.assertFalse(product.divergente)
+        self.assertEqual(lot["resultado_lote"], stages.CONFERIDO_AGUARDANDO_REPORTE)
+        self.assertEqual(lot["pendente"], 5)
+        self.assertFalse(lot["divergente"])
+        self.assertEqual(result["lot_ops"].iloc[0].divergencias, 0)
+        self.assertEqual(reports.issue_rows(result, alerts_only=True), [])
+
+    def test_conference_confirmed_without_g9_stock_is_real_alert(self):
+        result = model([mes(LOT_A, 5)], [])
+        product = result["items"].iloc[0]
+        lot = result["lot_items"].iloc[0]
+        self.assertEqual(product.status, stages.NAO_CONSUMIDO_SEM)
+        self.assertTrue(product.divergente)
+        self.assertEqual(lot["resultado_lote"], stages.NAO_CONSUMIDO_SEM)
+        self.assertTrue(lot["divergente"])
+        self.assertEqual(result["lot_ops"].iloc[0].divergencias, 1)
+
+    def test_after_report_missing_consumption_alert_even_with_g9_stock(self):
+        stock = [{
+            "Produto": CODE, "Lote": LOT_A, "Armazem": "S2",
+            "Endereco": "G9-PROD", "Quantidade": 5,
+        }]
+        result = model(
+            [mes(LOT_A, 5)], [], stocks=stock,
+            master={"condicao": "FINALIZADO"},
+        )
+        lot = result["lot_items"].iloc[0]
+        self.assertEqual(result["ops"].iloc[0].status_op, stages.FINALIZADO)
+        self.assertEqual(lot["resultado_lote"], stages.NAO_CONSUMIDO_G9)
+        self.assertTrue(lot["divergente"])
+        self.assertEqual(result["lot_ops"].iloc[0].divergencias, 1)
+
+    def test_separated_not_conferred_does_not_trigger_error_before_report(self):
+        result = model([mes(LOT_A, 5, confirmed=False)], [])
+        lot = result["lot_items"].iloc[0]
+        self.assertEqual(result["ops"].iloc[0].status_op, stages.EM_SEPARACAO)
+        self.assertEqual(lot["resultado_lote"], stages.SEPARADO_SEM_CONFERENCIA)
+        self.assertFalse(lot["divergente"])
+        self.assertEqual(result["lot_ops"].iloc[0].divergencias, 0)
+
     def test_large_ops_history_uses_indexed_lookup_per_product(self):
         """Carga sintética: muitos materiais e baixas sem multiplicar varreduras."""
         import time
