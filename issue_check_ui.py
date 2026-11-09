@@ -1501,6 +1501,24 @@ def render_ops_feeder():
             "Relatório OPS", type=["xlsx", "xltx"],
             key="fm_issue_ops_file",
         )
+        replace_mode = st.radio(
+            "CRITÉRIO DE SUBSTITUIÇÃO",
+            options=("period", "op"),
+            format_func=lambda choice: (
+                "Por período (padrão)" if choice == "period"
+                else "Por OP (relatório completo das OPs selecionadas)"
+            ),
+            horizontal=True,
+            key="fm_issue_ops_replace_mode",
+        )
+        if replace_mode == "op":
+            st.warning(
+                "Use esta opção somente quando o arquivo trouxer todas as "
+                "movimentações das OPs contidas nele. Todas as baixas "
+                "anteriormente registradas dessas OPs serão substituídas, "
+                "inclusive as de outras datas. O histórico das demais OPs "
+                "será preservado e será criado um backup antes da gravação."
+            )
         if uploaded is not None:
             try:
                 with st.spinner("Lendo movimentações e consolidando OP, produto, lote e data..."):
@@ -1558,15 +1576,29 @@ def render_ops_feeder():
                     )
                     plan = ops_lot_source.plan_period_replace(
                         parsed_ops, previous_snapshot,
+                        replace_mode=replace_mode,
                     )
                 impact = plan["impact"]
-                st.markdown("##### PRÉVIA · SUBSTITUIR SOMENTE O PERÍODO")
-                st.caption(
-                    "Intervalo que será substituído: "
-                    + day(impact["periodo_inicio"]) + " a "
-                    + day(impact["periodo_fim"])
-                    + ". As datas de ambos os limites estão incluídas."
+                st.markdown(
+                    "##### PRÉVIA · SUBSTITUIR OPs DO ARQUIVO"
+                    if replace_mode == "op"
+                    else "##### PRÉVIA · SUBSTITUIR SOMENTE O PERÍODO"
                 )
+                if replace_mode == "op":
+                    st.caption(
+                        f"{count(impact['ops_afetadas'])} OPs presentes no arquivo "
+                        "terão seu histórico inteiro substituído. O intervalo "
+                        f"{day(impact['periodo_inicio'])} a "
+                        f"{day(impact['periodo_fim'])} identifica as datas do "
+                        "arquivo novo, não limita a remoção dos registros antigos."
+                    )
+                else:
+                    st.caption(
+                        "Intervalo que será substituído: "
+                        + day(impact["periodo_inicio"]) + " a "
+                        + day(impact["periodo_fim"])
+                        + ". As datas de ambos os limites estão incluídas."
+                    )
                 p1, p2, p3, p4 = st.columns(4)
                 p1.metric("REGISTROS PRESERVADOS", count(impact["preservados"]))
                 p2.metric("REGISTROS SUBSTITUÍDOS", count(impact["substituidos"]))
@@ -1581,9 +1613,10 @@ def render_ops_feeder():
                 if impact["alerta_reducao_no_periodo"]:
                     st.warning(
                         "ATENÇÃO: o arquivo novo possui mais de 20% menos "
-                        "registros do que os existentes DENTRO DO INTERVALO "
-                        "informado. Confirme que o Excel exportou todas as "
-                        "baixas desse período, inclusive dias sem alterações."
+                        "registros do que os antigos que serão substituídos. "
+                        "Confira se o relatório OPS é completo para o "
+                        + ("conjunto de OPs selecionadas." if replace_mode == "op"
+                           else "período informado.")
                     )
                 if not impact["alterou"]:
                     st.success(
@@ -1591,17 +1624,21 @@ def render_ops_feeder():
                         "Nenhuma substituição é necessária."
                     )
                 accept = st.checkbox(
-                    "CONFIRMO A SUBSTITUIÇÃO EXCLUSIVA DO PERÍODO "
-                    "MOSTRADO ACIMA E A PRESERVAÇÃO DAS OUTRAS DATAS",
+                    ("CONFIRMO QUE ESTE RELATÓRIO CONTÉM O HISTÓRICO COMPLETO "
+                     "DAS OPs INCLUÍDAS E AUTORIZO SUBSTITUIR APENAS ESSAS OPs"
+                     if replace_mode == "op" else
+                     "CONFIRMO A SUBSTITUIÇÃO EXCLUSIVA DO PERÍODO "
+                     "MOSTRADO ACIMA E A PRESERVAÇÃO DAS OUTRAS DATAS"),
                     key=(
-                        "fm_ops_confirm_interval_"
+                        "fm_ops_confirm_interval_" + replace_mode + "_"
                         + str(metadata.get("sha256") or "")[:12] + "_"
                         + str(current_ops.get("sha256") or "")[:12]
                     ),
                     value=False,
                 )
                 if st.button(
-                    "CONFIRMAR SUBSTITUIÇÃO DO PERÍODO OPS", type="primary",
+                    ("CONFIRMAR SUBSTITUIÇÃO DAS OPs" if replace_mode == "op"
+                     else "CONFIRMAR SUBSTITUIÇÃO DO PERÍODO OPS"), type="primary",
                     key="fm_issue_ops_save", use_container_width=True,
                     disabled=not accept or not impact["alterou"],
                 ):
@@ -1612,6 +1649,7 @@ def render_ops_feeder():
                         saved_ops = ops_lot_source.save(
                             parsed_ops,
                             expected_previous_sha=impact["sha256_anterior"],
+                            replace_mode=replace_mode,
                         )
                     _ops_meta.clear(); _ops_snapshot.clear(); _audit.clear()
                     _operational_snapshot.clear()
@@ -1625,7 +1663,9 @@ def render_ops_feeder():
                         )
                     effective = saved_ops["impact"]
                     st.session_state["_fm_issue_ops_flash"] = (
-                        ("Período OPS substituído e histórico validado no banco. "
+                        (("OPs do relatório substituídas e histórico validado no banco. "
+                          if replace_mode == "op" else
+                          "Período OPS substituído e histórico validado no banco. ")
                          if saved_ops["saved"]
                          else "Histórico OPS já estava atualizado. ")
                         + "Preservados: " + count(effective["preservados"])
