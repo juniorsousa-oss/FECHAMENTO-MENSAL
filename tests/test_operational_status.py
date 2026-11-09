@@ -154,10 +154,20 @@ class OpPriorityTests(unittest.TestCase):
             (False, False, op.AGUARDANDO_SEPARACAO, op.AGUARDANDO_INICIO),
         ]:
             with self.subTest(separate=separate, conference=confer):
-                result = model(rows=[raw_item(separacao=separate, conferencia=confer)])
+                result = model(
+                    rows=[raw_item(separacao=separate, conferencia=confer)],
+                    stocks=[raw_stock(10)] if confer else None,
+                )
                 self.assertEqual(result["items"].iloc[0].status, expected)
                 self.assertEqual(result["ops"].iloc[0]["status_op"], op_stage)
                 self.assertFalse(result["items"].iloc[0].divergente)
+
+    def test_confirmed_without_g9_in_conference_is_real_alert(self):
+        result = model(rows=[raw_item()], stocks=None)
+        product = result["items"].iloc[0]
+        self.assertEqual(result["ops"].iloc[0].status_op, op.EM_CONFERENCIA)
+        self.assertEqual(product.status, op.NAO_CONSUMIDO_SEM)
+        self.assertTrue(product.divergente)
 
     def test_movement_of_another_product_also_reports_op(self):
         result = model(rows=[raw_item()], moves=[movement("00002000", 2)])
@@ -259,8 +269,11 @@ class OpPriorityTests(unittest.TestCase):
         self.assertFalse(product.divergente)
 
     def test_old_alerts_do_not_leak_into_new_operational_model(self):
-        source = check.reconcile(check.parse_general(pd.DataFrame([raw_item()])),
-                                 [], [], history_metas=META, as_of="2026-10-21")
+        source = check.reconcile(
+            check.parse_general(pd.DataFrame([raw_item()])),
+            check.parse_stock(pd.DataFrame([raw_stock(10)])),
+            [], history_metas=META, as_of="2026-10-21",
+        )
         self.assertTrue(source["items"].iloc[0].divergente)
         new = op.apply(source)
         self.assertEqual(new["items"].iloc[0].status, op.CONFERIDO_AGUARDANDO_REPORTE)
