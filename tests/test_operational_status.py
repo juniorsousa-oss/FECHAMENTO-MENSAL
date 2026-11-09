@@ -274,6 +274,10 @@ class OpPriorityTests(unittest.TestCase):
             check.parse_stock(pd.DataFrame([raw_stock(10)])),
             [], history_metas=META, as_of="2026-10-21",
         )
+        # Simula resultado legado incorreto vindo do reconciliador,
+        # mesmo quando a fonte informa estoque no lote em G9-PROD.
+        source["items"].at[0, "divergente"] = True
+        source["items"].at[0, "status"] = op.NAO_CONSUMIDO_SEM
         self.assertTrue(source["items"].iloc[0].divergente)
         new = op.apply(source)
         self.assertEqual(new["items"].iloc[0].status, op.CONFERIDO_AGUARDANDO_REPORTE)
