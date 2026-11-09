@@ -169,6 +169,24 @@ class OpPriorityTests(unittest.TestCase):
         self.assertEqual(product.status, op.NAO_CONSUMIDO_SEM)
         self.assertTrue(product.divergente)
 
+    def test_mes_reporte_without_ops_discharge_already_requires_consumption(self):
+        row = raw_item()
+        row["Reportado"] = "SIM"
+        row["Data de reporte"] = "20/10/26 09:30"
+        result = model(rows=[row], stocks=[raw_stock(10)])
+        product = result["items"].iloc[0]
+        self.assertEqual(result["ops"].iloc[0].status_op, op.REPORTADO)
+        self.assertFalse(result["ops"].iloc[0].possui_consumo)
+        self.assertEqual(product.status, op.NAO_CONSUMIDO_G9)
+        self.assertTrue(product.divergente)
+
+    def test_mes_not_reported_is_conference_when_has_production_stock(self):
+        row = raw_item()
+        row["Reportado"] = "NÃO"
+        result = model(rows=[row], stocks=[raw_stock(10)])
+        self.assertEqual(result["ops"].iloc[0].status_op, op.EM_CONFERENCIA)
+        self.assertFalse(result["items"].iloc[0].divergente)
+
     def test_movement_of_another_product_also_reports_op(self):
         result = model(rows=[raw_item()], moves=[movement("00002000", 2)])
         self.assertEqual(result["ops"].iloc[0].status_op, op.REPORTADO)
