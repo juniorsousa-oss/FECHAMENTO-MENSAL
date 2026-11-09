@@ -1069,6 +1069,8 @@ def _ops(model, view, token):
             )
             summary = (
                 "ORDEM COM ALERTA" if issues
+                else "ORDEM EM CONFERÊNCIA" if context.get("status_op") == op_rules.EM_CONFERENCIA
+                else "ORDEM EM SEPARAÇÃO" if context.get("status_op") == op_rules.EM_SEPARACAO
                 else "ORDEM EM ATENÇÃO" if attention_count
                 else "ORDEM OK"
             )
@@ -1079,11 +1081,10 @@ def _ops(model, view, token):
                 + (f" | {attention_count} ATENÇÕES" if attention_count else "")
                 + f" — {summary}"
             )
-            css_key = (
-                "fm_issue_op_alert_" if issues
-                else "fm_issue_op_attention_" if attention_count
-                else "fm_issue_op_ok_"
-            )
+            # Padrão visual habitual: cartão neutro para etapas normais
+            # da produção. Âmbar fica no RESULTADO do lote; vermelho
+            # no cartão apenas quando há alerta operacional ativo.
+            css_key = "fm_issue_op_alert_" if issues else "fm_issue_op_ok_"
             is_open = st.session_state.get("fm_issue_open_op") == number
             with st.container(key=css_key + number):
                 st.button(
