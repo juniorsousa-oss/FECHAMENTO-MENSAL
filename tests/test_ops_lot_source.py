@@ -169,6 +169,49 @@ class OpsSourceTests(unittest.TestCase):
                              if r["data"] == recent["meta"]["periodo_inicio"]),
                          Decimal("16"))
 
+    def test_op_snapshot_replaces_only_selected_ops_across_all_dates(self):
+        """Relatório filtrado por OP não deve somar fotografias antigas."""
+        other_op = "26000101002"
+        old = src.parse(xltx_bytes([
+            line(op=OP, code=CODE, qty=2, kind="RE0", tes="550", day=46300),
+            line(op=OP, code=CODE, qty=2, kind="RE1", tes="999", day=46301),
+            line(op=other_op, code=CODE, qty=7, day=46295),
+        ]), "historico.xlsx")
+        fresh = src.parse(xltx_bytes([
+            line(op=OP, code=CODE, qty=2, kind="RE1", tes="999", day=46332),
+        ]), "op-completa.xlsx")
+        plan = src.plan_period_replace(fresh, old, replace_mode="op")
+        impact = plan["impact"]
+        self.assertEqual(impact["modo_substituicao"], "op")
+        self.assertEqual(impact["ops_afetadas"], 1)
+        self.assertEqual(impact["preservados"], 1)
+        self.assertEqual(impact["substituidos"], 2)
+        self.assertEqual(impact["novos"], 1)
+        self.assertEqual(impact["apos_substituicao"], 2)
+        self.assertEqual(
+            plan["candidate"]["meta"]["politica"],
+            "SUBSTITUIR_OPS_DO_ARQUIVO",
+        )
+        rows = plan["candidate"]["rows"]
+        self.assertEqual(
+            sum(Decimal(r["quantidade"]) for r in rows if r["op"] == OP),
+            Decimal("2"),
+        )
+        self.assertEqual(
+            sum(Decimal(r["quantidade"]) for r in rows if r["op"] == other_op),
+            Decimal("7"),
+        )
+        again = src.plan_period_replace(
+            fresh, plan["candidate"], replace_mode="op",
+        )
+        self.assertFalse(again["impact"]["alterou"])
+
+    def test_unknown_ops_replace_mode_cannot_change_existing_history(self):
+        old = src.parse(xltx_bytes([line()]), "old.xlsx")
+        fresh = src.parse(xltx_bytes([line(qty=2)]), "fresh.xlsx")
+        with self.assertRaisesRegex(ValueError, "Modo de substituição OPS"):
+            src.plan_period_replace(fresh, old, replace_mode="unknown")
+
     def test_parser_cache_version_is_distinct_from_saved_classification(self):
         import issue_check_ui as ui
         raw = xltx_bytes([line(kind="RE1", tes="999", qty=16)])
