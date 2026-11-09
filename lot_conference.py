@@ -17,7 +17,7 @@ import operational_status as status
 
 ZERO = Decimal("0")
 EPS = Decimal("0.000001")
-VERSION = "2026-11-04.6-SEM-DEMANDA-NEUTRO-R2"
+VERSION = "2026-11-09.1-ETAPAS-CONFERENCIA-REPORTE"
 
 # As mesmas categorias recebem atenção âmbar na tela e na exportação.
 # Não usar quantidade ou status de alerta para decidir a cor desses resultados.
@@ -76,6 +76,21 @@ def _lot_status(*, material: dict, required: Decimal, separated: Decimal,
         result = "SEM DEMANDA OU MOVIMENTAÇÃO NO LOTE"
         return result, result, False
 
+    # Enquanto a OP ainda está em conferência/separação, não tratar
+    # conferidos aguardando consumo como erro se houver saldo G9-PROD.
+    # O alerta antes do reporte só se aplica ao lote já conferido SEM
+    # estoque em produção; após o reporte, falta de consumo gera alerta.
+    stage = str(material.get("status_op") or "")
+    if stage and stage not in status.FINAL_STAGES:
+        if confirmed <= EPS and issued <= EPS:
+            if separated > EPS:
+                return (status.SEPARADO_SEM_CONFERENCIA,
+                        status.SEPARADO_SEM_CONFERENCIA, False)
+            return status.AGUARDANDO_SEPARACAO, status.AGUARDANDO_SEPARACAO, False
+        if confirmed > EPS and gross_missing > EPS and saldo_prod > EPS and issued <= EPS:
+            return (status.CONFERIDO_AGUARDANDO_REPORTE,
+                    status.CONFERIDO_AGUARDANDO_REPORTE, False)
+
     if ambiguity:
         return (
             status.BAIXA_LOTE_DIVERGENTE,
@@ -104,7 +119,8 @@ def _lot_status(*, material: dict, required: Decimal, separated: Decimal,
     if missing is not None and missing > EPS:
         if confirmed <= EPS:
             return (status.SEPARADO_SEM_CONFERENCIA,
-                    "BAIXA A CONFERIR — SEM CONFERENTE REGISTRADO", True)
+                    "BAIXA A CONFERIR — SEM CONFERENTE REGISTRADO",
+                    stage in status.FINAL_STAGES)
         if saldo_prod > EPS:
             canonical = status.NAO_CONSUMIDO_G9
         elif saldo > EPS:
@@ -118,7 +134,8 @@ def _lot_status(*, material: dict, required: Decimal, separated: Decimal,
                     "BAIXA SEM CONFERENTE REGISTRADO NESTE LOTE", True)
         if separated > EPS:
             return (status.SEPARADO_SEM_CONFERENCIA,
-                    status.SEPARADO_SEM_CONFERENCIA, True)
+                    status.SEPARADO_SEM_CONFERENCIA,
+                    stage in status.FINAL_STAGES)
         return status.AGUARDANDO_SEPARACAO, status.AGUARDANDO_SEPARACAO, False
     return status.PRODUTO_CONSUMIDO, status.PRODUTO_CONSUMIDO, False
 
