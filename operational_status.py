@@ -11,7 +11,7 @@ import re
 
 import pandas as pd
 
-VERSION = "2026-11-04.2"
+VERSION = "2026-11-09.1"
 EPS = Decimal("0.000001")
 ZERO = Decimal(0)
 
@@ -88,6 +88,20 @@ def has_patios_days(value) -> bool:
         return False
 
 
+def missing_consumption_is_alert(stage: str, *, confirmed: Decimal,
+                                 missing: Decimal, saldo_prod: Decimal) -> bool:
+    """A falta de baixa só vira alerta antes do reporte se o lote foi
+    conferido e não possui saldo disponível em G9-PROD.
+
+    Após reporte, finalização ou faturamento, a baixa pendente exige
+    tratamento mesmo quando ainda há saldo na produção.
+    """
+    if missing <= EPS:
+        return False
+    return (stage in FINAL_STAGES
+            or (confirmed > EPS and saldo_prod <= EPS))
+
+
 def has_consumption(item) -> bool:
     """Somente consumo líquido positivo identificado no KARDEX da OP/produto."""
     return decimal(item.get("baixada")) > EPS
@@ -127,7 +141,7 @@ def _item_lots(model: dict):
     # continua sendo atribuído apenas no agregado da OP/produto.
     lots = defaultdict(set)
     for row in model.get("general") or ():
-        if row.get("conferencia") and _text(row.get("lote")):
+        if (row.get("responsavel_conferencia") or row.get("conferencia")) and _text(row.get("lote")):
             lots[row.get("item_id")].add(_text(row.get("lote")))
     return lots
 
@@ -222,9 +236,16 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
             (g9_by_lot[(item.get("codigo"), lot)] for lot in item_lots), ZERO
         )
         faltante_endereco = max(separated_operational - max(lot_prod, ZERO), ZERO)
+        critical_pending = (
+            bool(model.get("history_available"))
+            and missing_consumption_is_alert(
+                group["status"], confirmed=confirmed,
+                missing=outstanding, saldo_prod=lot_prod,
+            )
+        )
         alternatives = []
         if (separated_operational > EPS and confirmed > EPS and outstanding > EPS
-                and faltante_endereco > EPS and group["exige_baixa"]):
+                and faltante_endereco > EPS and critical_pending):
             for lot in item_lots:
                 alternatives.extend(addresses_by_lot.get((item.get("codigo"), lot), ()))
             alternatives.sort(key=lambda r: (
@@ -253,6 +274,20 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
             status, alert = FLUXO_BARRAS, False
         elif separated_operational <= EPS:
             status, alert = AGUARDANDO_SEPARACAO, False
+        elif not model.get("history_available"):
+            # Ausência de OPS não é evidência de consumo zero.
+            status = AGUARDANDO_OPS if model.get("baixas_fonte") == "OPS" else AGUARDANDO_KARDEX
+            alert = False
+        elif not group["exige_baixa"] and not critical_pending:
+            # Durante a conferência, saldo em produção significa material
+            # aguardando o reporte, não erro de consumo.
+            if confirmed > EPS:
+                status = CONFERIDO_AGUARDANDO_REPORTE
+            elif separated_operational > EPS:
+                status = SEPARADO_SEM_CONFERENCIA
+            else:
+                status = AGUARDANDO_SEPARACAO
+            alert = False
         elif net - necessidade > EPS:
             status, alert = BAIXA_ACIMA_NECESSIDADE, True
         elif (model.get("baixas_fonte") == "OPS"
@@ -275,21 +310,9 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
             # O total confere, mas o consumo de um lote pode estar lançado
             # no outro. Não converter inconsistência de lote em falta geral.
             status, alert = BAIXA_LOTE_DIVERGENTE, True
-        elif not group["exige_baixa"]:
-            if confirmed > EPS:
-                status = CONFERIDO_AGUARDANDO_REPORTE
-            elif separated_operational > EPS:
-                status = SEPARADO_SEM_CONFERENCIA
-            else:
-                status = AGUARDANDO_SEPARACAO
-            alert = False
         elif confirmed <= EPS:
             status = SEPARADO_SEM_CONFERENCIA if separated_operational > EPS else AGUARDANDO_SEPARACAO
             alert = True
-        elif not model.get("history_available"):
-            # Sem relatório OPS não assumir baixa zero.
-            status = AGUARDANDO_OPS if model.get("baixas_fonte") == "OPS" else AGUARDANDO_KARDEX
-            alert = False
         elif (model.get("baixas_fonte") == "OPS"
               and outstanding > EPS
               and bool(item.get("lote_nao_informado_geral"))):
