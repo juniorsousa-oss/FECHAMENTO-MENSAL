@@ -309,13 +309,16 @@ def _rows_hash(rows: list[dict]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def plan_period_replace(parsed: dict, existing: dict | None = None) -> dict:
+def plan_period_replace(parsed: dict, existing: dict | None = None, *,
+                        replace_mode: str = "period") -> dict:
     """Simula substituição apenas entre a primeira e última data do arquivo.
 
     O período é inclusivo. As movimentações de fora são PRESERVADAS;
     as movimentações antigas DENTRO do período são substituídas por
     todas as linhas válidas do novo arquivo. Nunca soma fotografias.
     """
+    if replace_mode not in ("period", "op"):
+        raise ValueError("Modo de substituição OPS inválido.")
     incoming_meta = parsed.get("meta") or {}
     if incoming_meta.get("versao") != VERSION:
         raise ValueError("Leitura OPS com regras desatualizadas; reimporte a planilha.")
@@ -336,8 +339,16 @@ def plan_period_replace(parsed: dict, existing: dict | None = None) -> dict:
                        or not isinstance(old_rows, list)):
         raise ValueError("Fonte OPS anterior incompatível. A base não será alterada.")
 
-    retained = [r for r in old_rows if not start <= r["data"] <= end]
-    replaced = [r for r in old_rows if start <= r["data"] <= end]
+    selected_ops = {r["op"] for r in fresh}
+    if replace_mode == "op":
+        # O arquivo é a fotografia COMPLETA das OPs incluídas. Remove as
+        # movimentações anteriores dessas OPs, independentemente da data,
+        # mas preserva integralmente todas as demais OPs.
+        retained = [r for r in old_rows if r["op"] not in selected_ops]
+        replaced = [r for r in old_rows if r["op"] in selected_ops]
+    else:
+        retained = [r for r in old_rows if not start <= r["data"] <= end]
+        replaced = [r for r in old_rows if start <= r["data"] <= end]
     # O mesmo registro não pode coexistir em dois intervalos ou duplicar
     # quantidades. Permite reprocessar o mesmo arquivo quantas vezes quiser.
     merged = sorted([*retained, *fresh], key=_record_key)
@@ -345,7 +356,10 @@ def plan_period_replace(parsed: dict, existing: dict | None = None) -> dict:
         raise ValueError("OPS duplicado após união dos períodos. Gravação bloqueada.")
     if len(merged) != len(retained) + len(fresh):
         raise RuntimeError("Falha na conservação dos registros históricos.")
-    if any(start <= r["data"] <= end for r in retained):
+    if replace_mode == "op":
+        if any(r["op"] in selected_ops for r in retained):
+            raise RuntimeError("Movimentação preservada pertence a uma OP substituída.")
+    elif any(start <= r["data"] <= end for r in retained):
         raise RuntimeError("Movimentação preservada pertence ao período substituído.")
 
     digest = _rows_hash(merged)
@@ -356,6 +370,8 @@ def plan_period_replace(parsed: dict, existing: dict | None = None) -> dict:
     manifest = list(old_meta.get("importacoes_periodo") or [])[-29:]
     new_manifest = {
         "inicio": start, "fim": end,
+        "modo_substituicao": replace_mode,
+        "ops_afetadas": len(selected_ops),
         "arquivo": incoming_meta.get("arquivo_nome") or "",
         "sha256_arquivo": incoming_meta.get("sha256") or "",
         "preservados": len(retained),
@@ -383,7 +399,8 @@ def plan_period_replace(parsed: dict, existing: dict | None = None) -> dict:
         "movimentos_sem_lote": sum(1 for r in merged if not r.get("lote")),
         "periodo_inicio": min(r["data"] for r in merged),
         "periodo_fim": max(r["data"] for r in merged),
-        "politica": "SUBSTITUIR_SOMENTE_PERIODO_INCLUSIVO",
+        "politica": ("SUBSTITUIR_OPS_DO_ARQUIVO" if replace_mode == "op"
+                    else "SUBSTITUIR_SOMENTE_PERIODO_INCLUSIVO"),
         "intervalo_ultima_importacao": {"inicio": start, "fim": end},
         "registros_preservados_ultima_importacao": len(retained),
         "registros_substituidos_ultima_importacao": len(replaced),
@@ -396,6 +413,8 @@ def plan_period_replace(parsed: dict, existing: dict | None = None) -> dict:
         "candidate": {"meta": result_meta, "rows": merged},
         "impact": {
             "periodo_inicio": start, "periodo_fim": end,
+            "modo_substituicao": replace_mode,
+            "ops_afetadas": len(selected_ops),
             "historico_anterior": len(old_rows),
             "preservados": len(retained),
             "substituidos": len(replaced),
@@ -410,7 +429,8 @@ def plan_period_replace(parsed: dict, existing: dict | None = None) -> dict:
     }
 
 
-def save(parsed: dict, *, expected_previous_sha: str | None = None) -> dict:
+def save(parsed: dict, *, expected_previous_sha: str | None = None,
+         replace_mode: str = "period") -> dict:
     """Atualiza o período inclusivo do arquivo com cópia de segurança.
 
     Carrega a versão MAIS RECENTE no banco no ato de salvar. Se a tela foi
@@ -425,7 +445,7 @@ def save(parsed: dict, *, expected_previous_sha: str | None = None) -> dict:
             "A fonte OPS mudou desde a prévia. Recarregue a página para "
             "recalcular os períodos antes de confirmar."
         )
-    planned = plan_period_replace(parsed, current)
+    planned = plan_period_replace(parsed, current, replace_mode=replace_mode)
     if not planned["impact"]["alterou"]:
         return {"saved": False, "meta": current["meta"],
                 "impact": planned["impact"]}
