@@ -11,7 +11,7 @@ import re
 
 import pandas as pd
 
-VERSION = "2026-11-09.1"
+VERSION = "2026-11-09.2"
 EPS = Decimal("0.000001")
 ZERO = Decimal(0)
 
@@ -191,6 +191,16 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
         op for (op, _), (outgoing, incoming) in by_op_code.items()
         if outgoing - incoming > EPS
     }
+    # O MES registra a data/indicador de reporte. Essa evidência é
+    # independente da baixa OPS: uma OP já reportada pode ter 0 baixas,
+    # exatamente a divergência que precisamos identificar.
+    op_reported = {
+        _text(row.get("op")) for row in model.get("general") or ()
+        if _text(row.get("reporte"))
+        or _normalized(row.get("reportado")) in {
+            "SIM", "S", "TRUE", "YES", "1", "REPORTADO"
+        }
+    }
     op_info = {}
     for row in ops.to_dict("records"):
         op = row["op"]
@@ -199,7 +209,7 @@ def apply(model: dict, master_records: dict[str, dict] | None = None,
                      any(has_consumption(item) for item in group.to_dict("records")))
         stage = op_status(
             row,
-            has_issue=has_issue,
+            has_issue=has_issue or op in op_reported,
             has_conference=bool(int(row.get("conferidos") or 0)),
             has_separation=bool(int(row.get("separados") or 0)),
         )
