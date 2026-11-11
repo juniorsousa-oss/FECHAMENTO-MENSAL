@@ -1292,6 +1292,8 @@ def render_results(model):
     dates = {_source_day(meta) for meta in model["source_meta"].values()}
     if len(dates) > 1:
         st.warning("Relatório Geral e Endereço com datas diferentes. Considerada a referência mais antiga.")
+    if model.get("source_meta", {}).get("relatorio_geral", {}).get("diagnostico_leitura"):
+        st.warning(model["source_meta"]["relatorio_geral"]["diagnostico_leitura"])
     if len(period["intervalos"]) > 1 and not model.get("accumulated_history"):
         st.warning("O relatório OPS não cobre continuamente todo o período da conferência.")
     diagnostics = model.get("diagnostico_baixas") or {}
