@@ -558,12 +558,46 @@ def _source(key: str, version: int, updated_at: str):
         raise RuntimeError("A base foi atualizada durante a leitura. Atualize a conferência para carregar a mesma versão.")
     if str(meta.get("status") or "ATUALIZADO") != "ATUALIZADO":
         raise RuntimeError(f"A fonte {key} ainda não concluiu a atualização no Monitor API.")
+    diagnostic = ""
     if payload["normalized"]:
         frame = central.normalized_frame(payload["pack"], sheet_contains="Geral" if key == "relatorio_geral" else None)
-        rows = check.parse_general(frame) if key == "relatorio_geral" else check.parse_stock(frame)
+        try:
+            rows = check.parse_general(frame) if key == "relatorio_geral" else check.parse_stock(frame)
+        except ValueError as exc:
+            # Normalização pode ter sido publicada sem a coluna Batch/Lote.
+            # Antes de bloquear, confira o Excel ORIGINAL DA MESMA VERSÃO.
+            # Só utilizamos o bruto quando ele próprio conserva o lote exato.
+            if key != "relatorio_geral" or "sem a coluna Lote" not in str(exc):
+                raise
+            raw, raw_meta = central.download_source(key)
+            raw_version = raw_meta.get("source_version", raw_meta.get("version"))
+            if raw_version is None or int(raw_version) != version:
+                raise RuntimeError(
+                    "O Relatório Geral bruto e o normalizado possuem versões diferentes. "
+                    "Recarregue a página antes de conferir."
+                ) from exc
+            try:
+                rows = check.parse_raw(raw, key)
+            except ValueError as raw_error:
+                raise RuntimeError(
+                    "A versão " + str(version) + " do Relatório Geral não disponibiliza "
+                    "a coluna Lote nem no normalizado, nem no Excel original. "
+                    "O reprocessamento ocorreu, mas a fonte foi publicada sem Batch. "
+                    "O Monitor de APIs precisa republicar o arquivo com Lote; "
+                    "reprocessar repetidamente esta mesma geração não resolverá. "
+                    "Diagnóstico bruto: " + str(raw_error)
+                ) from raw_error
+            diagnostic = (
+                "ATENÇÃO: normalizado sem Lote; leitura de contingência "
+                "realizada com Excel original da mesma versão. "
+                "A Central deve corrigir a normalização."
+            )
     else:
         rows = check.parse_raw(payload["raw"], key)
-    return rows, {k: v for k, v in meta.items() if k not in ("signed_url", "url")}
+    public_meta = {k: v for k, v in meta.items() if k not in ("signed_url", "url")}
+    if diagnostic:
+        public_meta["diagnostico_leitura"] = diagnostic
+    return rows, public_meta
 
 
 @st.cache_resource(max_entries=3, show_spinner=False)
