@@ -290,6 +290,36 @@ class IssueCheckTests(unittest.TestCase):
         stock_matrix = pd.DataFrame([["Listagem do Browse"], list(stock()), list(stock().values())])
         self.assertEqual(c.parse_stock(stock_matrix)[0]["linha_origem"], 3)
 
+    def test_batch_api_mes_e_reconhecido_com_lote_exato(self):
+        # Layout normalizado da API com Batch preservado como vínculo.
+        data = general()
+        data.pop("Lote")
+        data["Batch"] = "061638"
+        parsed = c.parse_general(pd.DataFrame([list(data), list(data.values())]))
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0]["lote"], "061638")
+        self.assertEqual(parsed[0]["codigo"], CODE)
+
+    def test_fonte_api_sem_batch_exige_reprocessamento_em_vez_de_inventar_lote(self):
+        data = general()
+        data.pop("Lote")
+        with self.assertRaisesRegex(
+            ValueError, "sem a coluna Lote \\(campo Batch da API MES\\)",
+        ) as captured:
+            c.parse_general(pd.DataFrame([list(data), list(data.values())]))
+        self.assertIn("REPROCESSAR", str(captured.exception))
+        self.assertIn("OP \\+ produto \\+ lote".replace("\\", ""), str(captured.exception))
+
+    def test_lote_em_branco_e_valido_com_alerta_sem_criar_outro_lote(self):
+        data = general(Lote="")
+        parsed = c.parse_general(pd.DataFrame([data]))
+        self.assertEqual(parsed[0]["lote"], "")
+        model = c.reconcile(
+            parsed, c.parse_stock(pd.DataFrame([stock()])), [],
+            history_metas=META, as_of="2026-10-21",
+        )
+        self.assertIn(c.NO_LOT, model["items"].iloc[0].alertas)
+
     def test_blank_lot_and_zero_lot_are_not_combined(self):
         item = audit(g=[general(Lote="")], s=[stock(Lote="000000000", Quantidade=10)])["items"].iloc[0]
         self.assertIn(c.NO_LOT, item.alertas)

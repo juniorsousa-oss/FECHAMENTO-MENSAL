@@ -22,7 +22,7 @@ NO_CODE = "MATERIAL SEM CÓDIGO NO RELATÓRIO GERAL"
 
 GENERAL_FIELDS = {
     "PROJETO": "op", "P.A.": "pa", "DESCRICAO P.A.": "descricao_pa",
-    "CODIGO": "codigo", "LOTE": "lote", "DESCRICAO": "descricao",
+    "CODIGO": "codigo", "LOTE": "lote", "BATCH": "lote", "DESCRICAO": "descricao",
     "QTD. NECESSARIA": "necessaria", "QTD. ATENDIDA": "atendida",
     "QTD. PENDENCIAS": "pendencia_mes", "RESP. SEPARACAO": "responsavel_separacao",
     "DATA DE SEPARACAO": "separacao", "RESP. CONFERENCIA": "responsavel_conferencia",
@@ -89,13 +89,30 @@ def _table(frame: pd.DataFrame, fields: dict, required: set) -> list[dict]:
     columns = mapping(frame.columns)
     header = -1
     if not required.issubset(columns.values()):
+        best_columns = columns
         for position, row in enumerate(frame.head(25).itertuples(index=False, name=None)):
-            columns = mapping(row)
-            if required.issubset(columns.values()):
+            candidate = mapping(row)
+            if len(set(candidate.values()) & required) > len(set(best_columns.values()) & required):
+                best_columns = candidate
+            if required.issubset(candidate.values()):
+                columns = candidate
                 header = position
                 break
         else:
-            raise ValueError("Cabeçalho incompatível com o relatório: " + ", ".join(sorted(required)))
+            missing = required - set(best_columns.values())
+            if fields is GENERAL_FIELDS and missing == {"lote"}:
+                raise ValueError(
+                    "Relatório Geral da Central sem a coluna Lote (campo Batch da API MES). "
+                    "A versão atual foi publicada sem essa informação. "
+                    "Reprocesse o Relatório Geral em MONITOR DE APIs → BANCO DE DADOS "
+                    "→ RELATÓRIO GERAL → REPROCESSAR. "
+                    "A conferência por OP + produto + lote não pode ser feita "
+                    "com segurança até carregar a versão corrigida."
+                )
+            raise ValueError(
+                "Cabeçalho incompatível com o relatório; campos ausentes: "
+                + ", ".join(sorted(missing))
+            )
     physical = frame.attrs.get("source_rows") or []
     result = []
     # itertuples reduz a criação de Series pandas para cada linha do MES.
