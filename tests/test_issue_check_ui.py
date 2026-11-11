@@ -58,9 +58,9 @@ class FallbackFonteGeralTests(unittest.TestCase):
         dados = [{"codigo": "00001000", "lote": "000001"}]
         meta = {"version": 40, "status": "ATUALIZADO"}
         with patch.object(ui.central, "download_preferred_source",
-                          return_value=(self._payload_sem_lote(), meta)), \\
+                          return_value=(self._payload_sem_lote(), meta)), \
              patch.object(ui.central, "download_source",
-                          return_value=(b"excel_teste", {"version": 40})), \\
+                          return_value=(b"excel_teste", {"version": 40})), \
              patch.object(ui.check, "parse_raw", return_value=dados) as raw_parser:
             rows, result = ui._source("relatorio_geral", 40, "2026-11-11")
         self.assertEqual(rows[0]["lote"], "000001")
@@ -72,9 +72,9 @@ class FallbackFonteGeralTests(unittest.TestCase):
         import issue_check_ui as ui
         meta = {"version": 40, "status": "ATUALIZADO"}
         with patch.object(ui.central, "download_preferred_source",
-                          return_value=(self._payload_sem_lote(), meta)), \\
+                          return_value=(self._payload_sem_lote(), meta)), \
              patch.object(ui.central, "download_source",
-                          return_value=(b"excel_teste", {"version": 39})), \\
+                          return_value=(b"excel_teste", {"version": 39})), \
              patch.object(ui.check, "parse_raw") as parse:
             with self.assertRaisesRegex(RuntimeError, "versões diferentes"):
                 ui._source("relatorio_geral", 40, "2026-11-11")
@@ -85,9 +85,9 @@ class FallbackFonteGeralTests(unittest.TestCase):
         import issue_check_ui as ui
         meta = {"version": 40, "status": "ATUALIZADO"}
         with patch.object(ui.central, "download_preferred_source",
-                          return_value=(self._payload_sem_lote(), meta)), \\
+                          return_value=(self._payload_sem_lote(), meta)), \
              patch.object(ui.central, "download_source",
-                          return_value=(b"excel_teste", {"version": 40})), \\
+                          return_value=(b"excel_teste", {"version": 40})), \
              patch.object(ui.check, "parse_raw",
                           side_effect=ValueError("sem a coluna Lote")):
             with self.assertRaisesRegex(RuntimeError, "nem no Excel original"):
