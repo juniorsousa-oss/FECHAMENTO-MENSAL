@@ -30,6 +30,70 @@ ui.render_results(model)
 '''
 
 
+class FallbackFonteGeralTests(unittest.TestCase):
+    """Verifica isolamento por versão: não cruza lote de arquivos diferentes."""
+
+    def setUp(self):
+        import issue_check_ui as ui
+        ui._source.clear()
+
+    def tearDown(self):
+        import issue_check_ui as ui
+        ui._source.clear()
+
+    def _payload_sem_lote(self):
+        return {
+            "normalized": True, "pack": {
+                "sheets": [{"name": "Geral", "rows": [
+                    ["Projeto", "Código", "Qtd. necessária", "Qtd. atendida",
+                     "Data de separação", "Data de conferência"],
+                    ["26000101001", "00001000", 1, 1, "", ""],
+                ]}]
+            }
+        }
+
+    def test_fallback_bruto_mesma_versao_salva_o_lote_e_sinaliza(self):
+        from unittest.mock import patch
+        import issue_check_ui as ui
+        dados = [{"codigo": "00001000", "lote": "000001"}]
+        meta = {"version": 40, "status": "ATUALIZADO"}
+        with patch.object(ui.central, "download_preferred_source",
+                          return_value=(self._payload_sem_lote(), meta)), \
+             patch.object(ui.central, "download_source",
+                          return_value=(b"excel_teste", {"version": 40})), \
+             patch.object(ui.check, "parse_raw", return_value=dados) as raw_parser:
+            rows, result = ui._source("relatorio_geral", 40, "2026-11-11")
+        self.assertEqual(rows[0]["lote"], "000001")
+        self.assertIn("normalizado sem Lote", result["diagnostico_leitura"])
+        raw_parser.assert_called_once_with(b"excel_teste", "relatorio_geral")
+
+    def test_fallback_rejeita_excel_de_versao_diferente(self):
+        from unittest.mock import patch
+        import issue_check_ui as ui
+        meta = {"version": 40, "status": "ATUALIZADO"}
+        with patch.object(ui.central, "download_preferred_source",
+                          return_value=(self._payload_sem_lote(), meta)), \
+             patch.object(ui.central, "download_source",
+                          return_value=(b"excel_teste", {"version": 39})), \
+             patch.object(ui.check, "parse_raw") as parse:
+            with self.assertRaisesRegex(RuntimeError, "versões diferentes"):
+                ui._source("relatorio_geral", 40, "2026-11-11")
+        parse.assert_not_called()
+
+    def test_bruto_sem_lote_exibe_erro_preciso(self):
+        from unittest.mock import patch
+        import issue_check_ui as ui
+        meta = {"version": 40, "status": "ATUALIZADO"}
+        with patch.object(ui.central, "download_preferred_source",
+                          return_value=(self._payload_sem_lote(), meta)), \
+             patch.object(ui.central, "download_source",
+                          return_value=(b"excel_teste", {"version": 40})), \
+             patch.object(ui.check, "parse_raw",
+                          side_effect=ValueError("sem a coluna Lote")):
+            with self.assertRaisesRegex(RuntimeError, "nem no Excel original"):
+                ui._source("relatorio_geral", 40, "2026-11-11")
+
+
 class IssueCheckUITests(unittest.TestCase):
     def test_op_filters_material_evidence_and_export(self):
         app = AppTest.from_string(PROGRAM, default_timeout=20).run()

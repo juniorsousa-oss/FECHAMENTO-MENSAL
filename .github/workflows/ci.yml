@@ -2,7 +2,7 @@ name: Validar Fechamento Central
 
 on:
   push:
-    branches: [main, fix/conferencia-header-lote-api-20261111]
+    branches: [main, fix/conferencia-header-lote-api-20261111, fix/baixas-normalized-raw-lote-fallback-20261111]
     paths:
       - 'streamlit_app.py'
       - 'competence_calendar.py'
