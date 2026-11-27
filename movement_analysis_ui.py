@@ -507,9 +507,14 @@ def _context(frame, imports, coverage=None):
         selected = chosen or warehouses
         ends = {warehouse: max((m["periodo_fim"] for m in covered if m["armazem"] == warehouse), default="") for warehouse in selected}
         coverage_end = min(ends.values(), default="")
-        if len(ends) > 1 or any(not end for end in ends.values()):
-            st.caption("COBERTURA KARDEX · " + " · ".join(warehouse + ": " +
-                       ("até " + date.fromisoformat(end).strftime("%d/%m/%Y") if end else "sem arquivo no período") for warehouse, end in ends.items()))
+        missing = [warehouse for warehouse, end in ends.items() if not end]
+        if missing:
+            st.warning("Sem fonte Kardex no recorte: " + ", ".join(missing) + ".")
+        if covered:
+            with st.expander("Cobertura das fontes"):
+                for warehouse, end in ends.items():
+                    st.caption(warehouse + ": " + (date.fromisoformat(end).strftime("até %d/%m/%Y")
+                                                     if end else "sem arquivo no período"))
     if coverage_end and coverage_end[:7] == month:
         if selected_date.month == 12:
             next_month = date(selected_date.year+1, 1, 1)
@@ -518,11 +523,7 @@ def _context(frame, imports, coverage=None):
         from datetime import timedelta
         if coverage_end < (next_month - timedelta(days=1)).isoformat():
             st.caption(f"PERÍODO PARCIAL · histórico disponível até {date.fromisoformat(coverage_end).strftime('%d/%m/%Y')}.")
-    active_period = (f"{month[5:]}/{month[:4]}" if mode == "MÊS SELECIONADO"
-                     else f"Janeiro a {month[5:]}/{month[:4]}" if mode == "ACUMULADO DO ANO"
-                     else "Todo o histórico")
-    active_warehouses = ", ".join(chosen) if chosen else "Todos os armazéns"
-    st.caption(f"Recorte ativo: {active_period} · {active_warehouses}")
+
     return view.copy()
 
 
@@ -605,36 +606,23 @@ def _overview_group_details(group_rows: pd.DataFrame, group_name: str,
         subgroups[["Subgrupo", "tes_distintas", "lancamentos", "produtos",
                    "valor_entrada", "valor_saida", "liquido_valor"]],
         key=f"fm_mov_overview_subgroups_{token}_{group_index}",
-        on_select="rerun", height=650,
+        on_select="rerun", height=_grid_height(len(subgroups), 380),
     )
     sub_index = _picked_index(sub_event, len(subgroups))
     if sub_index is None:
-        st.caption("Selecione um subgrupo para consultar suas TES.")
+        st.caption("Selecione um subgrupo para ver os lançamentos.")
         return group_rows, f"GRUPO: {group_name}"
     sub_name = str(subgroups.iloc[sub_index]["Subgrupo"])
     sub_rows = group_rows.loc[group_rows["subgrupo_usuario"] == sub_name]
-    st.markdown("**03 · TES DO SUBGRUPO " + sub_name + "**")
-    tes_summary = mv.summarize(sub_rows, ["tes", "descricao_tes"]).sort_values(
-        ["tes", "descricao_tes"], kind="stable"
-    ).reset_index(drop=True)
-    tes_event = _table(
-        tes_summary[["tes", "descricao_tes", "lancamentos", "produtos",
-                     "valor_entrada", "valor_saida", "liquido_valor"]],
-        key=f"fm_mov_overview_tes_{token}_{group_index}_{sub_index}",
-        on_select="rerun", height=650,
-    )
-    tes_index = _picked_index(tes_event, len(tes_summary))
-    if tes_index is None:
-        st.caption("Selecione uma TES para carregar seus lançamentos.")
-        return sub_rows, f"GRUPO: {group_name} · SUBGRUPO: {sub_name}"
-    chosen_tes = str(tes_summary.iloc[tes_index]["tes"])
-    selected = sub_rows.loc[sub_rows["tes"] == chosen_tes]
+    codes = sorted(sub_rows["tes"].unique())
+    chosen_tes = st.selectbox("TES (opcional)", ["Todas"] + codes,
+                              key=f"fm_mov_tes_filter_{token}_{group_index}_{sub_index}")
+    selected = sub_rows if chosen_tes == "Todas" else sub_rows.loc[sub_rows["tes"] == chosen_tes]
     selected_records = _overview_movements(
-        selected, f"{token}_{group_index}_{sub_index}_{tes_index}"
+        selected, f"{token}_{group_index}_{sub_index}_{chosen_tes}", heading="Lançamentos · " + sub_name
     )
-    return selected_records, (
-        f"GRUPO: {group_name} · SUBGRUPO: {sub_name} · TES: {chosen_tes}"
-    )
+    scope_label = f"{group_name} · {sub_name}"
+    return selected_records, scope_label if chosen_tes == "Todas" else f"{scope_label} · TES {chosen_tes}"
 
 
 def _overview_scope_cards(slot, frame: pd.DataFrame, scope_label: str) -> None:
@@ -682,8 +670,7 @@ def _overview(frame, token):
     cards_slot = st.empty()
     scope_frame = frame
     scope_label = "TOTAL DO KARDEX"
-    _show_missing_tes(frame, token)
-    st.markdown("**01 · MOVIMENTAÇÕES POR GRUPO DE TES**")
+    st.markdown("**Grupos**")
     try:
         config = _groups_read()
     except Exception as exc:
@@ -705,7 +692,7 @@ def _overview(frame, token):
     groups_table = summary[["Grupo", "tes_distintas", "lancamentos", "produtos",
                             "valor_entrada", "valor_saida", "liquido_valor"]]
     group_event = _table(groups_table, key=f"fm_mov_overview_groups_{selection_token}",
-                         on_select="rerun", height=650)
+                         on_select="rerun", height=_grid_height(len(summary), 380))
     group_index = _picked_index(group_event, len(summary))
     if group_index is None:
         st.caption("Selecione um grupo acima para carregar os subgrupos.")
@@ -721,7 +708,8 @@ def _overview(frame, token):
                 group_rows, group_name, selection_token, group_index
             )
     _overview_scope_cards(cards_slot, scope_frame, scope_label)
-    with st.expander("EVOLUÇÃO MENSAL DO PERÍODO"):
+    if st.toggle("Detalhes do período", key=f"fm_mov_period_details_{token}"):
+        _show_missing_tes(frame, token)
         monthly = mv.summarize(frame, ["competencia"]).sort_values("competencia")
         _table(monthly[["competencia", "lancamentos", "valor_entrada",
                         "valor_saida", "liquido_valor"]])
@@ -1027,7 +1015,8 @@ def render_results(model, imports):
                                "HISTÓRICO E EXPORTAÇÃO",
                                "Registros originais, histórico de importações e relatórios completos."),
     }
-    band(*headers[area])
+    if area != "Visão geral":
+        band(*headers[area])
     if area == "Fontes e relatórios":
         _import_registry(model)
         _exports(scope, model, _view_token(scope))
@@ -1049,7 +1038,6 @@ def render_results(model, imports):
 
 
 def render_movement_analysis():
-    band("KARDEX", "ANÁLISE DE MOVIMENTAÇÕES", "Resumo interativo · consulta por OP · cadastros e relatórios.")
     flash = st.session_state.pop("fm_mov_flash", None)
     if flash:
         st.success(flash)

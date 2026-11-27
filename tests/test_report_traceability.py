@@ -73,12 +73,17 @@ reports_ui.render_reports(
 """).run()
         self.assertFalse(app.exception)
         today = reports_ui.datetime.now(reports_ui.ZoneInfo("America/Sao_Paulo")).date()
+        self.assertEqual(len(app.date_input), 0)
+        app.radio(key="fm_reports_period_mode").set_value("Período personalizado").run()
         self.assertEqual(app.date_input(key="fm_reports_start").value, today.replace(day=1))
         self.assertEqual(app.date_input(key="fm_reports_end").value, today)
+        from datetime import date
+        self.assertEqual(reports_ui._month_bounds(date(2024, 2, 17), today),
+                         (date(2024, 2, 1), date(2024, 2, 29)))
         self.assertTrue(any(f"Sem dados de estoque para {today:%m/%Y}" in msg.value for msg in app.info))
         self.assertEqual(len(app.get("download_button")), 0)
         self.assertEqual(list(app.button), [])
-        app.radio(key="fm_reports_scope").set_value("Histórico completo").run()
+        app.radio(key="fm_reports_period_mode").set_value("Histórico completo").run()
         self.assertFalse(any("Sem dados" in msg.value for msg in app.info))
         app.button(key="fm_reports_prepare").click().run()
         self.assertFalse(app.exception)

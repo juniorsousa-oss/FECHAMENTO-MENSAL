@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+from calendar import monthrange
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -154,32 +155,39 @@ def _get_issue_model(selected_warehouses: tuple[str, ...] = ()) -> dict:
             "catalog_prices": prices, "catalog_price_meta": price_meta}
 
 
-def _date_controls(*, monthly=False):
-    mode = st.radio(
-        "Período", ["Período personalizado", "Histórico completo"],
-        horizontal=True, key="fm_reports_scope",
-        help="As datas selecionam competências, não saldos diários." if monthly else None,
-    )
-    if mode == "Histórico completo":
-        return None, None, "COMPLETO"
+def _month_bounds(competence: date, today: date) -> tuple[date, date]:
+    start = competence.replace(day=1)
+    last = start.replace(day=monthrange(start.year, start.month)[1])
+    return start, min(last, today) if start <= today <= last else last
+
+
+def _date_controls(competence: date | None = None):
     today = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
-    left, right = st.columns(2)
-    with left:
-        start = st.date_input("Data inicial", value=date(today.year, today.month, 1),
-                              format="DD/MM/YYYY", key="fm_reports_start")
-    with right:
-        end = st.date_input("Data final", value=today, format="DD/MM/YYYY",
-                            key="fm_reports_end")
-    if isinstance(start, tuple) or isinstance(end, tuple):
-        st.warning("Selecione uma única data inicial e uma única data final.")
-        return start, end, ""
-    if start is None or end is None:
-        st.info("Informe a data inicial e a final para gerar o Excel.")
-        return start, end, ""
-    if start > end:
-        st.error("A data inicial não pode ser posterior à data final.")
-        return start, end, ""
-    return start, end, f"{start:%Y%m%d}_{end:%Y%m%d}"
+    default_start, default_end = _month_bounds(competence or today, today)
+    st.caption(f"Mês em análise · {default_start:%m/%Y}")
+    with st.expander("Mais opções"):
+        mode = st.radio(
+            "Período", ["Mês em análise", "Período personalizado", "Histórico completo"],
+            horizontal=True, key="fm_reports_period_mode",
+        )
+        if mode == "Histórico completo":
+            return None, None, "COMPLETO"
+        if mode == "Mês em análise":
+            return default_start, default_end, f"{default_start:%Y%m%d}_{default_end:%Y%m%d}"
+        left, right = st.columns(2)
+        with left:
+            start = st.date_input("Data inicial", value=default_start,
+                                  format="DD/MM/YYYY", key="fm_reports_start")
+        with right:
+            end = st.date_input("Data final", value=default_end,
+                                format="DD/MM/YYYY", key="fm_reports_end")
+        if not isinstance(start, date) or not isinstance(end, date):
+            st.warning("Informe uma data inicial e uma final.")
+            return start, end, ""
+        if start > end:
+            st.error("A data inicial não pode ser posterior à data final.")
+            return start, end, ""
+        return start, end, f"{start:%Y%m%d}_{end:%Y%m%d}"
 
 
 def _has_stock_summary(summaries, imports, start, end):
@@ -203,7 +211,7 @@ def _clear_prepared():
     st.session_state.pop("fm_reports_error", None)
 
 
-def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
+def render_reports(*, summaries: list[dict], imports: list[dict], competence: date | None = None) -> None:
     """Três relatórios; período essencial visível, filtros secundários recolhidos.
 
     Preserva as chaves de sessão e todos os argumentos da exportação.
@@ -212,7 +220,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
     choice = st.radio(
         "Relatório", REPORT_NAMES, horizontal=True, key="fm_reports_kind",
     )
-    start, end, period_key = _date_controls(monthly=choice == REPORT_NAMES[0])
+    start, end, period_key = _date_controls(competence)
     if not period_key:
         return
 
@@ -229,22 +237,22 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
             return
 
     elif choice == REPORT_NAMES[1]:
-        left, right = st.columns(2, gap="medium")
-        with left:
-            extra["alerts"] = st.checkbox(
-                "Somente OPs com alerta",
-                key="fm_reports_alerts",
-            )
-        with right:
-            extra["include_activity"] = st.checkbox(
-                "Incluir OPs com atividade no período",
-                value=False, key="fm_reports_include_activity",
-                help=(
-                    "Inclui OPs com separação, conferência ou baixa no período, "
-                    "mesmo sem faturamento válido ou com faturamento fora dele."
-                ),
-            )
-        with st.expander("FILTROS ADICIONAIS · opcional", expanded=False):
+        with st.expander("Filtros do relatório", expanded=False):
+            left, right = st.columns(2, gap="medium")
+            with left:
+                extra["alerts"] = st.checkbox(
+                    "Somente OPs com alerta",
+                    key="fm_reports_alerts",
+                )
+            with right:
+                extra["include_activity"] = st.checkbox(
+                    "Incluir OPs com atividade no período",
+                    value=False, key="fm_reports_include_activity",
+                    help=(
+                        "Inclui OPs com separação, conferência ou baixa no período, "
+                        "mesmo sem faturamento válido ou com faturamento fora dele."
+                    ),
+                )
             col_status, col_type = st.columns(2, gap="medium")
             with col_status:
                 available_statuses = [

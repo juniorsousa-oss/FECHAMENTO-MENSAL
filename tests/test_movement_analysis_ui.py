@@ -130,7 +130,7 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.assertEqual(self.card_values(app), [
             "R$ 0,00", "R$ 25,00", "R$ -25,00"
         ])
-        self.assertTrue(any("04 · MOVIMENTAÇÕES DA TES" in x.value for x in app.markdown))
+        self.assertTrue(any("Lançamentos · CONSUMO OP" in x.value for x in app.markdown))
         app.session_state["_test_action"] = "movement_scoped"
         app.run()
         self.assertFalse(app.exception)
@@ -209,13 +209,14 @@ class MovementAnalysisUITests(unittest.TestCase):
         app.run()
         self.assertFalse(app.exception)
         self.assertEqual(app.segmented_control[0].value, "Visão geral")
-        self.assertGreaterEqual(len(app.dataframe), 4)
-        group_table, sub_table, tes_table, ledger = [x.value for x in app.dataframe[:4]]
+        self.assertEqual(len(app.dataframe), 3)
+        group_table, sub_table, ledger = [x.value for x in app.dataframe]
         self.assertEqual(group_table["Grupo"].tolist(), ["SEM GRUPO"])
         self.assertIn("Subgrupo", sub_table.columns)
-        self.assertIn("TES", tes_table.columns)
         self.assertIn("Grupo", ledger.columns)
-        self.assertEqual(set(ledger["TES"]), {tes_table.iloc[0]["TES"]})
+        tes_filter = next(x for x in app.selectbox if x.label == "TES (opcional)")
+        self.assertEqual(tes_filter.value, "Todas")
+        self.assertEqual(set(ledger["TES"]), set(tes_filter.options) - {"Todas"})
         self.assertEqual(set(ledger["Subgrupo"]), {sub_table.iloc[0]["Subgrupo"]})
 
     def test_op_lookup_and_inline_movements(self):

@@ -408,11 +408,11 @@ def _band():
     /* Classificação: a caixa inteira deve caber dentro do cartão.
        Não forçar altura de 100% nos filhos do BaseWeb: isso fazia
        a parte inferior do seletor parecer cortada e o texto deslocado. */
-    .st-key-fm_issue_class_group [data-testid="stSelectbox"] {
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] {
       overflow:visible!important;
       padding-bottom:1px!important;
     }
-    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div {
       box-sizing:border-box!important;
       height:48px!important;
       min-height:48px!important;
@@ -422,7 +422,7 @@ def _band():
       padding-block:0!important;
       overflow:visible!important;
     }
-    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] > div > div {
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div > div {
       box-sizing:border-box!important;
       align-self:center!important;
       height:auto!important;
@@ -430,13 +430,13 @@ def _band():
       margin-block:0!important;
       padding-block:0!important;
     }
-    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] > div > div:first-child {
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div > div:first-child {
       flex:1 1 auto!important;
       min-width:0!important;
       display:flex!important;
       align-items:center!important;
     }
-    .st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] svg {
+    .st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] svg {
       align-self:center!important;
       flex-shrink:0!important;
     }
@@ -800,7 +800,7 @@ def _reload():
 def _clear_filters():
     """Limpa os critérios editáveis e os resultados da pesquisa anterior."""
     st.session_state.fm_issue_search = ""
-    st.session_state.fm_issue_filter = "Todos"
+    st.session_state.fm_issue_filter = "Prioridade"
     st.session_state.fm_issue_op_status = "Todos os status"
     st.session_state.fm_issue_warehouse = "Todos os armazéns"
     st.session_state.fm_issue_invoice_start = None
@@ -811,7 +811,7 @@ def _clear_filters():
 
 
 def _default_issue_filters() -> dict:
-    return {"op": "", "alertas": "Todos", "status": "Todos os status",
+    return {"op": "", "alertas": "Com alertas", "status": "Todos os status",
             "datas": (None, None), "armazem": "Todos os armazéns"}
 
 
@@ -1155,19 +1155,13 @@ def _ops(model, view, token):
                 with st.container(key="fm_issue_op_detail_" + number):
                     st.markdown(_op_metadata(context), unsafe_allow_html=True)
                     st.caption(f"{separated} separados · {confirmed} conferidos · {discharged} baixados")
-                    st.caption(f"P.A.: {context['pa'] or '—'} · {context['descricao_pa'] or 'Descrição não informada'}")
-                    source_lines = int(context.get("linhas_mes", total))
-                    if source_lines != total:
-                        st.caption(
-                            f"{source_lines} linhas de origem · {total} produtos distintos. "
-                            "A tabela separa por lote; as linhas de origem ficam nas evidências."
-                        )
-                    if not bool(group.iloc[0]["op_possui_baixa"]):
-                        st.caption("Não há consumo líquido identificado no histórico desta OP até a data de referência.")
-                    st.caption(
-                        "Marque o checkbox à esquerda do material para consultar "
-                        "suas evidências. Selecione outra linha para trocar o produto."
-                    )
+                    alerts_only = group.loc[group["divergente"]]
+                    mode = "Todos"
+                    if not alerts_only.empty and len(alerts_only) < len(group):
+                        mode = st.radio("Materiais", ["Com alerta", "Todos"], horizontal=True,
+                                        key="fm_issue_material_scope_" + number)
+                        if mode == "Com alerta":
+                            group = alerts_only
                     if st.toggle(
                         "PRÉVIA DO EXCEL · MESMO FORMATO DA CONFERÊNCIA",
                         key="fm_issue_excel_preview_" + number, value=False,
@@ -1219,7 +1213,7 @@ def _ops(model, view, token):
                                 "conferida", "baixada", "pendente", "saldo", "saldo_g9_prod",
                                 "outros_enderecos",
                                 "resultado_lote" if "resultado_lote" in group.columns else "status"],
-                        key=f"fm_issue_material_row_{number}_{token}",
+                        key=f"fm_issue_material_row_{number}_{token}_{mode}",
                         selectable=True,
                     )
                     item = _material_at_position(group, selection)
@@ -1306,11 +1300,7 @@ def render_results(model):
     if frame is None:
         frame = model["items"]
     period = model["coverage"]
-    current_month = datetime.now(TZ).strftime("%m/%Y")
-    st.caption(
-        f"Operação atual · {current_month} · base de referência de {day(model.get('as_of'))}. "
-        "As baixas consideram o histórico OPS acumulado; faturamento é um filtro opcional."
-    )
+
     if not model["history_available"]:
         st.warning("Sem Relatório OPS, as baixas ficam desconhecidas, não zeradas.")
     elif not model.get("accumulated_history") and not period["fim"]:
@@ -1350,74 +1340,54 @@ def render_results(model):
     if st.session_state.get("fm_issue_warehouse") not in (None, *warehouses):
         st.session_state.fm_issue_warehouse = warehouses[0]
     with st.container(key="fm_issue_filters"):
-        st.markdown(
-            '<div class="fm-issue-filter-heading">FILTROS DA CONFERÊNCIA</div>'
-            '<div class="fm-issue-filter-subtitle">'
-            'Filtre por OP, tipo de pendência, status ou faturamento.'
-            '</div>', unsafe_allow_html=True,
-        )
-        # Inputs dentro do formulário não disparam cálculos enquanto são editados.
         with st.form("fm_issue_filter_form", clear_on_submit=False, border=False):
-            lookup_col, classification_col = st.columns([1.15, 2], gap="medium")
+            lookup_col, alert_col = st.columns([2, 1], gap="small")
             with lookup_col:
-                with st.container(key="fm_issue_search_group"):
-                    st.markdown('<div class="fm-issue-group-label">01 · PESQUISA</div>',
-                                unsafe_allow_html=True)
-                    query_draft = st.text_input(
-                        "LOCALIZAR OP", key="fm_issue_search",
-                        placeholder="Digite o número da OP",
-                    )
-                    warehouse_draft = st.selectbox(
-                        "ARMAZÉM (ENDEREÇO)", warehouses, key="fm_issue_warehouse",
-                        help="Filtra OPs com material e saldo no armazém. As baixas do OPS não são atribuídas a um armazém.",
-                    )
-            with classification_col:
-                with st.container(key="fm_issue_class_group"):
-                    st.markdown('<div class="fm-issue-group-label">02 · CLASSIFICAÇÃO</div>',
-                                unsafe_allow_html=True)
-                    alert_col, status_col = st.columns(2, gap="medium")
-                    with alert_col:
-                        choice_draft = st.selectbox(
-                            "ALERTAS", list(FILTERS), key="fm_issue_filter"
-                        )
-                    with status_col:
-                        statuses = ["Todos os status"] + [
-                            op_rules.FINALIZADO_PATIO, op_rules.FINALIZADO_ENTREGUE,
-                            op_rules.NF_EMITIDA, op_rules.FINALIZADO, op_rules.REPORTADO,
-                            op_rules.EM_CONFERENCIA, op_rules.EM_SEPARACAO,
-                            op_rules.AGUARDANDO_INICIO,
-                        ]
-                        status_draft = st.selectbox(
-                            "STATUS DA OP", statuses, key="fm_issue_op_status"
-                        )
-            with st.container(key="fm_issue_date_filters"):
-                st.markdown(
-                    '<div class="fm-issue-date-title">03 · PERÍODO DE FATURAMENTO</div>'
-                    '<div class="fm-issue-date-note">'
-                    'Datas opcionais: selecione no calendário para filtrar o faturamento.'
-                    '</div>', unsafe_allow_html=True,
+                query_draft = st.text_input(
+                    "Buscar OP", key="fm_issue_search", placeholder="Número da OP",
                 )
-                date_from_col, date_to_col = st.columns(2, gap="medium")
+            with alert_col:
+                choice_draft = st.selectbox(
+                    "Mostrar", ["Prioridade"] + list(FILTERS), key="fm_issue_filter",
+                    format_func=lambda item: {
+                        "Prioridade": "OPs com alerta por padrão", "Com alertas": "Somente OPs com alerta", "Todos": "Todas as OPs",
+                        "Sem alertas": "OPs sem alerta",
+                    }.get(item, item),
+                )
+            with st.expander("Filtros", expanded=False):
+                warehouse_col, status_col = st.columns(2)
+                with warehouse_col:
+                    warehouse_draft = st.selectbox(
+                        "Armazém (endereço)", warehouses, key="fm_issue_warehouse",
+                        help="Considera saldo no endereço; o OPS não informa armazém.",
+                    )
+                with status_col:
+                    statuses = ["Todos os status"] + [
+                        op_rules.FINALIZADO_PATIO, op_rules.FINALIZADO_ENTREGUE,
+                        op_rules.NF_EMITIDA, op_rules.FINALIZADO, op_rules.REPORTADO,
+                        op_rules.EM_CONFERENCIA, op_rules.EM_SEPARACAO,
+                        op_rules.AGUARDANDO_INICIO,
+                    ]
+                    status_draft = st.selectbox("Status da OP", statuses, key="fm_issue_op_status")
+                date_from_col, date_to_col = st.columns(2)
                 with date_from_col:
                     date_from_raw = st.date_input(
-                        "DATA INICIAL", value=None, format="DD/MM/YYYY",
-                        key="fm_issue_invoice_start",
+                        "Faturamento inicial", value=None, format="DD/MM/YYYY", key="fm_issue_invoice_start",
                     )
                 with date_to_col:
                     date_to_raw = st.date_input(
-                        "DATA FINAL", value=None, format="DD/MM/YYYY",
-                        key="fm_issue_invoice_end",
+                        "Faturamento final", value=None, format="DD/MM/YYYY", key="fm_issue_invoice_end",
                     )
             with st.container(key="fm_issue_filter_actions"):
                 action_search, action_clear = st.columns([1, 1], gap="small")
                 with action_search:
                     submitted = st.form_submit_button(
-                        "PESQUISAR", type="primary",
+                        "Buscar", type="primary",
                         key="fm_issue_search_submit", use_container_width=True,
                     )
                 with action_clear:
                     st.form_submit_button(
-                        "LIMPAR FILTROS", on_click=_clear_filters,
+                        "Limpar filtros", on_click=_clear_filters,
                         key="fm_issue_clear_filters", use_container_width=True,
                     )
 
@@ -1426,8 +1396,9 @@ def render_results(model):
         if validation_error:
             st.warning(validation_error + " A pesquisa anterior foi mantida.")
         else:
+            effective_alerts = ("Todos" if query_draft.strip() else "Com alertas") if choice_draft == "Prioridade" else choice_draft
             st.session_state.fm_issue_applied_filters = {
-                "op": query_draft, "alertas": choice_draft,
+                "op": query_draft, "alertas": effective_alerts,
                 "status": status_draft, "datas": submitted_dates, "armazem": warehouse_draft,
             }
             st.session_state.fm_issue_page = 1
@@ -1471,7 +1442,7 @@ def render_results(model):
             (r["op"], r["codigo"]) for r in model["general"]
             if r["atendida"] > check.EPSILON
         } & selected_pairs
-    with st.container(key="fm_issue_summary"):
+    with st.expander("Totais da pesquisa"):
         _cards([
             ("OPs encontradas", count(view["op"].nunique()), "Ordens no recorte"),
             ("Produtos/lotes", count(len(view)), "Cada OP + produto + lote é um registro distinto"),
@@ -1495,15 +1466,14 @@ def render_results(model):
     else:
         _ops(model, view, token)
 
-    st.markdown("---")
     from reports import EXPORT_SCHEMA_VERSION
     report_key = hashlib.sha256((
         EXPORT_SCHEMA_VERSION + str(model.get("as_of")) + str(model.get("warehouses"))
         + str(model.get("history_meta")) + str(model.get("source_meta"))
         + op_rules.VERSION + lot_conference.VERSION + str(model.get("master_plan_meta"))
     ).encode()).hexdigest()
-    left, right = st.columns([1, 2])
-    with left:
+    with st.expander("Exportar conferência completa"):
+        st.caption("O Excel inclui todas as OPs, sem os filtros da pesquisa.")
         if st.button("PREPARAR EXCEL · ESPELHO DA CONFERÊNCIA", use_container_width=True, key="fm_issue_prepare_report"):
             from reports import export_issues
             with st.spinner("Exportando a conferência e os valores previstos conforme R3..."):
@@ -1516,20 +1486,15 @@ def render_results(model):
                     )
                 data = export_issues({**model, "catalog_prices": prices})
             st.session_state["fm_issue_report_ready"] = (report_key, data)
-    with right:
-        st.caption(
-            "O espelho exporta toda a conferência, não os filtros da fila, inclusive o de armazém. "
-            "O Excel R15 mantém uma linha por OP, produto e lote, com saldos, resultado e valor previsto da baixa."
-        )
-    prepared = st.session_state.get("fm_issue_report_ready")
-    if prepared and prepared[0] == report_key:
-        st.download_button(
-            "BAIXAR EXCEL · CONFERÊNCIA DE BAIXAS",
-            data=prepared[1],
-            file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R15.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="fm_issue_download_complete", use_container_width=True,
-        )
+        prepared = st.session_state.get("fm_issue_report_ready")
+        if prepared and prepared[0] == report_key:
+            st.download_button(
+                "BAIXAR EXCEL · CONFERÊNCIA DE BAIXAS",
+                data=prepared[1],
+                file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R15.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="fm_issue_download_complete", use_container_width=True,
+            )
     # st.expander executaria tabelas das fontes mesmo fechado; toggle
     # evita trabalho desnecessário em cada pesquisa ou abertura de OP.
     if st.toggle("FONTES, COBERTURA E CRITÉRIOS TÉCNICOS",
