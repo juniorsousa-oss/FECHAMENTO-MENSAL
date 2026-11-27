@@ -208,10 +208,35 @@ def _xml_rows(raw: bytes):
                     node.clear()
 
 
-def parse_report(raw: bytes, file_name: str) -> dict:
+
+def normalized_xml_rows(pack: dict):
+    """Read the lossless XML-value representation supplied by Central SETTA."""
+    if pack.get("format") != "SETTA_SOURCE_V1" or pack.get("profile") != "CLOSING_XML_VALUES_V1":
+        raise ValueError("Pacote técnico do Fechamento incompatível.")
+    if not re.fullmatch(r"[a-f0-9]{64}", str(pack.get("source_sha256") or "")):
+        raise ValueError("Pacote sem identificação do Excel original.")
+    for sheet in pack.get("sheets") or []:
+        rows, numbers = sheet["rows"], sheet["row_numbers"]
+        if len(rows) != len(numbers) or any(b <= a for a, b in zip(numbers, numbers[1:])):
+            raise ValueError("Linhas do pacote técnico inconsistentes.")
+        for line, values in zip(numbers, rows):
+            cells = {}
+            for i, value in enumerate(values, 1):
+                if value in (None, ""):
+                    continue
+                n, col = i, ""
+                while n:
+                    n, digit = divmod(n - 1, 26)
+                    col = chr(65 + digit) + col
+                cells[col] = value
+            if cells:
+                yield sheet["name"], int(line), cells, bool(sheet.get("date1904"))
+
+
+def parse_report(raw: bytes, file_name: str, *, source_pack: dict | None = None) -> dict:
     """Reads the ERP's physical AE column; opening-only rows are not movements."""
-    digest = hashlib.sha256(raw).hexdigest()
-    if file_name.lower().endswith(".zip"):
+    digest = str(source_pack["source_sha256"]) if source_pack is not None else hashlib.sha256(raw).hexdigest()
+    if source_pack is None and file_name.lower().endswith(".zip"):
         with ZipFile(io.BytesIO(raw)) as archive:
             if sum(i.file_size for i in archive.infolist()) > 700_000_000:
                 raise ValueError("Base histórica muito grande para esta importação.")
@@ -229,7 +254,7 @@ def parse_report(raw: bytes, file_name: str) -> dict:
         return {"meta": meta, "rows": rows}
     rows, errors, skipped = [], [], 0
     sheets_with_header = set()
-    for sheet, line, cells, epoch1904 in _xml_rows(raw):
+    for sheet, line, cells, epoch1904 in (normalized_xml_rows(source_pack) if source_pack is not None else _xml_rows(raw)):
         if normalized(cells.get("A")) in ("CODIGO", "COD. PRODUTO") and normalized(cells.get("M")) == "TES":
             if "OP" not in normalized(cells.get("AE")) or "DATA" not in normalized(cells.get("K")):
                 raise ValueError("Layout KARDEX diferente: confira Data em K, TES em M e vínculo original em AE.")
