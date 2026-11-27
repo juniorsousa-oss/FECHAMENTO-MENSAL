@@ -364,7 +364,7 @@ class IssueCheckUITests(unittest.TestCase):
         program = '''
 from unittest.mock import patch
 import issue_check_ui as ui
-with patch.object(ui, "_states", return_value={"relatorio_geral": {"available": False, "status": "ERRO"}}):
+with patch.object(ui, "_ops_meta", return_value={}), patch.object(ui, "_states", return_value={"relatorio_geral": {"available": False, "status": "ERRO"}}):
     ui.render_issue_check()
 '''
         app = AppTest.from_string(program, default_timeout=10).run()

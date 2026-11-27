@@ -7,6 +7,7 @@ on:
       - 'streamlit_app.py'
       - 'competence_calendar.py'
       - 'central_fechamento_data.py'
+      - 'central_movement_feeds.py'
       - 'report_parser.py'
       - 'cb_parser.py'
       - 'cb_balance_math.py'
@@ -80,6 +81,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_ops_lot_source.py'
       - name: Validar conferência de baixas e telas
         run: python -m unittest discover -s tests -p 'test_issue_check*.py'
+      - name: Validar prévia e versão das fontes OPS e KARDEX da Central
+        run: python -m unittest discover -s tests -p 'test_central_feeds_restoration.py'
       - name: Validar recorte de armazém e diagnóstico de TES
         run: python -m unittest discover -s tests -p 'test_fm_queue_warehouse_tes_details.py'
       - name: Validar integração FOR001 Plano Mestre
@@ -168,7 +171,7 @@ jobs:
           assert 'def cb_stage_header(' in app
           assert 'class="cb-balance-grid"' in app
           assert 'class="cb-overview-grid"' in app
-          assert app.count('cb_stage_header(') == 5
+          assert 'cb_visible_stage_' in app and 'Revisar ajustes' in app
           assert 'expanded=False' in app
           assert "Identidade visual" not in app
           print("ESTRUTURA_OK")

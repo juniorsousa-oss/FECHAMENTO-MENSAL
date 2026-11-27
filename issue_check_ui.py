@@ -1306,6 +1306,11 @@ def render_results(model):
     if frame is None:
         frame = model["items"]
     period = model["coverage"]
+    current_month = datetime.now(TZ).strftime("%m/%Y")
+    st.caption(
+        f"Operação atual · {current_month} · base de referência de {day(model.get('as_of'))}. "
+        "As baixas consideram o histórico OPS acumulado; faturamento é um filtro opcional."
+    )
     if not model["history_available"]:
         st.warning("Sem Relatório OPS, as baixas ficam desconhecidas, não zeradas.")
     elif not model.get("accumulated_history") and not period["fim"]:
@@ -1557,8 +1562,11 @@ def render_ops_feeder():
             + " · período " + day(current_ops.get("periodo_inicio"))
             + " a " + day(current_ops.get("periodo_fim"))
         )
+    import central_movement_feeds as central_feeds
+    entry = central_feeds.state_or_empty().get("ops", {})
+    st.caption(central_feeds.describe("ops", entry))
     with st.expander("IMPORTAR / SUBSTITUIR RELATÓRIO OPS COM LOTE",
-                     expanded=not bool(current_ops)):
+                     expanded=not bool(current_ops) or (entry.get("current") and not entry.get("applied"))):
         st.caption(
             "Arquivo XLSX/XLTX do OPS: identifica automaticamente as colunas "
             "de OP, produto, quantidade, data, lote, tipo RE/DE e TES. "
@@ -1568,10 +1576,18 @@ def render_ops_feeder():
             "Movimentos fora do intervalo são preservados. "
             "Não altera o KARDEX gerencial."
         )
-        uploaded = st.file_uploader(
-            "Relatório OPS", type=["xlsx", "xltx"],
-            key="fm_issue_ops_file",
+        use_central = st.checkbox(
+            "USAR OPS DA CENTRAL", value=bool(entry.get("current") and not entry.get("applied")),
+            disabled=not bool(entry.get("current")),
+            key="fm_ops_central_" + str((entry.get("meta") or {}).get("version") or 0)
+                + "_" + str(bool(entry.get("applied"))),
         )
+        with st.expander("CONTINGÊNCIA MANUAL", expanded=False):
+            uploaded = st.file_uploader(
+                "Relatório OPS", type=["xlsx", "xltx"],
+                key="fm_issue_ops_file",
+                disabled=use_central,
+            )
         replace_mode = st.radio(
             "CRITÉRIO DE SUBSTITUIÇÃO",
             options=("period", "op"),
@@ -1590,14 +1606,21 @@ def render_ops_feeder():
                 "inclusive as de outras datas. O histórico das demais OPs "
                 "será preservado e será criado um backup antes da gravação."
             )
-        if uploaded is not None:
+        if use_central or uploaded is not None:
             try:
                 with st.spinner("Lendo movimentações e consolidando OP, produto, lote e data..."):
-                    parsed_ops = _parse_ops_upload(
-                        uploaded.getvalue(), uploaded.name,
-                        ops_lot_source.VERSION,
-                        ops_lot_source.PARSER_VERSION,
-                    )
+                    if use_central:
+                        try:
+                            parsed_ops = central_feeds.load_parsed("ops", entry["token"])
+                        except Exception as exc:
+                            central_feeds.mark_error("ops", entry, exc)
+                            raise
+                    else:
+                        parsed_ops = _parse_ops_upload(
+                            uploaded.getvalue(), uploaded.name,
+                            ops_lot_source.VERSION,
+                            ops_lot_source.PARSER_VERSION,
+                        )
                 metadata = parsed_ops["meta"]
                 if metadata.get("versao") != ops_lot_source.VERSION:
                     raise RuntimeError(
@@ -1711,12 +1734,14 @@ def render_ops_feeder():
                     ("CONFIRMAR SUBSTITUIÇÃO DAS OPs" if replace_mode == "op"
                      else "CONFIRMAR SUBSTITUIÇÃO DO PERÍODO OPS"), type="primary",
                     key="fm_issue_ops_save", use_container_width=True,
-                    disabled=not accept or not impact["alterou"],
+                    disabled=not accept or (not impact["alterou"] and not use_central),
                 ):
                     with st.spinner(
                         "Criando backup, substituindo período e validando "
                         "a integridade do histórico OPS..."
                     ):
+                        if use_central:
+                            central_feeds.verify_current("ops", entry["token"])
                         saved_ops = ops_lot_source.save(
                             parsed_ops,
                             expected_previous_sha=impact["sha256_anterior"],
@@ -1732,6 +1757,8 @@ def render_ops_feeder():
                             "O banco não confirmou a versão das regras OPS. "
                             "A atualização não pode ser considerada concluída."
                         )
+                    if use_central:
+                        central_feeds.mark_applied("ops", entry, len(parsed_ops["rows"]))
                     effective = saved_ops["impact"]
                     st.session_state["_fm_issue_ops_flash"] = (
                         (("OPs do relatório substituídas e histórico validado no banco. "
@@ -1771,7 +1798,7 @@ def render_issue_check(*, on_open_ops=None):
         if current_ops.get("versao") != ops_lot_source.VERSION:
             st.error(
                 "Reprocesse a fonte OPS. Esta versão pode omitir RE1/TES 999. "
-                "No alimentador, carregue o mesmo arquivo e confirme a substituição."
+                "No alimentador, revise a fonte da Central e confirme a substituição."
             )
     else:
         st.warning(

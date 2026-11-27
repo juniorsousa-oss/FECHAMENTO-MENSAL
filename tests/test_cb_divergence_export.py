@@ -114,7 +114,7 @@ class DivergenceExportTests(unittest.TestCase):
 
     def test_interface_uses_unfiltered_adjustment_snapshot(self):
         app = Path(__file__).resolve().parents[1].joinpath("streamlit_app.py").read_text(encoding="utf-8")
-        self.assertIn("export_divergences(\n                                cb_adjustment_snapshot, cb_month", app)
+        self.assertRegex(app, r"export_divergences\(\s*cb_adjustment_snapshot,\s*cb_month\s*\)")
         self.assertIn("cb_export_divergencias_excel", app)
 
 

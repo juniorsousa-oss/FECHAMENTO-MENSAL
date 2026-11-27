@@ -157,7 +157,7 @@ class ReportsTests(unittest.TestCase):
         self.assertIn("fm_reports_issue_status", content)
         self.assertIn("fm_reports_alerts", content)
         self.assertIn("fm_reports_wh", content)
-        self.assertIn("with btn_download:", content)
+        self.assertIn("action.download_button(", content)
 
     def test_excel_mirrors_expanded_op_and_colors_only_real_alerts(self):
         """Repetir cabeçalho e as 12 colunas expandidas; sem amarelo para OK."""
