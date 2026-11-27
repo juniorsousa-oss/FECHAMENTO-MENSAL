@@ -93,7 +93,7 @@
   function finishPage() {
     page = null;
     delete root.dataset.settaPageUpdating;
-    delete root.dataset.settaPageSwitching;
+    delete root.dataset.settaInventoryNavigating;
     delete root.dataset.settaNavPlaceholder;
   }
   function finishOp(animate) {
@@ -113,7 +113,7 @@
     if (!page && target === null && !pageSurface()) return;
     page = { target, start: performance.now(), started: busy.has(appState()) };
     root.dataset.settaPageUpdating = 'true';
-    root.toggleAttribute('data-setta-page-switching', target !== null);
+    root.toggleAttribute('data-setta-inventory-navigating', target !== null);
     delete root.dataset.settaNavPlaceholder;
     watch();
   }

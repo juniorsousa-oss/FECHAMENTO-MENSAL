@@ -40,11 +40,11 @@
 .setta-inv-route-loader{display:none}
 html[data-setta-page-updating] [class*="st-key-fm_route_body_"],
 html[data-setta-page-updating] .footer,
-html[data-setta-page-switching] .setta-inv-intro{
+html[data-setta-inventory-navigating] .setta-inv-intro{
  opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:none!important;
 }
 html[data-setta-page-updating] [class*="st-key-fm_route_body_"] *,
-html[data-setta-page-switching] .setta-inv-intro *{
+html[data-setta-inventory-navigating] .setta-inv-intro *{
  visibility:hidden!important;pointer-events:none!important;
 }
 html[data-setta-page-updating] [data-testid="stMain"]{overflow-anchor:none}
