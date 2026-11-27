@@ -5418,8 +5418,16 @@ with _fm_page_surface.container():
                 from movement_analysis_ui import render_adjustments_feeder
                 render_adjustments_feeder()
             elif feeder == "OPS":
-                from issue_check_ui import render_ops_feeder
-                render_ops_feeder()
+                from issue_check_ui import render_issue_check, render_ops_feeder
+
+                ops_view = st.radio(
+                    "Área do OPS", ["Importar OPS", "Diagnóstico da conferência"],
+                    horizontal=True, key="fm_ops_settings_view", label_visibility="collapsed",
+                )
+                if ops_view == "Diagnóstico da conferência":
+                    render_issue_check(diagnostics=True)
+                else:
+                    render_ops_feeder()
             elif feeder == "ANALÍTICO":
                 section_band(
                     "01 · ALIMENTAÇÃO", "ANALÍTICO DE ESTOQUE",

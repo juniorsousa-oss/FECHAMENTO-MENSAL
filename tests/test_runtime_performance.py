@@ -88,7 +88,7 @@ class LazyRenderingTests(unittest.TestCase):
         self.assertIn("def load_global_visual_config()", source)
         self.assertIn('@st.cache_resource(show_spinner=False, max_entries=1)', source)
         self.assertIn("def browser_icon()", source)
-        self.assertIn("@st.fragment\ndef render_results(model):", checks)
+        self.assertIn("@st.fragment\ndef render_results(model,", checks)
         self.assertIn('if page == "Dashboard":', source)
         self.assertIn('elif page == "Conferência de baixas":', source)
 

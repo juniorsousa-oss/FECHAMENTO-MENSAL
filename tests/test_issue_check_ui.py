@@ -13,11 +13,16 @@ PROGRAM = '''
 import pandas as pd
 import issue_check as c
 import issue_check_ui as ui
+from datetime import date
 g = pd.DataFrame([
     {"Projeto": "26000101001", "Código": "00001000", "Lote": "000001", "Descrição": "MATERIAL CONFIRMADO", "Qtd. necessária": 10,
      "Qtd. atendida": 10, "Data de separação": "19/10/26 08:00", "Data de conferência": "20/10/26 08:00"},
     {"Projeto": "26000201001", "Código": "00002000", "Lote": "000002", "Descrição": "OUTRO MATERIAL", "Qtd. necessária": 3,
      "Qtd. atendida": 3, "Data de separação": "19/10/26 08:00", "Data de conferência": None},
+    {"Projeto": "26000301001", "Código": "00002000", "Lote": "000002",
+     "Qtd. necessária": 3, "Qtd. atendida": 0},
+    {"Projeto": "26000401001", "Código": "00002000", "Lote": "000002",
+     "Qtd. necessária": 3, "Qtd. atendida": 0},
 ])
 s = pd.DataFrame([{"Produto": "00001000", "Lote": "000001", "Armazem": "S2", "Endereco": "G9-PROD", "Quantidade": 6}])
 m = [{"codigo": "00001000", "ae_original": "OP26000101001", "armazem": "S2", "data": "2026-10-20", "tes": "550", "qtd_saida": "4", "qtd_entrada": None, "documento": "DOC", "arquivo_origem": "teste.xlsx", "linha_origem": 3}]
@@ -26,7 +31,12 @@ model = c.reconcile(c.parse_general(g), c.parse_stock(s), m, history_metas=meta,
 model["source_meta"] = {key: {"last_file_name": "base_21-10-2026.xlsx", "source_version": 1, "last_update_at": "2026-10-21T10:00:00+00:00"} for key in ui.SOURCE_KEYS}
 model["history_meta"] = meta
 model["duplicates"] = 0
-ui.render_results(model)
+model = ui.op_rules.apply(model)
+model["ops"]["data_faturamento"] = model["ops"]["op"].map({
+    "26000101001": "20/10/2026", "26000201001": "21/10/2026",
+    "26000301001": "30/09/2026", "26000401001": "NI",
+})
+ui.render_results(model, today=date(2026, 10, 21))
 '''
 
 
@@ -98,7 +108,7 @@ class IssueCheckUITests(unittest.TestCase):
     def test_op_filters_material_evidence_and_export(self):
         app = AppTest.from_string(PROGRAM, default_timeout=20).run()
         self.assertFalse(app.exception)
-        self.assertEqual([e.label for e in app.expander], ["Filtros", "Totais da pesquisa", "Exportar conferência completa"])
+        self.assertEqual([e.label for e in app.expander], ["Filtros"])
         self.assertTrue(any("ORDEM COM ALERTA" in b.label for b in app.button))
         self.assertFalse(any("ORDEM EM SEPARAÇÃO" in b.label for b in app.button))
         self.assertEqual(len(app.dataframe), 0)  # nenhum detalhe pesado antes do clique
@@ -136,7 +146,8 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertEqual(len([b for b in app.button if "OP 2600" in b.label]), 1)
         self.assertTrue(any("ORDEM EM SEPARAÇÃO" in b.label for b in app.button))
-        self.assertTrue(any("PREPARAR EXCEL · ESPELHO DA CONFERÊNCIA" in b.label for b in app.button))
+        self.assertFalse(any("PREPARAR EXCEL" in b.label for b in app.button))
+        self.assertFalse(any("CRITÉRIOS TÉCNICOS" in t.label for t in app.toggle))
 
 
     def test_result_color_only_for_real_material_alert(self):
@@ -218,7 +229,7 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertNotIn('ATUALIZAR CONFERÊNCIA', renderer)
         self.assertNotIn('st.multiselect(', renderer)
         self.assertIn('chosen = tuple(sorted(set(options) | import_warehouses))', renderer)
-        self.assertIn('fm-issue-filter-heading', source)
+        self.assertIn('st-key-fm_issue_toolbar', source)
         self.assertIn('[data-baseweb="input"]', source)
         self.assertIn('focus-within', source)
         self.assertIn('.fm-issue-meta', source)
@@ -279,23 +290,20 @@ class IssueCheckUITests(unittest.TestCase):
         # A altura do cartão precisa comportar os selects, sem esticar seus
         # nós internos (isso causava truncamento junto à borda inferior).
         select_rules = source.split("/* Classificação: a caixa inteira", 1)[1].split(
-            "/* Faixa de ações única", 1
+            ".st-key-fm_issue_toolbar", 1
         )[0]
         self.assertIn('height:auto!important;', select_rules)
         self.assertNotIn('height:100%!important;', select_rules)
         self.assertIn('height:48px!important;', select_rules)
         self.assertIn('overflow:visible!important;', select_rules)
-        self.assertIn('min-height:136px!important;', source)
-        # Os dois submits compartilham o mesmo contêiner de ações.
-        action_layout = source.split(
-            'with st.container(key="fm_issue_filter_actions"):', 1
-        )[1].split("if submitted:", 1)[0]
-        self.assertIn('action_search, action_clear = st.columns([1, 1], gap="small")', action_layout)
-        self.assertNotIn('with actions:', action_layout)
-        self.assertIn('max-width:450px!important;', source)
-        self.assertIn('flex-direction:row!important;', source)
-        self.assertIn('"Buscar"', action_layout)
-        self.assertIn('"Limpar filtros"', action_layout)
+        toolbar = source.split('with st.container(key="fm_issue_toolbar"):', 1)[1].split(
+            'with st.expander("Filtros"', 1
+        )[0]
+        self.assertIn('lookup_col, alert_col, search_col, clear_col', toolbar)
+        self.assertIn('vertical_alignment="bottom"', toolbar)
+        self.assertIn('flex-wrap:wrap!important;', source)
+        self.assertIn('"Buscar"', toolbar)
+        self.assertIn('"Limpar filtros"', toolbar)
         self.assertIn('height:46px!important;', source)
         self.assertIn('margin:0!important;', source)
         self.assertIn('with st.form("fm_issue_filter_form"', source)
@@ -310,7 +318,8 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertFalse(app.exception)
         dates = {widget.label: widget for widget in app.date_input}
         self.assertEqual(set(dates), {"Faturamento inicial", "Faturamento final"})
-        self.assertTrue(all(widget.value is None for widget in dates.values()))
+        self.assertEqual(dates["Faturamento inicial"].value, date(2026, 10, 1))
+        self.assertEqual(dates["Faturamento final"].value, date(2026, 10, 21))
         # Como ambos os calendários pertencem ao mesmo formulário, os
         # rascunhos só chegam ao servidor quando Buscar é pressionado.
         dates["Faturamento inicial"].set_value(date(2026, 10, 1))
@@ -328,7 +337,27 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertFalse(app.exception)
         next(x for x in app.button if x.label == "Limpar filtros").click().run()
         self.assertFalse(app.exception)
-        self.assertTrue(all(widget.value is None for widget in app.date_input))
+        self.assertEqual([widget.value for widget in app.date_input],
+                         [date(2026, 10, 1), date(2026, 10, 21)])
+
+    def test_older_or_undated_orders_are_not_in_default_month(self):
+        from datetime import date
+        app = AppTest.from_string(PROGRAM, default_timeout=20).run()
+        app.selectbox(key="fm_issue_filter").set_value("Todos")
+        app.button(key="fm_issue_search_submit").click().run()
+        self.assertFalse(app.exception)
+        self.assertTrue(any("26000101001" in b.label for b in app.button))
+        self.assertFalse(any("26000301001" in b.label or "26000401001" in b.label for b in app.button))
+        app.date_input(key="fm_issue_invoice_start").set_value(date(2026, 9, 1))
+        app.date_input(key="fm_issue_invoice_end").set_value(date(2026, 9, 30))
+        app.button(key="fm_issue_search_submit").click().run()
+        self.assertFalse(app.exception)
+        self.assertTrue(any("26000301001" in b.label for b in app.button))
+        self.assertFalse(any("26000101001" in b.label for b in app.button))
+        app.button(key="fm_issue_clear_filters").click().run()
+        self.assertFalse(app.exception)
+        self.assertTrue(any("26000101001" in b.label for b in app.button))
+        self.assertFalse(any("26000301001" in b.label for b in app.button))
 
     def test_selected_row_lookup_preserves_original_dataframe_position(self):
         import pandas as pd
