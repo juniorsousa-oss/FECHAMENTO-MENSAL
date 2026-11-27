@@ -307,7 +307,7 @@ def render_shell(*, title: str, page_label: str, route_id: int) -> None:
         '<span class="setta-inv-mark">'
         f'<img src="data:image/svg+xml;base64,{logo}" alt="Setta">'
         f'</span><b>{escape(title)}</b><small>Gestão de estoque</small></header>'
-        '<div class="setta-inv-route-loader" role="status" aria-live="polite">Carregando aba…</div>'
+        '<div class="setta-inv-route-loader" role="status" aria-live="polite">Atualizando…</div>'
     )
     st.html(top + f'<script>{navigation}</script>', unsafe_allow_javascript=True)
     st.html(
