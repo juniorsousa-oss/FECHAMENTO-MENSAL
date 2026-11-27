@@ -148,8 +148,7 @@ jobs:
           assert 'href="?pagina=' not in app
           assert 'key=f"setta_nav_{_index}"' in app
           assert "def _set_fm_page(target: str)" in app
-          assert 'st.session_state["_fm_nav_collapsed"] = True' in app
-          assert '_toggle_fm_menu' in app and 'render_shell(' in app
+          assert '_toggle_fm_menu' not in app and 'render_shell(' in app
           assert "def load_cb_page_snapshot(" in app
           assert 'if "_fm_nav_initialized" not in st.session_state' in app
           assert "def load_global_visual_config()" in app
@@ -160,7 +159,11 @@ jobs:
           assert "sidebar-status-section" in app
           ui = Path("ui.py").read_text(encoding="utf-8")
           css = Path("assets/setta-fechamento.css").read_text(encoding="utf-8")
-          assert 'key="setta_drawer_toggle"' in ui
+          nav = Path("assets/setta-fechamento-navigation.js").read_text(encoding="utf-8")
+          assert 'class="setta-drawer-toggle" type="button"' in ui
+          assert 'aria-controls="setta-fechamento-sidebar"' in ui
+          assert "setDrawer(!drawerOpen())" in nav and "setDrawer(false)" in nav
+          assert "data-setta-drawer-open" in css and "data-setta-inventory-navigating" in css
           assert 'with st.container(key="setta_route_list")' in app
           assert 'setta-shell-marker' in ui and 'setta-inv-top' in ui
           assert '--inv-top:58px' in css and '--inv-nav:220px' in css
