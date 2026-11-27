@@ -28,6 +28,15 @@
 .st-key-setta_drawer_toggle button [data-testid="stIconMaterial"]{font-size:21px;line-height:1}
 .st-key-setta_drawer_toggle button:hover{background:#555!important}
 .st-key-setta_drawer_toggle button:focus-visible{outline:2px solid #ffbb00!important;outline-offset:2px}
+/* Nas reexecuções internas, o Streamlit mantém nós antigos brevemente.
+   Preserve o espaço, mas não exiba nem permita operar conteúdo desatualizado.
+   O shell continua visível e a navegação principal mantém sua máscara própria. */
+[data-testid="stMainBlockContainer"] [data-stale="true"]:not(:has(.setta-inv-top,.st-key-setta_top_controls)):not(.st-key-setta_top_controls *){
+ opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:none!important;
+}
+[data-testid="stMainBlockContainer"] [data-stale="true"]:not(:has(.setta-inv-top,.st-key-setta_top_controls)):not(.st-key-setta_top_controls *) *{
+ visibility:hidden!important;pointer-events:none!important;
+}
 /* O conteúdo antigo não participa da troca; fora dela, os widgets
    mantêm seu funcionamento e o Streamlit pode atualizar a página normal. */
 .setta-inv-route-loader{display:none}
@@ -156,4 +165,17 @@ body [data-testid="stMain"] .st-key-setta_drawer_toggle button{background:#42424
  .history-compact-row summary .validation-badge{float:right;min-width:0;font-size:.59rem;line-height:1.1;margin-top:3px}
  .history-compact-row dl{display:grid;grid-template-columns:minmax(70px,1fr) auto;gap:4px 10px;margin:0;padding:0 12px 10px;font-size:.79rem}
  .history-compact-row dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+}
+
+/* Kardex: as opções usam o mesmo amarelo de seleção das demais telas.
+   Texto em botões do cadastro precisa de largura livre, não de um ícone de 28 px. */
+.st-key-fm_mov_navigation{margin:.1rem 0 .6rem}
+.st-key-fm_mov_navigation button{min-height:44px;border-radius:10px;font-weight:700}
+.st-key-fm_mov_catalog [data-testid="stPopover"] button{
+ width:auto!important;min-width:44px;min-height:38px!important;height:auto!important;
+ padding:4px 10px!important;border-radius:8px!important;max-width:100%;color:var(--inv-ink)!important
+}
+.st-key-fm_mov_catalog [data-testid="stPopover"] button p{white-space:normal}
+.st-key-fm_mov_catalog :is([data-testid="stBaseButton-secondary"],[data-testid="stBaseButton-secondaryFormSubmit"]):not(:disabled):hover{
+ border-color:#8a6500!important;color:var(--inv-ink)!important;background:#fff3cc!important
 }

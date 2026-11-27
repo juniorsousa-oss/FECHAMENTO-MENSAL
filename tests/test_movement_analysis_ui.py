@@ -252,11 +252,70 @@ class MovementAnalysisUITests(unittest.TestCase):
             catalog.loc[catalog["TES"] == "999", "Descrição TES"].iloc[0],
             "CONSUMO DE OP",
         )
-        self.assertTrue(any("CONDIÇÕES E SUBGRUPOS" in x.value for x in app.markdown))
+        self.assertTrue(any("Prioridade das condições" in x.value for x in app.markdown))
         self.area(app, "Fontes e relatórios")
         # O alimentador foi transferido para Configurações; a análise fica em leitura.
         self.assertEqual(len(app.file_uploader), 0)
         self.assertTrue(any("Situação" in table.value.columns for table in app.dataframe))
+
+    def test_catalog_validation_and_success_in_same_screen(self):
+        app = AppTest.from_string("""
+import pandas as pd
+import streamlit as st
+from unittest.mock import patch
+import movement_analysis_ui as ui
+import kardex_group_config as catalog
+
+if "test_catalog" not in st.session_state:
+    st.session_state.test_catalog = catalog.empty()
+
+def persist(updated, available):
+    st.session_state.test_catalog = catalog.validated(updated, available)
+
+with patch.object(ui, "_groups_read", lambda: st.session_state.test_catalog), \
+     patch.object(ui, "_groups_commit", persist):
+    ui._catalog(pd.DataFrame({"tes": ["520", "550"]}))
+""", default_timeout=20).run()
+
+        def field(label):
+            return next(x for x in app.text_input if x.label == label)
+
+        def click(label):
+            next(x for x in app.button if x.label == label).click().run()
+            self.assertFalse(app.exception)
+
+        field("Nome do novo grupo").set_value("SEM GRUPO")
+        click("Criar grupo")
+        self.assertTrue(app.error)
+        self.assertEqual(field("Nome do novo grupo").value, "SEM GRUPO")
+        self.assertFalse(app.session_state.test_catalog["grupos"])
+
+        field("Nome do novo grupo").set_value("Produção piloto")
+        click("Criar grupo")
+        self.assertEqual(app.success[0].value, "Grupo criado.")
+        self.assertEqual(field("Nome do novo grupo").value, "")
+
+        field("Nome do grupo").set_value("Produção piloto A")
+        app.multiselect[0].set_value(["520"])
+        click("Salvar grupo")
+        self.assertEqual(app.success[0].value, "Grupo e TES salvos.")
+        self.assertEqual(app.session_state.test_catalog["grupos"][0]["tes"], ["520"])
+
+        field("Nome da nova condição").set_value("Auditar contagem piloto")
+        click("Cadastrar condição")
+        self.assertEqual(app.success[0].value, "Condição cadastrada.")
+        self.assertEqual(field("Nome da nova condição").value, "")
+        condition = app.session_state.test_catalog["condicoes"][-1]
+        app.button(key="fm_mov_condition_up_" + condition["id"]).click().run()
+        self.assertFalse(app.exception)
+        self.assertEqual(app.success[0].value, "Prioridade atualizada.")
+        self.assertEqual(app.session_state.test_catalog["condicoes"][-2]["id"], condition["id"])
+
+        self.assertTrue(next(x for x in app.button if x.label == "Excluir grupo").disabled)
+        app.checkbox[0].check().run()
+        click("Excluir grupo")
+        self.assertFalse(app.session_state.test_catalog["grupos"])
+        self.assertIn("TES permanecem no Kardex", app.success[0].value)
 
     def test_month_and_warehouse_scope(self):
         app = self.app()

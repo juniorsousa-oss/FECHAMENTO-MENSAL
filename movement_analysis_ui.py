@@ -747,6 +747,11 @@ def _detail(row):
     st.caption(f"Arquivo: {row['arquivo_origem']} · linha {int(row['linha_origem'])}.")
 
 
+def _catalog_saved(message):
+    st.session_state.fm_mov_catalog_flash = message
+    st.rerun()
+
+
 def _catalog(frame):
     """Cadastros persistidos: grupos e TES, condições futuras, catálogo original."""
     catalog = mv.rules()["tes"]
@@ -758,19 +763,25 @@ def _catalog(frame):
         st.error(f"Não foi possível acessar as configurações dos grupos: {exc}. Nenhuma alteração foi realizada.")
         return
 
-    st.markdown("**01 · CADASTRAR GRUPO DE TES**")
+    flash = st.session_state.pop("fm_mov_catalog_flash", None)
+    if flash:
+        st.success(flash)
+
+    st.markdown("**Criar grupo de TES**")
     st.caption("Cada TES pertence a um único grupo; a mesma movimentação nunca é somada em dois grupos.")
-    with st.form("fm_mov_group_create", clear_on_submit=True):
+    create_revision = st.session_state.get("fm_mov_group_create_revision", 0)
+    with st.form(f"fm_mov_group_create_{create_revision}"):
         name = st.text_input("Nome do novo grupo", placeholder="Ex.: Produção, devoluções, compras")
-        if st.form_submit_button("CRIAR GRUPO", type="primary"):
+        if st.form_submit_button("Criar grupo", type="primary"):
             try:
                 _groups_commit(groups.create_group(config, name, known_tes=available), available)
-                st.success("Grupo criado e salvo.")
-                st.rerun()
             except Exception as exc:
                 st.error(f"Não foi possível criar o grupo: {exc}")
+            else:
+                st.session_state.fm_mov_group_create_revision = create_revision + 1
+                _catalog_saved("Grupo criado.")
 
-    st.markdown("**02 · GRUPOS CADASTRADOS E VINCULAÇÃO DE TES**")
+    st.markdown("**Grupos cadastrados**")
     if not config["grupos"]:
         st.info("Nenhum grupo cadastrado. Crie o primeiro grupo e selecione as TES que o compõem.")
     owner = {code: group["id"] for group in config["grupos"] for code in group["tes"]}
@@ -787,33 +798,27 @@ def _catalog(frame):
                     format_func=lambda code: code + " | " + catalog.get(code, {}).get("descricao", "NI"),
                     key="fm_mov_group_tes_" + group_id,
                 )
-                if st.form_submit_button("SALVAR GRUPO", type="primary"):
+                if st.form_submit_button("Salvar grupo", type="primary"):
                     try:
                         updated = groups.assign_group(config, group_id, selected,
                                                        name=rename, known_tes=available)
                         _groups_commit(updated, available)
-                        st.success("Grupo e TES salvos.")
-                        st.rerun()
+                        _catalog_saved("Grupo e TES salvos.")
                     except Exception as exc:
                         st.error(f"Não foi possível salvar o grupo: {exc}")
             st.caption("Para excluir, confirme abaixo. As TES serão liberadas para outro grupo e nenhum registro será removido.")
             confirm = st.checkbox("Confirmar exclusão do grupo", key="fm_mov_group_confirm_" + group_id)
-            if st.button("EXCLUIR GRUPO", disabled=not confirm,
+            if st.button("Excluir grupo", disabled=not confirm,
                          key="fm_mov_group_delete_" + group_id):
                 try:
                     updated = groups.delete_group(config, group_id, known_tes=available)
                     _groups_commit(updated, available)
-                    st.success("Grupo excluído. As TES permanecem no KARDEX.")
-                    st.rerun()
+                    _catalog_saved("Grupo excluído. As TES permanecem no Kardex.")
                 except Exception as exc:
                     st.error(f"Não foi possível excluir o grupo: {exc}")
 
-    st.markdown("**03 · CONDIÇÕES E SUBGRUPOS · FILA DE PRIORIDADE**")
-    st.caption(
-        "O sistema verifica as condições na ordem abaixo. A primeira condição "
-        "atendida classifica a movimentação e impede que ela entre nas seguintes. "
-        "Sem correspondência, o subgrupo será igual ao grupo da TES."
-    )
+    st.markdown("**Prioridade das condições**")
+    st.caption("A primeira condição atendida define o subgrupo.")
     from kardex_conditions import TEMPLATES, TEMPLATE_BY_RULE
     unregistered = [
         item for item in TEMPLATES
@@ -826,20 +831,19 @@ def _catalog(frame):
                 [item["id"] for item in unregistered],
                 format_func=lambda key: next(x["nome"] for x in unregistered if x["id"] == key)
             )
-            if st.form_submit_button("INCLUIR REGRA NA FILA"):
+            if st.form_submit_button("Incluir regra", type="primary"):
                 try:
                     updated = groups.add_predefined_condition(
                         config, rule_id, known_tes=available
                     )
                     _groups_commit(updated, available)
-                    st.rerun()
+                    _catalog_saved("Regra incluída na fila.")
                 except Exception as exc:
                     st.error(f"Não foi possível incluir a regra: {exc}")
-    st.markdown("**PRIORIDADE · SUBGRUPO · CRITÉRIO**")
     for priority, condition in enumerate(config["condicoes"], 1):
         template = TEMPLATE_BY_RULE.get(condition.get("regra", ""))
-        with st.container(border=True):
-            info, up, down, delete = st.columns([6, 1, 1, 1], gap="small")
+        with st.container(key="fm_mov_condition_row_" + condition["id"], border=True):
+            info, up, down, delete = st.columns([6, 1, 1, 1.6], gap="small")
             with info:
                 st.markdown(f"**{priority:02d} · {condition['nome']}**")
                 st.caption(
@@ -848,52 +852,53 @@ def _catalog(frame):
                 )
             with up:
                 if st.button("↑", key="fm_mov_condition_up_" + condition["id"],
-                             disabled=priority == 1):
+                             disabled=priority == 1, help="Subir prioridade"):
                     try:
                         _groups_commit(groups.move_condition(
                             config, condition["id"], -1, known_tes=available
                         ), available)
-                        st.rerun()
+                        _catalog_saved("Prioridade atualizada.")
                     except Exception as exc:
                         st.error(f"Erro ao alterar a prioridade: {exc}")
             with down:
                 if st.button("↓", key="fm_mov_condition_down_" + condition["id"],
-                             disabled=priority == len(config["condicoes"])):
+                             disabled=priority == len(config["condicoes"]), help="Descer prioridade"):
                     try:
                         _groups_commit(groups.move_condition(
                             config, condition["id"], 1, known_tes=available
                         ), available)
-                        st.rerun()
+                        _catalog_saved("Prioridade atualizada.")
                     except Exception as exc:
                         st.error(f"Erro ao alterar a prioridade: {exc}")
             with delete:
                 with st.popover("Excluir"):
                     st.caption("Excluir esta condição interrompe sua aplicação, sem apagar movimentos.")
-                    if st.button("CONFIRMAR EXCLUSÃO",
+                    if st.button("Confirmar exclusão",
                                  key="fm_mov_condition_delete_" + condition["id"]):
                         try:
                             _groups_commit(groups.delete_condition(
                                 config, condition["id"], known_tes=available
                             ), available)
-                            st.rerun()
+                            _catalog_saved("Condição excluída.")
                         except Exception as exc:
                             st.error(f"Não foi possível excluir a condição: {exc}")
-    with st.expander("Adicionar condição personalizada (sem regra automática)"):
-        with st.form("fm_mov_condition_create", clear_on_submit=True):
+    with st.expander("Adicionar condição personalizada"):
+        condition_revision = st.session_state.get("fm_mov_condition_create_revision", 0)
+        with st.form(f"fm_mov_condition_create_{condition_revision}"):
             condition_name = st.text_input("Nome da nova condição")
-            if st.form_submit_button("CADASTRAR CONDIÇÃO"):
+            if st.form_submit_button("Cadastrar condição", type="primary"):
                 try:
                     updated = groups.create_condition(
                         config, condition_name, known_tes=available
                     )
                     _groups_commit(updated, available)
-                    st.rerun()
                 except Exception as exc:
                     st.error(f"Não foi possível cadastrar a condição: {exc}")
-    st.caption("A configuração afeta apenas os subgrupos apresentados e exportados. "
-               "O grupo, a TES, os estoques, os valores e as quantidades originais são preservados.")
+                else:
+                    st.session_state.fm_mov_condition_create_revision = condition_revision + 1
+                    _catalog_saved("Condição cadastrada.")
 
-    with st.expander("04 · CONSULTAR CATÁLOGO TES"):
+    with st.expander("Consultar catálogo de TES"):
         movements_by_code = frame.groupby("tes", sort=False).size().to_dict()
         rows = [
             {"TES": code, "Descrição TES": data["descricao"],
@@ -955,12 +960,6 @@ def _exports(frame, model, token, *, include_history=True):
 
 def render_results(model, imports):
     scope = _context(model["frame"], imports, model.get("coverage_metas"))
-    st.markdown('''<style>
-    .st-key-fm_mov_navigation{margin:.1rem 0 .6rem}
-    .st-key-fm_mov_navigation button{min-height:44px!important;border-radius:10px!important;font-weight:700!important}
-    .st-key-fm_mov_navigation button[aria-checked="true"]{background:#111827!important;color:#fff!important;border-color:#111827!important}
-    .st-key-fm_mov_navigation button[aria-checked="true"] p{color:#fff!important}
-    </style>''', unsafe_allow_html=True)
     area = st.session_state.get("fm_mov_area")
     # Reaproveita sessões antigas sem reabrir os menus descontinuados.
     area = {
@@ -1007,7 +1006,8 @@ def render_results(model, imports):
     elif area == "Por OP":
         _ops(view, token)
     elif area == "Cadastros":
-        _catalog(view)
+        with st.container(key="fm_mov_catalog"):
+            _catalog(view)
 
 
 def render_movement_analysis():
