@@ -5369,13 +5369,7 @@ with _fm_page_surface.container():
     elif page == "Conferência de baixas":
         from issue_check_ui import render_issue_check
 
-        def _open_ops_feeder():
-            _set_fm_page("Configurações")
-            st.session_state["fm_settings_area"] = "ALIMENTADORES"
-            st.session_state["fm_feeder_type"] = "OPS"
-
-        render_issue_check(on_open_ops=_open_ops_feeder)
-
+        render_issue_check()
 
     elif page == "Análise de movimentações":
         # KARDEX: versões persistentes por mês/armazém, com substituição e consulta das bases vigentes.
