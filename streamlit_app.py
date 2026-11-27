@@ -425,21 +425,24 @@ def cached_parse_cb_source(raw: bytes, file_name: str, source: str) -> dict:
 
 
 @st.cache_data(show_spinner=False, ttl=25, max_entries=6)
-def load_cb_page_snapshot(competencia: date) -> dict[str, list[dict]]:
+def load_cb_page_snapshot(competencia: date, *, include_feeder: bool = True) -> dict[str, list[dict]]:
     """Leituras independentes da conferência, com cache curto e invalidação nas gravações.
 
-    As requisições são de leitura; o cache evita repetir sete consultas a cada
+    As requisições são de leitura; o cache evita repetir consultas a cada
     filtro ou abertura de seção. Nenhuma quantidade, valor ou critério é alterado.
     """
     sources = {
         "saldos": lambda: db.list_cb_system_balances(competencia),
         "catalogo": db.list_cb_catalog,
         "contagens": lambda: db.list_cb_counts(competencia),
-        "mapeamentos_chapas": db.list_cb_sheet_mappings,
-        "mapeamentos_fisicos": db.list_cb_physical_mappings,
-        "importacoes": lambda: db.list_cb_imports(competencia),
         "exclusoes": lambda: db.list_cb_exclusions(competencia),
     }
+    if include_feeder:
+        sources.update({
+            "mapeamentos_chapas": db.list_cb_sheet_mappings,
+            "mapeamentos_fisicos": db.list_cb_physical_mappings,
+            "importacoes": lambda: db.list_cb_imports(competencia),
+        })
     # Resolve credenciais uma única vez na thread Streamlit. Nenhum worker
     # acessa st.secrets, evitando autenticação incorreta em segundo plano.
     url, key = db.supabase_url(), db.supabase_key()
@@ -3902,124 +3905,125 @@ with _fm_page_surface.container(key=f"fm_route_body_{PAGES.index(page)}"):
                     history_view = st.segmented_control(
                         "Visualização do histórico",
                         ["FECHAMENTOS", "VALOR DAS BAIXAS", "ACURÁCIA DO ESTOQUE"],
-                        default="FECHAMENTOS",
+                        default="FECHAMENTOS", required=True,
                         key="fm_history_view",
                         width="stretch",
                         label_visibility="collapsed",
                     )
-                    if history_view == "ACURÁCIA DO ESTOQUE":
-                        from stock_accuracy import render as render_stock_accuracy
-                        render_stock_accuracy()
-                    elif history_view == "FECHAMENTOS":
-                        st.markdown(
-                            history_table_html(
-                                history_months,
-                                _dashboard_summary_map,
-                                _dashboard_imports_by_month,
-                            ),
-                            unsafe_allow_html=True,
-                        )
-                    elif history_view == "VALOR DAS BAIXAS":
-                        st.caption(
-                            "BAIXAS ESTIMADAS = ESTOQUE INICIAL + COMPRAS − ESTOQUE FINAL. "
-                            "Compras são apuradas somente de movimentos identificáveis no "
-                            "KARDEX; períodos com cobertura ou classificação incompleta "
-                            "são sinalizados sem calcular uma baixa definitiva."
-                        )
-                        try:
-                            from closing_purchases import closing_write_off, summarize_purchases
-                            from movement_analysis_ui import _imports as _kardex_imports, _model as _kardex_model
-                            import movements as _kardex_moves
-                            import kardex_history as _kardex_history
+                    with section_surface("history", history_view):
+                        if history_view == "ACURÁCIA DO ESTOQUE":
+                            from stock_accuracy import render as render_stock_accuracy
+                            render_stock_accuracy()
+                        elif history_view == "FECHAMENTOS":
+                            st.markdown(
+                                history_table_html(
+                                    history_months,
+                                    _dashboard_summary_map,
+                                    _dashboard_imports_by_month,
+                                ),
+                                unsafe_allow_html=True,
+                            )
+                        elif history_view == "VALOR DAS BAIXAS":
+                            st.caption(
+                                "BAIXAS ESTIMADAS = ESTOQUE INICIAL + COMPRAS − ESTOQUE FINAL. "
+                                "Compras são apuradas somente de movimentos identificáveis no "
+                                "KARDEX; períodos com cobertura ou classificação incompleta "
+                                "são sinalizados sem calcular uma baixa definitiva."
+                            )
+                            try:
+                                from closing_purchases import closing_write_off, summarize_purchases
+                                from movement_analysis_ui import _imports as _kardex_imports, _model as _kardex_model
+                                import movements as _kardex_moves
+                                import kardex_history as _kardex_history
 
-                            _kardex_registry = _kardex_imports()
-                            _kardex_purchases = {}
-                            if _kardex_registry:
-                                _kardex_tokens = tuple(
-                                    (item["chave"], item.get("atualizado_em", ""),
-                                     item.get("meta") or {})
-                                    for item in _kardex_registry
-                                )
-                                _kardex_snapshot = _kardex_model(
-                                    _kardex_tokens,
-                                    _kardex_moves.rules()["versao"] + _kardex_history.VERSION,
-                                )
-                                _kardex_purchases = summarize_purchases(_kardex_snapshot)
-
-                            _write_off_rows = []
-                            for _competencia in history_months:
-                                _last = previous_month(_competencia)
-                                _initial = (
-                                    dimension_value(_dashboard_summary_map, _last, "TOTAL", "TOTAL")
-                                    if _last.isoformat() in _dashboard_imports_by_month
-                                    else None
-                                )
-                                _final = dimension_value(
-                                    _dashboard_summary_map, _competencia, "TOTAL", "TOTAL"
-                                )
-                                _purchases_info = _kardex_purchases.get(
-                                    _competencia.strftime("%Y-%m")
-                                )
-                                _write_off = closing_write_off(
-                                    _initial, _final, _purchases_info
-                                )
-                                if _initial is None:
-                                    _status = "PENDENTE · ESTOQUE INICIAL"
-                                elif _purchases_info is None:
-                                    _status = "PENDENTE · KARDEX NÃO CARREGADO"
-                                elif _purchases_info["armazens_pendentes"]:
-                                    _status = (
-                                        "PENDENTE · ARMAZÉNS "
-                                        + ", ".join(_purchases_info["armazens_pendentes"])
+                                _kardex_registry = _kardex_imports()
+                                _kardex_purchases = {}
+                                if _kardex_registry:
+                                    _kardex_tokens = tuple(
+                                        (item["chave"], item.get("atualizado_em", ""),
+                                         item.get("meta") or {})
+                                        for item in _kardex_registry
                                     )
-                                elif _purchases_info["registros_revisar"]:
-                                    _status = (
-                                        "PENDENTE · "
-                                        + str(_purchases_info["registros_revisar"])
-                                        + " ENTRADAS A CLASSIFICAR"
+                                    _kardex_snapshot = _kardex_model(
+                                        _kardex_tokens,
+                                        _kardex_moves.rules()["versao"] + _kardex_history.VERSION,
+                                    )
+                                    _kardex_purchases = summarize_purchases(_kardex_snapshot)
+
+                                _write_off_rows = []
+                                for _competencia in history_months:
+                                    _last = previous_month(_competencia)
+                                    _initial = (
+                                        dimension_value(_dashboard_summary_map, _last, "TOTAL", "TOTAL")
+                                        if _last.isoformat() in _dashboard_imports_by_month
+                                        else None
+                                    )
+                                    _final = dimension_value(
+                                        _dashboard_summary_map, _competencia, "TOTAL", "TOTAL"
+                                    )
+                                    _purchases_info = _kardex_purchases.get(
+                                        _competencia.strftime("%Y-%m")
+                                    )
+                                    _write_off = closing_write_off(
+                                        _initial, _final, _purchases_info
+                                    )
+                                    if _initial is None:
+                                        _status = "PENDENTE · ESTOQUE INICIAL"
+                                    elif _purchases_info is None:
+                                        _status = "PENDENTE · KARDEX NÃO CARREGADO"
+                                    elif _purchases_info["armazens_pendentes"]:
+                                        _status = (
+                                            "PENDENTE · ARMAZÉNS "
+                                            + ", ".join(_purchases_info["armazens_pendentes"])
+                                        )
+                                    elif _purchases_info["registros_revisar"]:
+                                        _status = (
+                                            "PENDENTE · "
+                                            + str(_purchases_info["registros_revisar"])
+                                            + " ENTRADAS A CLASSIFICAR"
+                                        )
+                                    else:
+                                        _status = "CALCULADO · CONFERIR CONTABILMENTE"
+
+                                    _write_off_rows.append({
+                                        "Competência": month_label(_competencia),
+                                        "Estoque inicial": _initial,
+                                        "Compras identificadas": (
+                                            _purchases_info["compras"]
+                                            if _purchases_info is not None else None
+                                        ),
+                                        "Estoque final": _final,
+                                        "Valor das baixas": _write_off,
+                                        "Situação": _status,
+                                    })
+                                if _write_off_rows:
+                                    st.dataframe(
+                                        pd.DataFrame(_write_off_rows),
+                                        hide_index=True,
+                                        use_container_width=True,
+                                        column_config={
+                                            column: st.column_config.NumberColumn(
+                                                column, format="R$ %.2f"
+                                            )
+                                            for column in (
+                                                "Estoque inicial", "Compras identificadas",
+                                                "Estoque final", "Valor das baixas"
+                                            )
+                                        },
                                     )
                                 else:
-                                    _status = "CALCULADO · CONFERIR CONTABILMENTE"
-
-                                _write_off_rows.append({
-                                    "Competência": month_label(_competencia),
-                                    "Estoque inicial": _initial,
-                                    "Compras identificadas": (
-                                        _purchases_info["compras"]
-                                        if _purchases_info is not None else None
-                                    ),
-                                    "Estoque final": _final,
-                                    "Valor das baixas": _write_off,
-                                    "Situação": _status,
-                                })
-                            if _write_off_rows:
-                                st.dataframe(
-                                    pd.DataFrame(_write_off_rows),
-                                    hide_index=True,
-                                    use_container_width=True,
-                                    column_config={
-                                        column: st.column_config.NumberColumn(
-                                            column, format="R$ %.2f"
-                                        )
-                                        for column in (
-                                            "Estoque inicial", "Compras identificadas",
-                                            "Estoque final", "Valor das baixas"
-                                        )
-                                    },
+                                    st.info("Nenhuma competência com estoque consolidado no histórico.")
+                                st.caption(
+                                    "Critério de compras: CFOP 1101/1102, 2101/2102 e 3101/3102 "
+                                    "ou TES explicitamente de compra, aquisição ou importação, "
+                                    "sem devoluções e transferências. O indicador não substitui "
+                                    "a conciliação contábil."
                                 )
-                            else:
-                                st.info("Nenhuma competência com estoque consolidado no histórico.")
-                            st.caption(
-                                "Critério de compras: CFOP 1101/1102, 2101/2102 e 3101/3102 "
-                                "ou TES explicitamente de compra, aquisição ou importação, "
-                                "sem devoluções e transferências. O indicador não substitui "
-                                "a conciliação contábil."
-                            )
-                        except Exception as exc:
-                            st.error(
-                                "Não foi possível calcular as baixas a partir do KARDEX: "
-                                + str(exc)
-                            )
+                            except Exception as exc:
+                                st.error(
+                                    "Não foi possível calcular as baixas a partir do KARDEX: "
+                                    + str(exc)
+                                )
 
 
 
@@ -4114,22 +4118,16 @@ with _fm_page_surface.container(key=f"fm_route_body_{PAGES.index(page)}"):
                 if cadastros_context.get("synchronized"):
                     load_cb_page_snapshot.clear()
                 try:
-                    cb_sources = load_cb_page_snapshot(cb_month)
+                    cb_sources = load_cb_page_snapshot(cb_month, include_feeder=False)
                     cb_closing_stock_items = cb_sources["saldos"]
                     cb_catalog = cb_sources["catalogo"]
                     cb_counts = cb_sources["contagens"]
-                    cb_mappings = cb_sources["mapeamentos_chapas"]
-                    cb_physical_mappings = cb_sources["mapeamentos_fisicos"]
-                    cb_imports = cb_sources["importacoes"]
                     cb_exclusions = cb_sources["exclusoes"]
                     cb_error = ""
                 except Exception as exc:
                     cb_closing_stock_items = []
                     cb_catalog = []
                     cb_counts = []
-                    cb_mappings = []
-                    cb_physical_mappings = []
-                    cb_imports = []
                     cb_exclusions = []
                     cb_error = str(exc)
 
@@ -4166,14 +4164,6 @@ with _fm_page_surface.container(key=f"fm_route_body_{PAGES.index(page)}"):
                 treatment_lookup = {
                     str(row.get("codigo") or "").strip(): row
                     for row in treatment_catalog
-                }
-                physical_mapping_lookup = {
-                    (
-                        str(row.get("fonte") or "").strip(),
-                        str(row.get("chave_origem") or "").strip(),
-                    ): str(row.get("codigo") or "").strip()
-                    for row in cb_physical_mappings
-                    if str(row.get("status") or "").upper() == "CONFIRMADO"
                 }
 
                 stock_positive_codes = set()
@@ -5391,7 +5381,7 @@ with _fm_page_surface.container(key=f"fm_route_body_{PAGES.index(page)}"):
         settings_view = st.segmented_control(
             "Área de configurações",
             ["STATUS API", "ALIMENTADORES", "MENU", "REGRAS", "DESEMPENHO"],
-            default="STATUS API",
+            default="STATUS API", required=True,
             format_func=lambda value: {
                 "STATUS API": "Bases e alertas", "ALIMENTADORES": "Alimentadores",
                 "MENU": "Menu", "REGRAS": "Regras", "DESEMPENHO": "Desempenho",
@@ -5406,86 +5396,88 @@ with _fm_page_surface.container(key=f"fm_route_body_{PAGES.index(page)}"):
                 feeder = st.segmented_control(
                     "Fonte de alimentação",
                     ["KARDEX", "OPS", "AJUSTES DE ESTOQUE", "ANALÍTICO", "CHAPAS E BARRAMENTOS"],
-                    default="KARDEX",
+                    default="KARDEX", required=True,
                     key="fm_feeder_type",
                     width="stretch",
                 )
-                if feeder == "KARDEX":
-                    from movement_analysis_ui import render_kardex_feeder
-                    render_kardex_feeder(
-                        current_month=live_competencia.isoformat()[:7],
-                        read_closed_months=lambda: {str(row.get("competencia") or "")[:7]
-                                                    for row in db.list_inventory_imports()},
-                    )
-                elif feeder == "AJUSTES DE ESTOQUE":
-                    from movement_analysis_ui import render_adjustments_feeder
-                    render_adjustments_feeder()
-                elif feeder == "OPS":
-                    from issue_check_ui import render_issue_check, render_ops_feeder
-
-                    ops_view = st.radio(
-                        "Área do OPS", ["Importar OPS", "Diagnóstico da conferência"],
-                        horizontal=True, key="fm_ops_settings_view", label_visibility="collapsed",
-                    )
-                    if ops_view == "Diagnóstico da conferência":
-                        render_issue_check(diagnostics=True)
-                    else:
-                        render_ops_feeder()
-                elif feeder == "ANALÍTICO":
-                    section_band(
-                        "01 · ALIMENTAÇÃO", "ANALÍTICO DE ESTOQUE",
-                        "Carga manual de contingência por competência. "
-                        "A conexão automática segue monitorada em STATUS API.",
-                    )
-                    render_manual_contingency(imports_by_month)
-                elif feeder == "CHAPAS E BARRAMENTOS":
-                    section_band(
-                        "02 · ALIMENTAÇÃO", "ESTOQUE E CONTAGENS FÍSICAS",
-                        "Importe a posição de fechamento e as contagens do setor de "
-                        "chapas, barramentos e almoxarifado.",
-                    )
-                    if not visible_months:
-                        st.warning("Nenhuma competência disponível para alimentar.")
-                    else:
-                        cb_month = st.selectbox(
-                            "Competência a alimentar",
-                            visible_months,
-                            index=len(visible_months) - 1,
-                            format_func=month_label,
-                            key="fm_feeder_month",
+                with section_surface("feeders", feeder):
+                    if feeder == "KARDEX":
+                        from movement_analysis_ui import render_kardex_feeder
+                        render_kardex_feeder(
+                            current_month=live_competencia.isoformat()[:7],
+                            read_closed_months=lambda: {str(row.get("competencia") or "")[:7]
+                                                        for row in db.list_inventory_imports()},
                         )
-                        try:
-                            cadastros_context = central_cadastros_context()
-                            if cadastros_context.get("synchronized"):
-                                load_cb_page_snapshot.clear()
-                            cb_sources = load_cb_page_snapshot(cb_month)
-                            cb_catalog = cb_sources["catalogo"]
-                            standby_catalog = [
-                                row for row in cb_catalog
-                                if bool(row.get("ativo", True))
-                                and str(row.get("status") or "").upper() != "IGNORADO"
-                            ]
-                            physical_mapping_lookup = {
-                                (str(row.get("fonte") or "").strip(),
-                                 str(row.get("chave_origem") or "").strip()):
-                                str(row.get("codigo") or "").strip()
-                                for row in cb_sources["mapeamentos_fisicos"]
-                                if str(row.get("status") or "").upper() == "CONFIRMADO"
-                            }
-                            render_cb_feeders(
-                                cb_month,
-                                cb_sources["saldos"],
-                                closing_date(cb_month).strftime("%d/%m/%Y"),
-                                standby_catalog,
-                                cb_catalog,
-                                cb_sources["mapeamentos_chapas"],
-                                physical_mapping_lookup,
-                                cadastros_context,
-                                cb_sources["importacoes"],
+                    elif feeder == "AJUSTES DE ESTOQUE":
+                        from movement_analysis_ui import render_adjustments_feeder
+                        render_adjustments_feeder()
+                    elif feeder == "OPS":
+                        from issue_check_ui import render_issue_check, render_ops_feeder
+
+                        ops_view = st.radio(
+                            "Área do OPS", ["Importar OPS", "Diagnóstico da conferência"],
+                            horizontal=True, key="fm_ops_settings_view", label_visibility="collapsed",
+                        )
+                        with section_surface("ops_source", ops_view):
+                            if ops_view == "Diagnóstico da conferência":
+                                render_issue_check(diagnostics=True)
+                            else:
+                                render_ops_feeder()
+                    elif feeder == "ANALÍTICO":
+                        section_band(
+                            "01 · ALIMENTAÇÃO", "ANALÍTICO DE ESTOQUE",
+                            "Carga manual de contingência por competência. "
+                            "A conexão automática segue monitorada em STATUS API.",
+                        )
+                        render_manual_contingency(imports_by_month)
+                    elif feeder == "CHAPAS E BARRAMENTOS":
+                        section_band(
+                            "02 · ALIMENTAÇÃO", "ESTOQUE E CONTAGENS FÍSICAS",
+                            "Importe a posição de fechamento e as contagens do setor de "
+                            "chapas, barramentos e almoxarifado.",
+                        )
+                        if not visible_months:
+                            st.warning("Nenhuma competência disponível para alimentar.")
+                        else:
+                            cb_month = st.selectbox(
+                                "Competência a alimentar",
                                 visible_months,
+                                index=len(visible_months) - 1,
+                                format_func=month_label,
+                                key="fm_feeder_month",
                             )
-                        except Exception as exc:
-                            st.error("Não foi possível carregar os alimentadores: " + str(exc))
+                            try:
+                                cadastros_context = central_cadastros_context()
+                                if cadastros_context.get("synchronized"):
+                                    load_cb_page_snapshot.clear()
+                                cb_sources = load_cb_page_snapshot(cb_month)
+                                cb_catalog = cb_sources["catalogo"]
+                                standby_catalog = [
+                                    row for row in cb_catalog
+                                    if bool(row.get("ativo", True))
+                                    and str(row.get("status") or "").upper() != "IGNORADO"
+                                ]
+                                physical_mapping_lookup = {
+                                    (str(row.get("fonte") or "").strip(),
+                                     str(row.get("chave_origem") or "").strip()):
+                                    str(row.get("codigo") or "").strip()
+                                    for row in cb_sources["mapeamentos_fisicos"]
+                                    if str(row.get("status") or "").upper() == "CONFIRMADO"
+                                }
+                                render_cb_feeders(
+                                    cb_month,
+                                    cb_sources["saldos"],
+                                    closing_date(cb_month).strftime("%d/%m/%Y"),
+                                    standby_catalog,
+                                    cb_catalog,
+                                    cb_sources["mapeamentos_chapas"],
+                                    physical_mapping_lookup,
+                                    cadastros_context,
+                                    cb_sources["importacoes"],
+                                    visible_months,
+                                )
+                            except Exception as exc:
+                                st.error("Não foi possível carregar os alimentadores: " + str(exc))
 
             if settings_view == "STATUS API":
                 if api_sources_error:

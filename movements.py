@@ -508,7 +508,7 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None, *,
     """
     from openpyxl import Workbook
     from openpyxl.cell import WriteOnlyCell
-    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.styles import Alignment, Font, NamedStyle, PatternFill
     from openpyxl.utils import get_column_letter
     import kardex_group_config as gc
     import kardex_conditions as conditions
@@ -526,6 +526,27 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None, *,
     money_format = '#,##0.00;[Red](#,##0.00)'
     quantity_format = '#,##0.000###;[Red](#,##0.000###)'
     counters = {}
+    style_cache = {}
+
+    def style_for(kind, indented, highlighted, number_format):
+        key = (kind, indented, highlighted, number_format)
+        if key not in style_cache:
+            shared = NamedStyle(
+                name=f"Setta {len(style_cache) + 1}",
+                font=Font(name="Arial", size=10, bold=kind in ("header", "group", "total"),
+                          color="FFFFFF" if kind == "header" else title_color),
+                alignment=Alignment(vertical="center", wrap_text=kind == "header",
+                                    indent=1 if indented else 0),
+                number_format=number_format,
+            )
+            fill_color = "FFCC99" if highlighted else {
+                "header": title_color, "group": group_color, "total": total_color, "child": detail_color
+            }.get(kind)
+            if fill_color:
+                shared.fill = PatternFill("solid", fgColor=fill_color)
+            wb.add_named_style(shared)
+            style_cache[key] = shared
+        return style_cache[key]
 
     def start_sheet(name: str, headers: list[str], widths: list[int], *, outline: bool = False):
         sheet = wb.create_sheet(name)
@@ -565,29 +586,17 @@ def export_excel(frame: pd.DataFrame, group_config: dict | None = None, *,
             if isinstance(item, str):
                 # Never interpret descriptions, product codes or documents as formulas.
                 cell.data_type = "s"
-            cell.font = Font(
-                name="Arial", size=10,
-                bold=style in ("header", "group", "total"),
-                color="FFFFFF" if style == "header" else title_color,
-            )
-            if style == "header":
-                cell.fill = PatternFill("solid", fgColor=title_color)
-            elif style in ("group", "total"):
-                cell.fill = PatternFill("solid", fgColor=group_color if style == "group" else total_color)
-            elif style == "child":
-                cell.fill = PatternFill("solid", fgColor=detail_color)
-            if index == highlight_col:
-                cell.fill = PatternFill("solid", fgColor="FFCC99")
-            cell.alignment = Alignment(
-                vertical="center", wrap_text=style == "header",
-                indent=1 if level and index == 1 else 0,
-            )
             if index in date_cols and isinstance(item, (date, datetime)):
-                cell.number_format = "dd/mm/yyyy"
+                fmt = "dd/mm/yyyy"
             elif index in money_cols and isinstance(item, (int, float, Decimal)):
-                cell.number_format = money_format
+                fmt = money_format
             elif index in quantity_cols and isinstance(item, (int, float, Decimal)):
-                cell.number_format = quantity_format
+                fmt = quantity_format
+            elif isinstance(item, (date, datetime)):
+                fmt = cell.number_format
+            else:
+                fmt = "General"
+            cell.style = style_for(style, bool(level and index == 1), index == highlight_col, fmt)
             filled.append(cell)
         sheet.append(filled)
 

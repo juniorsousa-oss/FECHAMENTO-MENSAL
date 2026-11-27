@@ -1,7 +1,14 @@
 (() => {
   // O HTML do topo é reemitido pelo Streamlit; o listener é único por página.
-  if (window.__settaFechamentoNavigation) return;
-  window.__settaFechamentoNavigation = true;
+  const assetVersion = 3;
+  if (window.__settaFechamentoNavigation?.version === assetVersion) return;
+  const previous = window.__settaFechamentoNavigation;
+  if (previous === true) return; // Live sessions running the legacy script switch on refresh.
+  previous?.dispose?.();
+  const controller = new AbortController();
+  window.__settaFechamentoNavigation = {version: assetVersion, dispose};
+  const listen = (type, listener, capture = false) =>
+    document.addEventListener(type, listener, {capture, signal: controller.signal});
   const root = document.documentElement;
   const bodySelector = '[data-testid="stMainBlockContainer"]';
   const renderedRoute = () => document.querySelector('.setta-inv-intro')?.dataset.settaRoute;
@@ -15,6 +22,9 @@
     ['kardex', '.st-key-fm_mov_navigation'],
     ['reports', '.st-key-fm_reports_kind'],
     ['settings', '.st-key-fm_settings_area'],
+    ['history', '.st-key-fm_history_view'],
+    ['feeders', '.st-key-fm_feeder_type'],
+    ['ops_source', '.st-key-fm_ops_settings_view'],
   ];
   let frame = 0;
 
@@ -58,7 +68,7 @@
     if (node instanceof Element) node.querySelectorAll(inputHint).forEach(updateInputHint);
   }
   document.querySelectorAll(inputHint).forEach(updateInputHint);
-  new MutationObserver(records => {
+  const hintObserver = new MutationObserver(records => {
     for (const record of records) {
       if (record.type === 'characterData') inspectInputHints(record.target);
       else {
@@ -72,7 +82,16 @@
         }
       }
     }
-  }).observe(document.body, {subtree: true, childList: true, characterData: true});
+  });
+  hintObserver.observe(document.body, {subtree: true, childList: true, characterData: true});
+  function dispose() {
+    controller.abort();
+    hintObserver.disconnect();
+    if (frame) cancelAnimationFrame(frame);
+    finishRoute();
+    finishSection();
+    finishOp(false);
+  }
 
   const staleSelector = '[data-stale="true"]';
   const marker = (selector) => document.querySelector(selector);
@@ -143,8 +162,16 @@
     if (pending || !(event.target instanceof Element)) return;
     const match = sectionKeys.find(([, selector]) => event.target.closest(selector));
     if (!match) return;
-    if (event.type === 'click' && !event.target.closest('button,label,input,[role="radio"]')) return;
-    if (event.type === 'keydown' && !['Enter', ' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    const picker = event.target.closest(match[1]);
+    if (event.type === 'change' && !event.target.matches('input[type="radio"]')) return;
+    if (event.type === 'click') {
+      // Native/React Aria radios signal real changes themselves. A click on
+      // the already active option must not cover the panel for 650 ms.
+      if (picker.querySelector('input[type="radio"]')) return;
+      const option = event.target.closest('button,[role="radio"]');
+      if (!option || option.disabled || option.getAttribute('aria-checked') === 'true'
+          || option.getAttribute('aria-pressed') === 'true') return;
+    }
     const [name] = match;
     const ready = marker('[data-setta-section-ready="' + name + '"]');
     if (!ready) return;
@@ -153,7 +180,7 @@
     watch();
   }
 
-  document.addEventListener('click', event => {
+  listen('click', event => {
     if (!(event.target instanceof Element)) return;
     if (event.target.closest(toggleSelector)) {
       setDrawer(!drawerOpen());
@@ -196,8 +223,8 @@
     watch();
   }, true);
 
-  document.addEventListener('keydown', startSection, true);
-  document.addEventListener('keydown', event => {
+  listen('change', startSection, true);
+  listen('keydown', event => {
     if (event.defaultPrevented || event.key !== 'Escape' || !drawerOpen()) return;
     if (!(event.target instanceof Element) ||
         !event.target.closest(sidebarSelector + ',' + toggleSelector)) return;

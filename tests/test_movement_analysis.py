@@ -143,6 +143,11 @@ class MovementAnalysisTests(unittest.TestCase):
         self.assertFalse(first.sheet_properties.outlinePr.summaryBelow)
         self.assertEqual(first["A5"].value, "TOTAL GERAL")
         self.assertEqual(first["G5"].value, 10)
+        self.assertEqual(first["A1"].font.name, "Arial")
+        self.assertTrue(first["A1"].font.bold)
+        self.assertTrue(first["A1"].alignment.wrap_text)
+        self.assertEqual(first["A3"].alignment.indent, 1)
+        self.assertEqual(first["G5"].number_format, '#,##0.00;[Red](#,##0.00)')
 
         op = wb["Por OP"]
         self.assertEqual(op["A2"].value, "OP00001234567")
