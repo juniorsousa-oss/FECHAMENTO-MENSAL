@@ -107,7 +107,7 @@ jobs:
       - name: Validar substituição mensal dos arquivos KARDEX
         run: python -m unittest discover -s tests -p 'test_kardex*.py'
       - name: Testar relatório completo de contagens
-        run: python tests/test_movimentacao_todas_contagens.py
+        run: PYTHONPATH=. python tests/test_movimentacao_todas_contagens.py
       - name: Validar estrutura
         run: |
           python - <<'PY'
