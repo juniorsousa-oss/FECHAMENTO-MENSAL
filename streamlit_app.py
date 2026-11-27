@@ -860,7 +860,7 @@ def central_analitico_context(force: bool = False) -> dict:
 
 
 def central_cadastros_context(
-    force: bool = False,
+    force: bool = False, *, include_parsed: bool = True,
 ) -> dict:
     if force:
         central_data.source_state_for.clear()
@@ -889,9 +889,7 @@ def central_cadastros_context(
         load_central_cadastros.clear()
 
     try:
-        parsed, download_meta = load_central_cadastros(
-            token
-        )
+        parsed, download_meta = {}, {}
         # Checar a existência do catálogo apenas na primeira validação da versão,
         # em vez de baixar a tabela inteira a cada rerun de filtros e widgets.
         confirmed = st.session_state.get("_fm_cadastros_synced") == token
@@ -899,7 +897,7 @@ def central_cadastros_context(
         if force or not confirmed:
             sync = central_data.sync_state_for("cadastros")
             try:
-                _catalog_empty = not bool(db.list_cb_catalog())
+                _catalog_empty = not db.has_cb_catalog()
             except Exception:
                 _catalog_empty = False
             needs_sync = (
@@ -908,6 +906,9 @@ def central_cadastros_context(
                 or str(sync.get("version_token") or "") != token
                 or str(sync.get("status") or "").upper() != "ATUALIZADO"
             )
+        if needs_sync or include_parsed:
+            parsed, download_meta = load_central_cadastros(token)
+        if force or not confirmed:
             if needs_sync:
                 db.sync_cb_catalog(parsed["candidates"])
                 central_data.commit_source_sync(
@@ -3931,8 +3932,8 @@ with _fm_page_surface.container(key=f"fm_route_body_{PAGES.index(page)}"):
                                 "são sinalizados sem calcular uma baixa definitiva."
                             )
                             try:
-                                from closing_purchases import closing_write_off, summarize_purchases
-                                from movement_analysis_ui import _imports as _kardex_imports, _model as _kardex_model
+                                from closing_purchases import closing_write_off
+                                from movement_analysis_ui import _imports as _kardex_imports, _purchase_summary
                                 import movements as _kardex_moves
                                 import kardex_history as _kardex_history
 
@@ -3944,11 +3945,10 @@ with _fm_page_surface.container(key=f"fm_route_body_{PAGES.index(page)}"):
                                          item.get("meta") or {})
                                         for item in _kardex_registry
                                     )
-                                    _kardex_snapshot = _kardex_model(
+                                    _kardex_purchases = _purchase_summary(
                                         _kardex_tokens,
                                         _kardex_moves.rules()["versao"] + _kardex_history.VERSION,
                                     )
-                                    _kardex_purchases = summarize_purchases(_kardex_snapshot)
 
                                 _write_off_rows = []
                                 for _competencia in history_months:
@@ -4112,7 +4112,7 @@ with _fm_page_surface.container(key=f"fm_route_body_{PAGES.index(page)}"):
                     )
                 )
                 cadastros_context = central_cadastros_context(
-                    force=force_cadastros
+                    force=force_cadastros, include_parsed=False
                 )
 
                 if cadastros_context.get("synchronized"):

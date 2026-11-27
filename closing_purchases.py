@@ -77,7 +77,9 @@ def summarize_purchases(model: dict) -> dict[str, dict]:
 
     result = {}
     for month, values in months.items():
-        missing = sorted(all_warehouses - values["armazens"])
+        # Warehouse 20 was explicitly defined as optional when no load
+        # exists. Count its valid entries in months where it was loaded.
+        missing = sorted((all_warehouses - {"20"}) - values["armazens"])
         pending = bool(missing or values["registros_revisar"])
         result[month] = {
             "compras": float(values["compras"]),

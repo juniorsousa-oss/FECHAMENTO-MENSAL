@@ -113,9 +113,17 @@ def _model(tokens: tuple, version: str):
     return mv.build_model(store.load_history(entries))
 
 
+@st.cache_data(show_spinner=False, ttl=600, max_entries=3)
+def _purchase_summary(tokens: tuple, version: str):
+    from closing_purchases import summarize_purchases
+    return summarize_purchases(_model(tokens, version))
+
+
+
 def _reload():
     _imports.clear()
     _model.clear()
+    _purchase_summary.clear()
     _groups_read.clear()
     issue_ui = sys.modules.get("issue_check_ui")
     if issue_ui:
@@ -540,7 +548,7 @@ def _context(frame, imports, coverage=None):
                 for warehouse, end in ends.items():
                     st.caption(warehouse + ": " + (date.fromisoformat(end).strftime("até %d/%m/%Y")
                                                      if end else "sem arquivo no período"))
-    if coverage_end and coverage_end[:7] == month:
+    if coverage_end and coverage_end[:7] == month and month != current_month:
         if selected_date.month == 12:
             next_month = date(selected_date.year+1, 1, 1)
         else:
