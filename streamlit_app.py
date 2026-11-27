@@ -3341,6 +3341,10 @@ PAGE_ICONS = {
 def _fm_page_label(section: str) -> str:
     default = DEFAULT_CONFIG["menu_labels"].get(section, section)
     configured = str(menu_labels.get(section) or "").strip()
+    if section == "Conferência de chapas e barramentos" and configured.casefold() == "chapas e barramentos":
+        return "Chapas e barramentos"
+    if section == "Análise de movimentações" and configured.casefold() == "kardex":
+        return "Kardex"
     return configured if configured and configured != default else section
 
 
@@ -3379,29 +3383,26 @@ with st.sidebar:
                 args=(internal_page,),
             )
 
-    st.markdown(
-        (
+    with st.container(key="fm_sidebar_status"):
+        st.html(
             '<div class="sidebar-status-section">'
-            '<div class="sidebar-section-label sidebar-status-label">STATUS GERAL</div>'
+            '<div class="sidebar-section-label sidebar-status-label">Status geral</div>'
             '<div class="sidebar-status-card">'
-            '<div class="sidebar-status-name">CONEXÕES</div>'
+            '<div class="sidebar-status-name">Conexões</div>'
             f'<div class="sidebar-status-value {_sidebar_status_class}">{html.escape(str(api_summary["status"]))}</div>'
             '<div class="sidebar-status-meta">'
-            f'<div>ÚLTIMA ATUALIZAÇÃO: {html.escape(str(api_summary.get("last_update") or "—"))}</div>'
-            f'<div>QNT DE BASES: {api_summary["healthy"]}/{api_summary["total"]}</div>'
-            '</div>'
-            '</div>'
-            '</div>'
-        ),
-        unsafe_allow_html=True,
-    )
-    st.button(
-        "ATUALIZAR DADOS",
-        key="fm_sidebar_refresh_data",
-        on_click=_refresh_fm_data,
-        use_container_width=True,
-        help="Força a atualização das fontes, do resumo e dos relatórios sem reiniciar a sessão.",
-    )
+            f'<div>Atualização: {html.escape(str(api_summary.get("last_update") or "—"))}</div>'
+            f'<div>Bases: {api_summary["healthy"]}/{api_summary["total"]}</div>'
+            '</div></div></div>'
+        )
+        st.button(
+            "Atualizar dados",
+            key="fm_sidebar_refresh_data",
+            on_click=_refresh_fm_data,
+            icon=":material/refresh:",
+            width="stretch",
+            help="Atualiza as fontes, o resumo e os relatórios sem reiniciar a sessão.",
+        )
 
 # Placeholder estável: substitui o conteúdo da página anterior logo no início
 # da navegação, antes de consultar fontes ou executar relatórios pesados.

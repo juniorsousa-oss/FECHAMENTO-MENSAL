@@ -71,7 +71,7 @@ body:has(.setta-shell-marker) :is(
 [data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"],[data-testid="stSidebarUserContent"] > [data-testid="stVerticalBlock"]{min-height:100%;flex:1 0 auto;gap:5px!important}
 .sidebar-brand,.sidebar-section-label{display:block;color:#d2d2d2;font-size:.67rem;line-height:15px;font-weight:800;letter-spacing:.12em;padding:0;margin:0 0 8px;text-transform:uppercase}
 /* Visual dos itens de navegação alinhado ao MRP, sem alterar o rodapé. */
-.st-key-setta_route_list{width:100%!important;max-width:176px!important;margin-inline:auto!important}
+.st-key-setta_route_list{width:100%!important;max-width:176px!important;margin-inline:auto!important;gap:0!important}
 /* O primeiro grupo preserva sua posição e espaçamento originais. */
 .st-key-setta_route_list .st-key-setta_nav_0{margin-top:8px!important}
 /* Títulos entre grupos recebem 12px acima e mantêm 8px abaixo. */
@@ -136,7 +136,12 @@ body [data-testid="stMain"] .st-key-setta_drawer_toggle button{background:#42424
 .stApp [data-testid="stTabs"] [role="tablist"]{overflow-x:auto;scrollbar-width:thin}
 .stApp [data-testid="stTabs"] [role="tab"]{flex-shrink:0}
 @media(max-width:700px){.setta-inv-intro{padding-top:10px}}
-.sidebar-status-section{margin-top:9px}
+/* Match the navigation rhythm in Inventário even on Streamlit builds
+   that apply the default 1rem gap inside keyed containers. */
+[data-testid="stSidebar"] .st-key-setta_route_list [data-testid="stVerticalBlock"]{gap:0!important}
+.st-key-fm_sidebar_status{width:100%;max-width:176px;margin:10px auto 0;gap:8px!important}
+.st-key-fm_sidebar_status .sidebar-status-label{margin-top:0}
+[data-testid="stSidebar"] .st-key-fm_sidebar_refresh_data button{justify-content:flex-start;padding-inline:10px}
 .sidebar-status-meta > div + div{margin-top:2px}
 .stApp [data-testid="stButtonGroup"] :is([aria-checked="true"],[aria-pressed="true"],[data-selected]){
  color:#333!important;background:#fff3cc!important;border-color:#8a6500!important
