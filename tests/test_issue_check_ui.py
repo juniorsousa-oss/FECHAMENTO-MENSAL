@@ -98,9 +98,9 @@ class IssueCheckUITests(unittest.TestCase):
     def test_op_filters_material_evidence_and_export(self):
         app = AppTest.from_string(PROGRAM, default_timeout=20).run()
         self.assertFalse(app.exception)
-        self.assertEqual(len(app.expander), 0)  # fontes e OPs são abertas sob demanda
+        self.assertEqual([e.label for e in app.expander], ["Filtros", "Totais da pesquisa", "Exportar conferência completa"])
         self.assertTrue(any("ORDEM COM ALERTA" in b.label for b in app.button))
-        self.assertTrue(any("ORDEM EM SEPARAÇÃO" in b.label for b in app.button))
+        self.assertFalse(any("ORDEM EM SEPARAÇÃO" in b.label for b in app.button))
         self.assertEqual(len(app.dataframe), 0)  # nenhum detalhe pesado antes do clique
         self.assertFalse(any(r.label == "Consulta" for r in app.radio))
 
@@ -122,17 +122,17 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertEqual(ui._material_at_position(frame, {"rows": [1]})["item_id"], "b")
         self.assertIsNone(ui._material_at_position(frame, {"rows": []}))
 
-        next(x for x in app.selectbox if x.label == "ALERTAS").set_value("Com alertas")
+        next(x for x in app.selectbox if x.label == "Mostrar").set_value("Com alertas")
         # Formulários só enviam os valores rascunhados quando recebem submit.
-        self.assertEqual(len([b for b in app.button if "OP 2600" in b.label]), 2)
-        next(b for b in app.button if b.label == "PESQUISAR").click().run()
+        self.assertEqual(len([b for b in app.button if "OP 2600" in b.label]), 1)
+        next(b for b in app.button if b.label == "Buscar").click().run()
         self.assertFalse(app.exception)
         self.assertEqual(len([b for b in app.button if "OP 2600" in b.label]), 1)
 
-        next(x for x in app.selectbox if x.label == "ALERTAS").set_value("Todos")
-        next(x for x in app.text_input if x.label == "LOCALIZAR OP").set_value("26000201001")
+        next(x for x in app.selectbox if x.label == "Mostrar").set_value("Prioridade")
+        next(x for x in app.text_input if x.label == "Buscar OP").set_value("26000201001")
         self.assertFalse(app.exception)
-        next(b for b in app.button if b.label == "PESQUISAR").click().run()
+        next(b for b in app.button if b.label == "Buscar").click().run()
         self.assertFalse(app.exception)
         self.assertEqual(len([b for b in app.button if "OP 2600" in b.label]), 1)
         self.assertTrue(any("ORDEM EM SEPARAÇÃO" in b.label for b in app.button))
@@ -249,27 +249,23 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertIn('border:2px solid #9dabbf!important', source)
         self.assertIn('min-height:48px!important', source)
         self.assertIn('box-shadow:0 0 0 3px rgba(24,49,79,.16)', source)
-        for key in ("fm_issue_search_group", "fm_issue_class_group", "fm_issue_date_filters"):
-            self.assertIn(f'key="{key}"', source)
-        self.assertIn("01 · PESQUISA", source)
-        self.assertIn("02 · CLASSIFICAÇÃO", source)
-        self.assertIn("03 · PERÍODO DE FATURAMENTO", source)
+        self.assertIn('with st.expander("Filtros", expanded=False):', source)
         app = AppTest.from_string(PROGRAM, default_timeout=20).run()
         self.assertFalse(app.exception)
-        self.assertEqual({w.label for w in app.date_input}, {"DATA INICIAL", "DATA FINAL"})
-        self.assertTrue(any(w.label == "LOCALIZAR OP" for w in app.text_input))
-        self.assertTrue(any(w.label == "STATUS DA OP" for w in app.selectbox))
-        self.assertTrue(any(w.label == "ALERTAS" for w in app.selectbox))
+        self.assertEqual({w.label for w in app.date_input}, {"Faturamento inicial", "Faturamento final"})
+        self.assertTrue(any(w.label == "Buscar OP" for w in app.text_input))
+        self.assertTrue(any(w.label == "Status da OP" for w in app.selectbox))
+        self.assertTrue(any(w.label == "Mostrar" for w in app.selectbox))
 
     def test_selectbox_content_and_filter_buttons_use_shared_alignment(self):
         source = (Path(__file__).resolve().parents[1] / "issue_check_ui.py").read_text("utf-8")
         self.assertIn(
-            '.st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] > div > div:first-child',
+            '.st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] > div > div:first-child',
             source,
         )
         self.assertIn('align-items:center!important;', source)
         self.assertIn(
-            '.st-key-fm_issue_class_group [data-testid="stSelectbox"] [data-baseweb="select"] svg',
+            '.st-key-fm_issue_filters [data-testid="stSelectbox"] [data-baseweb="select"] svg',
             source,
         )
         self.assertIn(
@@ -298,39 +294,39 @@ class IssueCheckUITests(unittest.TestCase):
         self.assertNotIn('with actions:', action_layout)
         self.assertIn('max-width:450px!important;', source)
         self.assertIn('flex-direction:row!important;', source)
-        self.assertIn('"PESQUISAR"', action_layout)
-        self.assertIn('"LIMPAR FILTROS"', action_layout)
+        self.assertIn('"Buscar"', action_layout)
+        self.assertIn('"Limpar filtros"', action_layout)
         self.assertIn('height:46px!important;', source)
         self.assertIn('margin:0!important;', source)
         self.assertIn('with st.form("fm_issue_filter_form"', source)
         app = AppTest.from_string(PROGRAM, default_timeout=20).run()
         self.assertFalse(app.exception)
-        self.assertTrue(any(b.label == "PESQUISAR" for b in app.button))
-        self.assertTrue(any(b.label == "LIMPAR FILTROS" for b in app.button))
+        self.assertTrue(any(b.label == "Buscar" for b in app.button))
+        self.assertTrue(any(b.label == "Limpar filtros" for b in app.button))
 
     def test_invoice_filters_have_two_independent_calendars_and_can_clear(self):
         from datetime import date
         app = AppTest.from_string(PROGRAM, default_timeout=20).run()
         self.assertFalse(app.exception)
         dates = {widget.label: widget for widget in app.date_input}
-        self.assertEqual(set(dates), {"DATA INICIAL", "DATA FINAL"})
+        self.assertEqual(set(dates), {"Faturamento inicial", "Faturamento final"})
         self.assertTrue(all(widget.value is None for widget in dates.values()))
         # Como ambos os calendários pertencem ao mesmo formulário, os
-        # rascunhos só chegam ao servidor quando PESQUISAR é pressionado.
-        dates["DATA INICIAL"].set_value(date(2026, 10, 1))
-        dates["DATA FINAL"].set_value(date(2026, 10, 31))
-        next(x for x in app.button if x.label == "PESQUISAR").click().run()
+        # rascunhos só chegam ao servidor quando Buscar é pressionado.
+        dates["Faturamento inicial"].set_value(date(2026, 10, 1))
+        dates["Faturamento final"].set_value(date(2026, 10, 31))
+        next(x for x in app.button if x.label == "Buscar").click().run()
         self.assertFalse(app.exception)
         self.assertEqual(
-            next(x for x in app.date_input if x.label == "DATA INICIAL").value,
+            next(x for x in app.date_input if x.label == "Faturamento inicial").value,
             date(2026, 10, 1)
         )
         self.assertEqual(
-            next(x for x in app.date_input if x.label == "DATA FINAL").value,
+            next(x for x in app.date_input if x.label == "Faturamento final").value,
             date(2026, 10, 31)
         )
         self.assertFalse(app.exception)
-        next(x for x in app.button if x.label == "LIMPAR FILTROS").click().run()
+        next(x for x in app.button if x.label == "Limpar filtros").click().run()
         self.assertFalse(app.exception)
         self.assertTrue(all(widget.value is None for widget in app.date_input))
 

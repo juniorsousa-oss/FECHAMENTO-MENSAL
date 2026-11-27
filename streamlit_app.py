@@ -2473,7 +2473,7 @@ def summary_cards_html(
         f'<div class="summary-card-value">{money_br(final_value)}</div>'
         '</div>'
         '<div class="summary-card">'
-        '<div class="summary-card-label">RESUMO TOTAL</div>'
+        '<div class="summary-card-label">VARIAÇÃO DO ESTOQUE</div>'
         f'<div class="summary-card-value{delta_class(summary)}">{money_br(summary)}</div>'
         '</div>'
         '</div>'
@@ -3747,11 +3747,11 @@ with _fm_page_surface.container():
             if not _has_selected_snapshot:
                 st.info(f"Sem dados de estoque para {month_label(selected_month)}.")
             elif status != "VALIDO":
-                pending_label = (f"{_selected_pending} {'pendência' if _selected_pending == 1 else 'pendências'} em "
-                                 f"{month_label(selected_month)}" if _selected_pending else
-                                 f"Base de {month_label(selected_month)} com pendências")
-                st.warning(pending_label + ". Os totais usam apenas as linhas válidas.")
-                with st.expander("Ver pendências", icon=":material/fact_check:"):
+                st.warning("Os totais de estoque consideram apenas as linhas válidas.")
+                with st.expander(f"Revisar {_selected_pending} "
+                                 + ("pendência" if _selected_pending == 1 else "pendências")
+                                 if _selected_pending else "Revisar pendências",
+                                 icon=":material/fact_check:"):
                     try:
                         quality_rows = read_quality_rows(
                             import_info, selected_month, live_competencia,
@@ -4091,13 +4091,17 @@ with _fm_page_surface.container():
                 key="cb_month",
                 on_change=_update_cb_month_link,
             )
+            _cb_stage_key = f"cb_visible_stage_{cb_month.isoformat()}"
+            _cb_step_labels = {"Conferir": "1. Conferir", "Revisar ajustes": "2. Revisar ajustes",
+                               "Finalizar": "3. Finalizar", "Estoque": "Consultar estoque"}
             _cb_stage = st.radio(
-                "Etapa da conferência",
-                ["Estoque", "Conferir", "Revisar ajustes", "Finalizar"],
-                horizontal=True,
-                key=f"cb_visible_stage_{cb_month.isoformat()}",
+                "Etapa da conferência", list(_cb_step_labels), horizontal=True,
+                key=_cb_stage_key, format_func=_cb_step_labels.get,
                 label_visibility="collapsed",
             )
+
+            def _go_cb_stage(stage):
+                st.session_state[_cb_stage_key] = stage
 
             force_cadastros = bool(
                 st.session_state.pop(
@@ -4231,8 +4235,9 @@ with _fm_page_surface.container():
                 if _missing_inputs:
                     st.caption(" · ".join(_missing_inputs))
                 if (
-                    (_cb_stage == "Estoque" or (_cb_stage == "Conferir" and _missing_inputs))
-                    and st.button("Abrir alimentadores", key="fm_cb_to_feeders")
+                    (_cb_stage in ("Estoque", "Conferir") and _missing_inputs)
+                    and st.button("Abrir alimentadores", key="fm_cb_to_feeders",
+                                  type="primary" if _cb_stage == "Conferir" else "secondary")
                 ):
                     st.session_state["fm_settings_area"] = "ALIMENTADORES"
                     st.session_state["fm_feeder_type"] = "CHAPAS E BARRAMENTOS"
@@ -5055,6 +5060,13 @@ with _fm_page_surface.container():
                     on_change=_confirm_cb_review,
                 )
 
+            if _cb_stage == "Conferir" and cb_counts:
+                st.button("Ir para revisão de ajustes", type="primary",
+                          key="fm_cb_next_review", on_click=_go_cb_stage, args=("Revisar ajustes",))
+            elif _cb_stage == "Revisar ajustes" and _review_confirmed and _can_finalize_adjustments:
+                st.button("Ir para finalização", type="primary",
+                          key="fm_cb_next_finalize", on_click=_go_cb_stage, args=("Finalizar",))
+
             if _cb_stage == "Finalizar":
                 try:
                     _adjustment_history = load_cb_adjustment_history()
@@ -5378,13 +5390,20 @@ with _fm_page_surface.container():
     elif page == "Relatórios":
         from reports_ui import render_reports
 
-        render_reports(summaries=summaries, imports=imports)
+        _report_month = default_analysis_month(
+            str(st.query_params.get("mes", "") or ""), visible_months, live_competencia,
+        )
+        render_reports(summaries=summaries, imports=imports, competence=_report_month)
 
     else:
         settings_view = st.segmented_control(
             "Área de configurações",
             ["STATUS API", "ALIMENTADORES", "MENU", "REGRAS", "DESEMPENHO"],
             default="STATUS API",
+            format_func=lambda value: {
+                "STATUS API": "Bases e alertas", "ALIMENTADORES": "Alimentadores",
+                "MENU": "Menu", "REGRAS": "Regras", "DESEMPENHO": "Desempenho",
+            }[value],
             key="fm_settings_area",
             label_visibility="collapsed",
             width="stretch",
@@ -5468,59 +5487,23 @@ with _fm_page_surface.container():
                         st.error("Não foi possível carregar os alimentadores: " + str(exc))
 
         if settings_view == "STATUS API":
-            section_band(
-                "01 · FONTES",
-                "CENTRAL DE DADOS",
-                "Monitoramento centralizado de todas as conexões automáticas do ecossistema Setta.",
-            )
-
             if api_sources_error:
-                st.error(
-                    "NÃO FOI POSSÍVEL CONSULTAR O STATUS DAS FONTES: "
-                    + api_sources_error
-                )
+                st.error("Não foi possível consultar o status das fontes: " + api_sources_error)
             else:
-                last_update_values = [
-                    str(row.get("last_update_at") or "")
-                    for row in api_sources
-                    if row.get("last_update_at")
-                ]
-                last_update = (
-                    max(last_update_values)
-                    if last_update_values
-                    else ""
-                )
-
-                st.markdown(
-                    f"""
-                    <div class="api-overview">
-                        <div class="api-overview-card">
-                            <div class="api-overview-label">STATUS GERAL</div>
-                            <div class="api-overview-value">{api_summary["status"]}</div>
-                        </div>
-                        <div class="api-overview-card">
-                            <div class="api-overview-label">FONTES</div>
-                            <div class="api-overview-value">{api_summary["total"]}</div>
-                        </div>
-                        <div class="api-overview-card">
-                            <div class="api-overview-label">ATUALIZADAS</div>
-                            <div class="api-overview-value">{api_summary["healthy"]}</div>
-                        </div>
-                        <div class="api-overview-card">
-                            <div class="api-overview-label">ÚLTIMA ATUALIZAÇÃO</div>
-                            <div class="api-overview-value" style="font-size:.82rem">
-                                {html.escape(central_data.format_dt(last_update))}
-                            </div>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-                st.markdown(
-                    api_status_cards_html(api_sources),
-                    unsafe_allow_html=True,
-                )
+                healthy, attention = [], []
+                for source in api_sources:
+                    bucket = healthy if api_sources_summary([source])["healthy"] else attention
+                    bucket.append(source)
+                if attention:
+                    st.warning(f"{len(attention)} fonte(s) precisam de atenção.")
+                    st.markdown(api_status_cards_html(attention), unsafe_allow_html=True)
+                elif healthy:
+                    st.success(f"{len(healthy)} fontes em dia.")
+                else:
+                    st.info("Nenhuma fonte disponível.")
+                if healthy:
+                    with st.expander("Fontes em dia"):
+                        st.markdown(api_status_cards_html(healthy), unsafe_allow_html=True)
 
             if st.button("Atualizar status", key="fm_refresh_api_status", icon=":material/refresh:"):
                 load_api_sources.clear()
