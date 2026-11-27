@@ -62,6 +62,11 @@ def describe(key, entry):
 
 @st.cache_data(show_spinner=False, max_entries=5)
 def load_parsed(key, token):
+    return parse_current_source(key, token)
+
+
+def parse_current_source(key, token):
+    """Lê uma versão sem mantê-la em cache (usado na consolidação do lote)."""
     if key not in SOURCE_KEYS:
         raise ValueError("Fonte desconhecida.")
     pack, meta = central.download_normalized_source(key)

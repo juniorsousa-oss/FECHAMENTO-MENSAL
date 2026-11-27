@@ -8,6 +8,8 @@ on:
       - 'competence_calendar.py'
       - 'central_fechamento_data.py'
       - 'central_movement_feeds.py'
+      - 'central_closing_bundle.py'
+      - 'central_closing_bundle_ui.py'
       - 'report_parser.py'
       - 'cb_parser.py'
       - 'cb_balance_math.py'
@@ -82,7 +84,7 @@ jobs:
       - name: Validar conferência de baixas e telas
         run: python -m unittest discover -s tests -p 'test_issue_check*.py'
       - name: Validar prévia e versão das fontes OPS e KARDEX da Central
-        run: python -m unittest discover -s tests -p 'test_central_feeds_restoration.py'
+        run: python -m unittest discover -s tests -p 'test_central*.py'
       - name: Validar recorte de armazém e diagnóstico de TES
         run: python -m unittest discover -s tests -p 'test_fm_queue_warehouse_tes_details.py'
       - name: Validar integração FOR001 Plano Mestre

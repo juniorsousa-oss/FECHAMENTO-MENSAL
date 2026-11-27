@@ -5393,12 +5393,15 @@ with _fm_page_surface.container():
         if settings_view == "ALIMENTADORES":
             feeder = st.segmented_control(
                 "Fonte de alimentação",
-                ["KARDEX", "AJUSTES DE ESTOQUE", "ANALÍTICO", "CHAPAS E BARRAMENTOS", "OPS"],
-                default="KARDEX",
+                ["LOTE CENTRAL", "KARDEX", "AJUSTES DE ESTOQUE", "ANALÍTICO", "CHAPAS E BARRAMENTOS", "OPS"],
+                default="LOTE CENTRAL",
                 key="fm_feeder_type",
                 width="stretch",
             )
-            if feeder == "KARDEX":
+            if feeder == "LOTE CENTRAL":
+                from central_closing_bundle_ui import render_central_closing_bundle
+                render_central_closing_bundle()
+            elif feeder == "KARDEX":
                 from movement_analysis_ui import render_kardex_feeder
                 render_kardex_feeder()
             elif feeder == "AJUSTES DE ESTOQUE":
