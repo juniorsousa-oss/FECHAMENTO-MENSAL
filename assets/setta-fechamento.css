@@ -146,3 +146,14 @@ body [data-testid="stMain"] .st-key-setta_drawer_toggle button{background:#42424
 .stApp [data-testid="stButtonGroup"] :is([aria-checked="true"],[aria-pressed="true"],[data-selected]){
  color:#333!important;background:#fff3cc!important;border-color:#8a6500!important
 }
+/* On a phone the closed month is one line, not five stacked labelled cells. */
+.history-mobile{display:none}
+@media(max-width:900px){
+ .history-desktop{display:none!important}
+ .history-mobile{display:block;background:#fff;border:1px solid #e1e1e1;border-radius:8px}
+ .history-compact-row+ .history-compact-row{border-top:1px solid #e1e1e1}
+ .history-compact-row summary{cursor:pointer;min-height:44px;padding:8px 10px;line-height:26px;font-size:.79rem;font-weight:650}
+ .history-compact-row summary .validation-badge{float:right;min-width:0;font-size:.59rem;line-height:1.1;margin-top:3px}
+ .history-compact-row dl{display:grid;grid-template-columns:minmax(70px,1fr) auto;gap:4px 10px;margin:0;padding:0 12px 10px;font-size:.79rem}
+ .history-compact-row dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+}

@@ -154,19 +154,21 @@ def _get_issue_model(selected_warehouses: tuple[str, ...] = ()) -> dict:
             "catalog_prices": prices, "catalog_price_meta": price_meta}
 
 
-def _date_controls():
-    mode = st.radio("Abrangência", ["Período personalizado", "Histórico completo"],
-                    horizontal=True, key="fm_reports_scope")
+def _date_controls(*, monthly=False):
+    mode = st.radio(
+        "Período", ["Período personalizado", "Histórico completo"],
+        horizontal=True, key="fm_reports_scope",
+        help="As datas selecionam competências, não saldos diários." if monthly else None,
+    )
     if mode == "Histórico completo":
-        st.caption("Inclui todos os registros disponíveis nas fontes vigentes.")
         return None, None, "COMPLETO"
     today = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
     left, right = st.columns(2)
     with left:
-        start = st.date_input("DATA INICIAL", value=date(today.year, today.month, 1),
+        start = st.date_input("Data inicial", value=date(today.year, today.month, 1),
                               format="DD/MM/YYYY", key="fm_reports_start")
     with right:
-        end = st.date_input("DATA FINAL", value=today, format="DD/MM/YYYY",
+        end = st.date_input("Data final", value=today, format="DD/MM/YYYY",
                             key="fm_reports_end")
     if isinstance(start, tuple) or isinstance(end, tuple):
         st.warning("Selecione uma única data inicial e uma única data final.")
@@ -180,44 +182,53 @@ def _date_controls():
     return start, end, f"{start:%Y%m%d}_{end:%Y%m%d}"
 
 
+def _has_stock_summary(summaries, imports, start, end):
+    registered = {str(row.get("competencia") or "")[:10] for row in imports}
+    for row in summaries:
+        if row.get("dimensao") != "TOTAL" or row.get("chave") != "TOTAL":
+            continue
+        raw = str(row.get("competencia") or "")[:10]
+        if raw not in registered or (day := reports._date(raw)) is None:
+            continue
+        month = (day.year, day.month)
+        if ((start is None or month >= (start.year, start.month))
+                and (end is None or month <= (end.year, end.month))):
+            return True
+    return False
+
+
+def _clear_prepared():
+    st.session_state.pop("fm_reports_ready", None)
+    st.session_state.pop("fm_reports_audit_notes", None)
+    st.session_state.pop("fm_reports_error", None)
+
+
 def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
     """Três relatórios; período essencial visível, filtros secundários recolhidos.
 
     Preserva as chaves de sessão e todos os argumentos da exportação.
     As alterações são apenas visuais: não reclassificam ou alteram fontes.
     """
-    st.markdown('<div class="section-title">RELATÓRIOS</div>', unsafe_allow_html=True)
-    st.caption("Escolha o relatório, defina o período e prepare o arquivo Excel.")
-
-    with st.container(border=True):
-        st.markdown("**01 · RELATÓRIO**")
-        choice = st.radio(
-            "TIPO DE RELATÓRIO", REPORT_NAMES, horizontal=True,
-            key="fm_reports_kind", label_visibility="collapsed",
-        )
-    with st.container(border=True):
-        st.markdown("**02 · PERÍODO**")
-        start, end, period_key = _date_controls()
+    choice = st.radio(
+        "Relatório", REPORT_NAMES, horizontal=True, key="fm_reports_kind",
+    )
+    start, end, period_key = _date_controls(monthly=choice == REPORT_NAMES[0])
     if not period_key:
         return
 
     extra = {}
     warehouses = []
     if choice == REPORT_NAMES[0]:
-        st.caption(
-            "Competências mensais: as datas selecionam meses de fechamento; "
-            "não representam saldos diários."
-        )
-        if not imports:
-            st.info("Sem dados · Não há competências de estoque disponíveis para exportação.")
+        if not _has_stock_summary(summaries, imports, start, end):
+            if start and (start.year, start.month) == (end.year, end.month):
+                st.info(f"Sem dados de estoque para {start:%m/%Y}.")
+            elif start:
+                st.info("Sem dados de estoque no período selecionado.")
+            else:
+                st.info("Sem dados de estoque no histórico disponível.")
             return
-        sheet_count = 4
 
     elif choice == REPORT_NAMES[1]:
-        st.caption(
-            "25 colunas · uma linha por OP + produto + lote. "
-            "Por padrão, o período considera somente o faturamento."
-        )
         left, right = st.columns(2, gap="medium")
         with left:
             extra["alerts"] = st.checkbox(
@@ -280,10 +291,8 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
             active.append("armazéns: " + ", ".join(warehouses))
         if active:
             st.caption("Filtros ativos · " + " · ".join(active))
-        sheet_count = 1
 
     else:
-        st.caption("Movimentações do KARDEX no período, por grupo e TES.")
         extra["summary_only"] = st.selectbox(
             "Apresentação",
             ["Completo — grupos, OPs e movimentações",
@@ -336,13 +345,11 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
             active.append("TES: " + extra["tes"])
         if active:
             st.caption("Filtros ativos · " + " · ".join(active))
-        sheet_count = 1 if extra["summary_only"] else 3
 
     period_label = (
         "Histórico completo" if start is None
         else f"{start:%d/%m/%Y} a {end:%d/%m/%Y}"
     )
-    st.caption(f"**Resumo da exportação:** {choice} · {period_label} · {sheet_count} aba(s) de dados + Rastreabilidade")
 
     report_key = hashlib.sha256(repr((
         reports.EXPORT_SCHEMA_VERSION,
@@ -351,13 +358,12 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
          for row in imports] if choice == REPORT_NAMES[0] else None,
     )).encode("utf-8")).hexdigest()
 
-    st.markdown("**03 · EXPORTAR**")
-    btn_prepare, btn_download = st.columns(2, gap="medium")
-    with btn_prepare:
-        prepare_clicked = st.button(
-            "Gerar Excel", type="primary", use_container_width=True,
-            key="fm_reports_prepare",
-        )
+    action = st.empty()
+    prepared = st.session_state.get("fm_reports_ready")
+    ready = prepared and prepared[0] == report_key
+    prepare_clicked = not ready and action.button(
+        "Gerar Excel", type="primary", key="fm_reports_prepare",
+    )
     if prepare_clicked:
         audit_notes = []
         trace = _trace_context(choice, period_label, start, end, warehouses, extra)
@@ -488,20 +494,19 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
 
     prepared = st.session_state.get("fm_reports_ready")
     if prepared and prepared[0] == report_key:
-        with btn_download:
-            st.download_button(
-                "Baixar Excel", data=prepared[1], file_name=prepared[2],
-                mime=MIME, type="primary", on_click="ignore",
-                use_container_width=True, key="fm_reports_download",
-            )
-        st.caption(
-            f"Pronto para baixar · {format(prepared[3], ',').replace(',', '.')} registros."
+        action.download_button(
+            "Baixar Excel", data=prepared[1], file_name=prepared[2],
+            mime=MIME, type="primary", on_click="ignore", key="fm_reports_download",
         )
+        units = ("competência", "competências") if choice == REPORT_NAMES[0] else ("registro", "registros")
+        st.caption(f"Pronto para baixar · {prepared[3]:,} {units[prepared[3] != 1]}.".replace(",", "."))
         notes = st.session_state.get("fm_reports_audit_notes")
-        if notes and notes[0] == report_key and notes[1]:
-            with st.expander("DETALHES DA SELEÇÃO E DAS FONTES", expanded=False):
+        with st.expander("Detalhes da exportação", expanded=False):
+            st.caption(f"{period_label} · Planilha com aba Rastreabilidade")
+            if notes and notes[0] == report_key:
                 for note in notes[1]:
                     st.caption(note)
+            st.button("Preparar outro arquivo", on_click=_clear_prepared, key="fm_reports_reset")
     else:
         failure = st.session_state.get("fm_reports_error")
         if failure and failure[0] == report_key:
@@ -509,6 +514,4 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                 st.info(f"Sem dados · {failure[2]}")
             else:
                 st.error(f"Não foi possível gerar o Excel: {failure[2]}")
-        else:
-            st.caption("Gere o Excel para habilitar o download.")
 

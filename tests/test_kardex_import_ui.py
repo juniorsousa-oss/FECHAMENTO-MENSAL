@@ -16,6 +16,7 @@ from unittest.mock import patch
 import streamlit as st
 import movements as mv
 import movement_analysis_ui as ui
+import central_movement_feeds as feeds
 from test_kardex_history import pack
 from test_movement_analysis import record
 
@@ -35,7 +36,8 @@ def save(parsed, known):
     st.session_state.saved = values
     return {"saved":True,"key":"synthetic-key","meta":parsed["meta"],"reactivated":False}
 
-with patch.object(ui.st,"file_uploader",return_value=files), \\
+with patch.object(feeds, "state_or_empty", return_value={}), \\
+     patch.object(ui.st,"file_uploader",return_value=files), \\
      patch.object(ui,"_parse_import",side_effect=lambda raw,name:sources[name]), \\
      patch.object(ui.store,"list_imports",return_value=[]), \\
      patch.object(ui.store,"save_import",side_effect=save):
@@ -75,6 +77,41 @@ class KardexImportUITests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertTrue(any("Dois arquivos" in x.value for x in app.error))
         self.assertNotIn("saved", app.session_state)
+
+
+    def test_central_preview_requires_confirmation_and_rechecks_version_before_writing(self):
+        program = PROGRAM.replace(
+            'with patch.object(feeds, "state_or_empty", return_value={}),',
+            'with patch.object(feeds, "state_or_empty", return_value=central_state),',
+        ).replace(
+            'with patch.object(feeds,',
+            """def verify(key, token):
+    if st.session_state.get("stale"):
+        raise ValueError("A fonte mudou")
+    st.session_state.verified = (key, token)
+def mark_applied(key, entry, rows):
+    st.session_state.applied = (key, entry["token"], rows)
+central_state = {"kardex_s2": {
+    "current": True, "applied": False, "token": "v5|test",
+    "meta": {"version": 5}, "status": "PRONTO PARA CONFERÊNCIA"
+}}
+files = []
+with patch.object(feeds, "load_parsed", return_value=new), patch.object(feeds, "verify_current", verify), patch.object(feeds, "mark_applied", mark_applied), patch.object(feeds,"""
+        )
+        app = AppTest.from_string(program, default_timeout=15).run()
+        self.assertFalse(app.exception)
+        self.assertTrue(app.dataframe)
+        self.assertNotIn("saved", app.session_state)
+        app.session_state["stale"] = True
+        next(x for x in app.button if x.label == "IMPORTAR E SUBSTITUIR PERÍODOS").click().run()
+        self.assertNotIn("saved", app.session_state)
+        self.assertTrue(any("A fonte mudou" in x.value for x in app.error))
+        app.session_state["stale"] = False
+        next(x for x in app.button if x.label == "IMPORTAR E SUBSTITUIR PERÍODOS").click().run()
+        self.assertFalse(app.exception)
+        self.assertEqual(app.session_state["verified"], ("kardex_s2", "v5|test"))
+        self.assertEqual(app.session_state["applied"], ("kardex_s2", "v5|test", 1))
+        self.assertEqual(len(app.session_state["saved"]), 1)
 
 
 if __name__ == "__main__":

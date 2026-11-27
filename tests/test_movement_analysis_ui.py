@@ -92,7 +92,9 @@ finally:
 
 class MovementAnalysisUITests(unittest.TestCase):
     def app(self):
-        app = AppTest.from_string(PROGRAM, default_timeout=20).run()
+        app = AppTest.from_string(PROGRAM, default_timeout=20)
+        app.query_params["mes"] = "2026-10"  # Explicitly exercise historical fixture.
+        app.run()
         self.assertFalse(app.exception)
         return app
 
