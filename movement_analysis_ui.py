@@ -274,22 +274,44 @@ def _render_central_kardex(current_month, read_closed_months):
     for key in keys:
         st.caption(central_feeds.describe(key, state.get(key, {})))
     ready = all(state.get(k, {}).get("current") for k in keys)
+    preview_key = "fm_central_kardex_preview"
     if not ready:
+        st.session_state.pop(preview_key, None)
         st.info("Aguardando Kardex S2, EP e E2. A Conferência de Baixas usa OPS separadamente.")
         return
+    try:
+        closed_months = {str(month)[:7] for month in read_closed_months()}
+    except Exception:
+        st.session_state.pop(preview_key, None)
+        st.error("Não foi possível verificar quais competências estão abertas.")
+        return
+    year, month = map(int, current_month.split("-"))
+    prior_month = f"{year - (month == 1):04d}-{(month - 2) % 12 + 1:02d}"
+    choices = [current_month]
+    if prior_month not in closed_months:
+        choices.append(prior_month)
+    period_key = f"fm_central_kardex_month_{current_month}"
+    if period_key in st.session_state and st.session_state[period_key] not in choices:
+        st.session_state[period_key] = current_month
+    target_month = st.selectbox(
+        "Competência da carga Kardex", choices, format_func=_br_month, key=period_key,
+    )
     tokens = {k: state[k]["token"] for k in keys}
-    preview_key = "fm_central_kardex_preview"
     previous = st.session_state.get(preview_key)
-    if previous and previous["tokens"] != tokens:
+    if previous and (previous["tokens"] != tokens or previous.get("target") != target_month):
         st.session_state.pop(preview_key, None)
         previous = None
+    if target_month in closed_months:
+        st.session_state.pop(preview_key, None)
+        st.warning("Esta competência já está encerrada.")
+        return
     if st.button("Conferir Kardex consolidado", key="fm_preview_central_kardex"):
         try:
             with st.spinner("Unificando Kardex S2, EP e E2..."):
                 parts = {k: central_feeds.load_parsed(k, tokens[k]) for k in keys}
-                batch = history.merge_central_kardex(parts, tokens, current_month=current_month,
-                                                      closed_months=read_closed_months())
-            previous = {"tokens": tokens, "batch": batch}
+                batch = history.merge_central_kardex(parts, tokens, current_month=target_month,
+                                                      closed_months=closed_months)
+            previous = {"tokens": tokens, "batch": batch, "target": target_month}
             st.session_state[preview_key] = previous
         except Exception as exc:
             st.session_state.pop(preview_key, None)
@@ -299,7 +321,7 @@ def _render_central_kardex(current_month, read_closed_months):
         return
     batch = previous["batch"]
     meta = batch["meta"]
-    if current_month not in meta["competencias"]:
+    if meta["competencias"] != [target_month]:
         st.warning("A competência mudou ou foi encerrada. Reabra a prévia.")
         return
     st.success(f"{len(batch['rows']):,} movimentos em uma base Kardex. Nenhuma base foi alterada.".replace(",", "."))
@@ -316,7 +338,7 @@ def _render_central_kardex(current_month, read_closed_months):
             with st.spinner("Gravando uma única base Kardex..."):
                 for key in keys:
                     central_feeds.verify_current(key, tokens[key])
-                if current_month in read_closed_months():
+                if target_month in {str(month)[:7] for month in read_closed_months()}:
                     raise ValueError("A competência já está encerrada. A base anterior foi preservada.")
                 store.save_import(batch)
                 for key in keys:

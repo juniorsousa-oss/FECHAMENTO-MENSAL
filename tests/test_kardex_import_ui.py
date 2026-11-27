@@ -122,7 +122,12 @@ with patch.object(feeds, "state_or_empty", return_value=state), patch.object(fee
         app.session_state["closed"] = True
         app.button(key="fm_apply_central_kardex").click().run()
         self.assertNotIn("saved", app.session_state)
+        self.assertTrue(any("competência já está encerrada" in x.value for x in app.warning))
+        self.assertFalse(any(b.key == "fm_apply_central_kardex" for b in app.button))
         app.session_state["closed"] = False
+        app.run()
+        app.button(key="fm_preview_central_kardex").click().run()
+        app.checkbox[0].check().run()
         app.button(key="fm_apply_central_kardex").click().run()
         self.assertFalse(app.exception)
         self.assertEqual(len(app.session_state["saved"]), 1)
