@@ -3737,7 +3737,6 @@ with _fm_page_surface.container():
                 if _closing_saved:
                     last_closed = latest_closed_month(persisted_import_keys, live_competencia)
                     st.metric("Último fechamento", month_label(last_closed or dashboard_closing_month))
-                    st.caption("Encerrado · saldo preservado")
                 else:
                     st.metric("Competência a encerrar", month_label(dashboard_closing_month))
                     st.caption(closing_status(saved=False, available=_closing_source_available,
@@ -3747,7 +3746,6 @@ with _fm_page_surface.container():
             if not _has_selected_snapshot:
                 st.info(f"Sem dados de estoque para {month_label(selected_month)}.")
             elif status != "VALIDO":
-                st.warning("Os totais de estoque consideram apenas as linhas válidas.")
                 with st.expander(f"Revisar {_selected_pending} "
                                  + ("pendência" if _selected_pending == 1 else "pendências")
                                  if _selected_pending else "Revisar pendências",
@@ -3770,9 +3768,7 @@ with _fm_page_surface.container():
             )
             if previous_exists and previous_status != "VALIDO":
                 st.warning(
-                    f"O estoque inicial de {month_label(selected_month)} foi calculado a partir de "
-                    f"{month_label(previous)}, cuja base histórica possui pendência de qualidade. "
-                    "O valor exibido considera somente as linhas financeiramente válidas do relatório anterior."
+                    f"Estoque inicial com pendência na base de {month_label(previous)}."
                 )
 
             dashboard_detail = st.segmented_control(

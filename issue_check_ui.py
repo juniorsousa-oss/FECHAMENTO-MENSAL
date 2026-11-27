@@ -1758,13 +1758,6 @@ def render_issue_check(*, on_open_ops=None):
         current_ops = {}
         st.error("Não foi possível consultar a fonte OPS salva: " + str(exc))
     if current_ops:
-        st.caption(
-            f"Fonte ativa: {current_ops.get('arquivo_nome') or 'OPS'} · "
-            f"{count(current_ops.get('registros_consolidados_por_dia', 0))} registros consolidados · "
-            f"período {day(current_ops.get('periodo_inicio'))} a "
-            f"{day(current_ops.get('periodo_fim'))}. "
-            "Novos arquivos substituem somente seu intervalo de datas."
-        )
         if current_ops.get("versao") != ops_lot_source.VERSION:
             st.error(
                 "Reprocesse a fonte OPS. Esta versão pode omitir RE1/TES 999. "
