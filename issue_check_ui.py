@@ -1551,6 +1551,7 @@ def _history_warehouses(imports: list[dict]) -> set[str]:
 def render_ops_feeder():
     """Fonte OPS: importa e substitui períodos apenas em Configurações."""
     st.markdown("#### ALIMENTADOR OPS · MOVIMENTAÇÕES COM LOTE")
+    st.caption("Fonte exclusiva da Conferência de Baixas. Não altera a base Kardex.")
     try:
         current_ops = _ops_meta()
     except Exception as exc:
@@ -1588,16 +1589,20 @@ def render_ops_feeder():
                 key="fm_issue_ops_file",
                 disabled=use_central,
             )
-        replace_mode = st.radio(
-            "CRITÉRIO DE SUBSTITUIÇÃO",
-            options=("period", "op"),
-            format_func=lambda choice: (
-                "Por período (padrão)" if choice == "period"
-                else "Por OP (relatório completo das OPs selecionadas)"
-            ),
-            horizontal=True,
-            key="fm_issue_ops_replace_mode",
-        )
+        if use_central:
+            replace_mode = "period"
+            st.caption("A carga da Central substitui somente o intervalo detectado no arquivo.")
+        else:
+            replace_mode = st.radio(
+                "CRITÉRIO DE SUBSTITUIÇÃO",
+                options=("period", "op"),
+                format_func=lambda choice: (
+                    "Por período (padrão)" if choice == "period"
+                    else "Por OP (relatório completo das OPs selecionadas)"
+                ),
+                horizontal=True,
+                key="fm_issue_ops_replace_mode",
+            )
         if replace_mode == "op":
             st.warning(
                 "Use esta opção somente quando o arquivo trouxer todas as "

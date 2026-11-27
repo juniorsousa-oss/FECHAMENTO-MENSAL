@@ -80,38 +80,55 @@ class KardexImportUITests(unittest.TestCase):
 
 
     def test_central_preview_requires_confirmation_and_rechecks_version_before_writing(self):
-        program = PROGRAM.replace(
-            'with patch.object(feeds, "state_or_empty", return_value={}),',
-            'with patch.object(feeds, "state_or_empty", return_value=central_state),',
-        ).replace(
-            'with patch.object(feeds,',
-            """def verify(key, token):
-    if st.session_state.get("stale"):
+        program = """
+from unittest.mock import patch
+import streamlit as st
+import movement_analysis_ui as ui
+import central_movement_feeds as feeds
+import kardex_history as history
+from test_kardex_history import pack
+from test_movement_analysis import record
+
+keys = feeds.KARDEX_KEYS
+state = {key: {"current": True, "applied": False, "token": "v5|test",
+               "meta": {"version": 5}} for key in keys}
+def parse(key, token):
+    arm = key.removeprefix("kardex_").upper()
+    return pack([record(armazem=arm, data="2026-11-26")], key,
+                start="2026-11-02", end="2026-11-26")
+def verify(key, token):
+    if st.session_state.get("stale") and key=="kardex_e2":
         raise ValueError("A fonte mudou")
-    st.session_state.verified = (key, token)
+    st.session_state.verified = [*st.session_state.get("verified", []), key]
 def mark_applied(key, entry, rows):
-    st.session_state.applied = (key, entry["token"], rows)
-central_state = {"kardex_s2": {
-    "current": True, "applied": False, "token": "v5|test",
-    "meta": {"version": 5}, "status": "PRONTO PARA CONFERÊNCIA"
-}}
-files = []
-with patch.object(feeds, "load_parsed", return_value=new), patch.object(feeds, "verify_current", verify), patch.object(feeds, "mark_applied", mark_applied), patch.object(feeds,"""
-        )
+    st.session_state.applied = [*st.session_state.get("applied", []), (key,rows)]
+def save(parsed):
+    st.session_state.saved = [*st.session_state.get("saved", []), parsed]
+with patch.object(feeds, "state_or_empty", return_value=state), patch.object(feeds, "load_parsed", side_effect=parse), patch.object(feeds, "verify_current", verify), patch.object(feeds, "mark_applied", mark_applied), patch.object(ui.store, "save_import", side_effect=save):
+    ui._render_central_kardex("2026-11", lambda: {"2026-11"} if st.session_state.get("closed") else set())
+"""
         app = AppTest.from_string(program, default_timeout=15).run()
         self.assertFalse(app.exception)
+        app.button(key="fm_preview_central_kardex").click().run()
         self.assertTrue(app.dataframe)
+        self.assertTrue(app.button(key="fm_apply_central_kardex").disabled)
         self.assertNotIn("saved", app.session_state)
+        app.checkbox[0].check().run()
         app.session_state["stale"] = True
-        next(x for x in app.button if x.label == "IMPORTAR E SUBSTITUIR PERÍODOS").click().run()
+        app.button(key="fm_apply_central_kardex").click().run()
         self.assertNotIn("saved", app.session_state)
         self.assertTrue(any("A fonte mudou" in x.value for x in app.error))
         app.session_state["stale"] = False
-        next(x for x in app.button if x.label == "IMPORTAR E SUBSTITUIR PERÍODOS").click().run()
+        app.session_state["closed"] = True
+        app.button(key="fm_apply_central_kardex").click().run()
+        self.assertNotIn("saved", app.session_state)
+        app.session_state["closed"] = False
+        app.button(key="fm_apply_central_kardex").click().run()
         self.assertFalse(app.exception)
-        self.assertEqual(app.session_state["verified"], ("kardex_s2", "v5|test"))
-        self.assertEqual(app.session_state["applied"], ("kardex_s2", "v5|test", 1))
         self.assertEqual(len(app.session_state["saved"]), 1)
+        self.assertEqual(len(app.session_state["saved"][0]["rows"]), 3)
+        self.assertEqual(len(app.session_state["applied"]), 3)
+        self.assertEqual(app.session_state["saved"][0]["meta"]["armazens"], ["E2","EP","S2"])
 
 
 if __name__ == "__main__":

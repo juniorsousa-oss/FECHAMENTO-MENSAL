@@ -5393,17 +5393,18 @@ with _fm_page_surface.container():
         if settings_view == "ALIMENTADORES":
             feeder = st.segmented_control(
                 "Fonte de alimentação",
-                ["LOTE CENTRAL", "KARDEX", "AJUSTES DE ESTOQUE", "ANALÍTICO", "CHAPAS E BARRAMENTOS", "OPS"],
-                default="LOTE CENTRAL",
+                ["KARDEX", "OPS", "AJUSTES DE ESTOQUE", "ANALÍTICO", "CHAPAS E BARRAMENTOS"],
+                default="KARDEX",
                 key="fm_feeder_type",
                 width="stretch",
             )
-            if feeder == "LOTE CENTRAL":
-                from central_closing_bundle_ui import render_central_closing_bundle
-                render_central_closing_bundle()
-            elif feeder == "KARDEX":
+            if feeder == "KARDEX":
                 from movement_analysis_ui import render_kardex_feeder
-                render_kardex_feeder()
+                render_kardex_feeder(
+                    current_month=live_competencia.isoformat()[:7],
+                    read_closed_months=lambda: {str(row.get("competencia") or "")[:7]
+                                                for row in db.list_inventory_imports()},
+                )
             elif feeder == "AJUSTES DE ESTOQUE":
                 from movement_analysis_ui import render_adjustments_feeder
                 render_adjustments_feeder()

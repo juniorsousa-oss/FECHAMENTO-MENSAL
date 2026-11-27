@@ -255,40 +255,86 @@ def _parse_import(raw: bytes, name: str):
     return mv.parse_report(raw, name)
 
 
+def _render_central_kardex(current_month, read_closed_months):
+    """Prévia e confirmação únicas; nenhuma fonte OPS chega a esta aba."""
+    import central_movement_feeds as central_feeds
+
+    state = central_feeds.state_or_empty()
+    keys = central_feeds.KARDEX_KEYS
+    st.markdown("##### KARDEX CONSOLIDADO DA CENTRAL")
+    for key in keys:
+        st.caption(central_feeds.describe(key, state.get(key, {})))
+    ready = all(state.get(k, {}).get("current") for k in keys)
+    if not ready:
+        st.info("Aguardando Kardex S2, EP e E2. A Conferência de Baixas usa OPS separadamente.")
+        return
+    tokens = {k: state[k]["token"] for k in keys}
+    preview_key = "fm_central_kardex_preview"
+    previous = st.session_state.get(preview_key)
+    if previous and previous["tokens"] != tokens:
+        st.session_state.pop(preview_key, None)
+        previous = None
+    if st.button("Conferir Kardex consolidado", key="fm_preview_central_kardex"):
+        try:
+            with st.spinner("Unificando Kardex S2, EP e E2..."):
+                parts = {k: central_feeds.load_parsed(k, tokens[k]) for k in keys}
+                batch = history.merge_central_kardex(parts, tokens, current_month=current_month,
+                                                      closed_months=read_closed_months())
+            previous = {"tokens": tokens, "batch": batch}
+            st.session_state[preview_key] = previous
+        except Exception as exc:
+            st.session_state.pop(preview_key, None)
+            st.error(f"Kardex não consolidado: {exc}")
+            return
+    if not previous:
+        return
+    batch = previous["batch"]
+    meta = batch["meta"]
+    if current_month not in meta["competencias"]:
+        st.warning("A competência mudou ou foi encerrada. Reabra a prévia.")
+        return
+    st.success(f"{len(batch['rows']):,} movimentos em uma base Kardex. Nenhuma base foi alterada.".replace(",", "."))
+    recs = [{"Armazém": row["armazem"], "Registros": row["linhas"],
+             "Período": row["inicio"] + " a " + row["fim"]}
+            for row in meta["fontes_central"].values()]
+    st.dataframe(pd.DataFrame(recs), width="stretch", hide_index=True)
+    confirm = st.checkbox(
+        "Confirmo a substituição apenas dos períodos acima, por armazém",
+        key="fm_confirm_central_kardex_" + meta["import_id"],
+    )
+    if st.button("Aplicar Kardex consolidado", key="fm_apply_central_kardex", disabled=not confirm):
+        try:
+            with st.spinner("Gravando uma única base Kardex..."):
+                for key in keys:
+                    central_feeds.verify_current(key, tokens[key])
+                if current_month in read_closed_months():
+                    raise ValueError("A competência já está encerrada. A base anterior foi preservada.")
+                store.save_import(batch)
+                for key in keys:
+                    central_feeds.mark_applied(key, state[key], meta["fontes_central"][key]["linhas"])
+            st.session_state.pop(preview_key, None)
+            _reload()
+            st.session_state.fm_mov_flash = "Kardex consolidado aplicado à Análise de Movimentações."
+            st.rerun()
+        except Exception as exc:
+            _reload()
+            st.error(f"Não foi possível confirmar a aplicação: {exc}")
+
+
 def _import_controls(imports, model=None):
     st.markdown("**01 · IMPORTAR OU ATUALIZAR KARDEX**")
     st.caption("Importe arquivos XLSX/XLTX ou uma base histórica ZIP consolidada. Cada atualização afeta somente os meses e armazéns informados no próprio arquivo: o histórico S2 e outros armazéns ficam preservados quando não fizerem parte da importação.")
     st.info("Para acrescentar EP, 20 e E2 de janeiro a outubro, envie a base histórica consolidada ZIP. O sistema identificará os três armazéns e suas competências automaticamente. Verifique a prévia e confirme a importação uma única vez.")
     epoch = st.session_state.get("fm_mov_upload_epoch", 0)
-    import central_movement_feeds as central_feeds
-    state = central_feeds.state_or_empty()
-    st.markdown("##### FONTES DA CENTRAL")
-    choices = [k for k in central_feeds.KARDEX_KEYS if state.get(k, {}).get("current")]
-    for k in central_feeds.KARDEX_KEYS:
-        st.caption(central_feeds.describe(k, state.get(k, {})))
-    selected = st.multiselect(
-        "FONTES PARA CONFERÊNCIA", choices,
-        default=[k for k in choices if not state[k]["applied"]],
-        format_func=lambda k: central_feeds.describe(k, state[k]),
-        key=f"fm_kardex_central_{epoch}_" + "_".join(str(state[k]["meta"].get("version") or 0) for k in choices),
-    )
     with st.expander("CONTINGÊNCIA MANUAL", expanded=False):
         files = st.file_uploader("Relatórios KARDEX", type=["xlsx", "xltx", "zip"], accept_multiple_files=True,
                                  key=f"fm_mov_uploads_{epoch}")
-    if selected or files:
+    if files:
         try:
-            parsed, preview, seen, origins = [], [], set(), {}
-            incoming = []
-            for k in selected:
-                try:
-                    item = central_feeds.load_parsed(k, state[k]["token"])
-                except Exception as exc:
-                    central_feeds.mark_error(k, state[k], exc)
-                    raise
-                incoming.append((item["meta"]["arquivo_nome"], item, k))
-            for file in files or []:
-                incoming.append((file.name, _parse_import(file.getvalue(), file.name), None))
-            for file_name, item, central_key in incoming:
+            parsed, preview, seen = [], [], set()
+            for file in files:
+                file_name = file.name
+                item = _parse_import(file.getvalue(), file_name)
                 meta = item["meta"]
                 if meta["sha256"] in seen:
                     raise ValueError("O mesmo arquivo foi selecionado mais de uma vez. Mantenha apenas uma cópia.")
@@ -309,8 +355,6 @@ def _import_controls(imports, model=None):
                             end = st.date_input("Dados até", value=end, format="DD/MM/YYYY", key="fm_mov_until_" + meta["sha256"])
                 item = history.prepare_import(item, start.isoformat(), end.isoformat())
                 parsed.append(item)
-                if central_key:
-                    origins[item["meta"]["sha256"]] = central_key
                 scopes = {(s["competencia"], s["armazem"]) for s in item["meta"]["escopos"]}
                 replaced = 0
                 if model is not None and not model["frame"].empty:
@@ -336,14 +380,8 @@ def _import_controls(imports, model=None):
                 with st.spinner("Gravando e conferindo os arquivos KARDEX..."):
                     known = store.list_imports()
                     saved = unchanged = 0
-                    # Verify every selected version before any write to history.
-                    for k in selected:
-                        central_feeds.verify_current(k, state[k]["token"])
                     for item in parsed:
                         result = store.save_import(item, known)
-                        central_key = origins.get(item["meta"]["sha256"])
-                        if central_key:
-                            central_feeds.mark_applied(central_key, state[central_key], len(item["rows"]))
                         saved += result["saved"]; unchanged += not result["saved"]
                         known = [k for k in known if k["chave"] != result["key"]]
                         known.append({"chave": result["key"], "meta": result["meta"]})
@@ -1040,7 +1078,7 @@ def render_movement_analysis():
     render_results(model, imports)
 
 
-def render_kardex_feeder():
+def render_kardex_feeder(*, current_month, read_closed_months):
     """Única tela de importação KARDEX, disponível em Configurações/Alimentadores."""
     band("ALIMENTADORES", "KARDEX",
          "Importação e substituição controlada por competência e armazém.")
@@ -1057,6 +1095,7 @@ def render_kardex_feeder():
             model = _model(tokens, mv.rules()["versao"] + history.VERSION)
         except Exception as exc:
             st.warning(f"Prévia de sobreposição indisponível: {exc}")
+    _render_central_kardex(current_month, read_closed_months)
     _import_controls(imports, model)
     if model is not None:
         _import_registry(model)
