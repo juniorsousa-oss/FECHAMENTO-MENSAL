@@ -1551,6 +1551,7 @@ def _history_warehouses(imports: list[dict]) -> set[str]:
 def render_ops_feeder():
     """Fonte OPS: importa e substitui períodos apenas em Configurações."""
     st.markdown("#### ALIMENTADOR OPS · MOVIMENTAÇÕES COM LOTE")
+    st.caption("Fonte exclusiva da Conferência de Baixas. Não altera a base Kardex.")
     try:
         current_ops = _ops_meta()
     except Exception as exc:

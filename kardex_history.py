@@ -123,3 +123,46 @@ def resolve(imports: list[dict]) -> dict:
                          "status": "VIGENTE" if len(valid) == len(scopes[index]) else "SUBSTITUÍDO" if not valid else "PARCIALMENTE SUBSTITUÍDO",
                          "escopos_ativos": valid, "import_id": meta.get("import_id", meta["sha256"])})
     return {"imports": active, "coverage": coverage, "registry": registry}
+
+
+def merge_central_kardex(parts: dict, tokens: dict, *, current_month: str,
+                         closed_months=()) -> dict:
+    """Um único histórico Kardex, com cobertura e origem independentes por armazém."""
+    warehouses = {"kardex_s2": "S2", "kardex_ep": "EP", "kardex_e2": "E2"}
+    if set(parts) != set(warehouses) or set(tokens) != set(warehouses):
+        raise ValueError("A base única requer Kardex S2, EP e E2. OPS é uma fonte separada.")
+    if current_month in {str(m)[:7] for m in closed_months}:
+        raise ValueError("A competência já está encerrada.")
+    prepared, sources, rows, scopes = [], {}, [], []
+    for key, warehouse in warehouses.items():
+        item = parts[key]
+        meta = item["meta"]
+        if not tokens[key] or not meta.get("sha256") or not item["rows"]:
+            raise ValueError("Fonte Kardex incompleta: " + warehouse)
+        if {r["armazem"] for r in item["rows"]} != {warehouse}:
+            raise ValueError("Armazém incompatível com a fonte: " + warehouse)
+        if {r["data"][:7] for r in item["rows"]} != {current_month}:
+            raise ValueError("O Kardex consolidado da Central aceita somente a competência aberta: "
+                             + current_month)
+        start, end = meta["periodo_inicio"], meta["periodo_fim"]
+        if start[:7] != current_month or end[:7] != current_month:
+            raise ValueError("Período incompatível com a competência aberta: " + warehouse)
+        if not meta.get("periodo_informado"):
+            start = current_month + "-01"
+        piece = prepare_import(item, start, end)
+        prepared.append(piece)
+        scopes.extend(piece["meta"]["escopos"])
+        rows.extend(piece["rows"])
+        sources[key] = {"armazem": warehouse, "token": tokens[key],
+                        "arquivo_nome": meta["arquivo_nome"], "sha256": meta["sha256"],
+                        "linhas": len(piece["rows"]), "inicio": start, "fim": end}
+    validate_batch(prepared)
+    digest = hashlib.sha256(json.dumps(sources, sort_keys=True).encode()).hexdigest()
+    start = min(s["periodo_inicio"] for s in scopes)
+    end = max(s["periodo_fim"] for s in scopes)
+    return prepare_import({
+        "rows": rows,
+        "meta": {"sha256": digest, "arquivo_nome": "Kardex consolidado — Central",
+                 "periodo_inicio": start, "periodo_fim": end, "coberturas_arquivo": scopes,
+                 "fontes_central": sources},
+    }, start, end)
