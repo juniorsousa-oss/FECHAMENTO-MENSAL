@@ -74,6 +74,7 @@ FAVICON_FILE = ROOT / "config" / "favicon_setta.b64"
 TZ = ZoneInfo("America/Sao_Paulo")
 
 CONNECTED_API_SOURCE_KEYS = {
+    "ops", "kardex_s2", "kardex_ep", "kardex_e2",
     "analitico",
     "cadastros",
     "relatorio_geral",
@@ -3309,6 +3310,9 @@ def _refresh_fm_data() -> None:
     _cached_preview_summaries.clear()
     central_data.source_state_for.clear()
     central_data._consumer_status_rows.clear()
+    import central_movement_feeds as movement_feeds
+    movement_feeds.feed_state.clear()
+    movement_feeds.load_parsed.clear()
     st.session_state.pop("_fm_analitico_synced", None)
     st.session_state.pop("_fm_cadastros_synced", None)
     st.session_state.pop("fm_reports_ready", None)
