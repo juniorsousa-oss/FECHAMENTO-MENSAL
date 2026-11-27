@@ -64,9 +64,12 @@ html[data-setta-section-loading] [data-testid="stMainBlockContainer"] [data-stal
 ){
  opacity:1!important;visibility:visible!important;
 }
-html[data-setta-section-loading] [data-stale="true"] :is(
+html[data-setta-section-loading] [data-testid="stMainBlockContainer"] [data-stale="true"] :is(
  .st-key-fm_dashboard_detail,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,[class*="st-key-cb_visible_stage_"]
-) *{visibility:visible!important}
+) *,
+html[data-setta-section-loading] [data-testid="stMainBlockContainer"] :is(
+ .st-key-fm_dashboard_detail,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,[class*="st-key-cb_visible_stage_"]
+) [data-stale="true"] *{visibility:visible!important}
 /* Only OP headers keep their previous pixels during a fragment update.
    The old and new details are not shown together. */
 html[data-setta-op-transition] [data-testid="stMainBlockContainer"] [data-stale="true"]:is(
@@ -74,7 +77,11 @@ html[data-setta-op-transition] [data-testid="stMainBlockContainer"] [data-stale=
 ):not([class*="st-key-fm_issue_op_detail_"],[class*="st-key-fm_issue_op_detail_"] *){
  opacity:1!important;visibility:visible!important;
 }
-html[data-setta-op-transition] [data-stale="true"] :is(
+/* Streamlit marks the button wrapper itself stale, not necessarily the list. */
+html[data-setta-op-transition] [data-testid="stMainBlockContainer"] :is(
+ .st-key-fm_issue_ops,.st-key-fm_issue_filters
+) [data-stale="true"] *:not([class*="st-key-fm_issue_op_detail_"],[class*="st-key-fm_issue_op_detail_"] *),
+html[data-setta-op-transition] [data-testid="stMainBlockContainer"] [data-stale="true"] :is(
  .st-key-fm_issue_ops,.st-key-fm_issue_filters
 ) *:not([class*="st-key-fm_issue_op_detail_"],[class*="st-key-fm_issue_op_detail_"] *){visibility:visible!important}
 html[data-setta-op-transition] [class*="st-key-fm_issue_op_detail_"],
