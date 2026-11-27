@@ -48,6 +48,8 @@ on:
       - 'tests/**'
       - 'requirements.txt'
       - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
