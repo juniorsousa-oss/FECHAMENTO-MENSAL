@@ -3782,12 +3782,18 @@ with _fm_page_surface.container():
                     "O valor exibido considera somente as linhas financeiramente válidas do relatório anterior."
                 )
 
-            if _has_selected_snapshot:
+            dashboard_detail = st.segmented_control(
+                "Visualização do painel", (["Resumo", "Armazém", "Tipo", "Histórico"]
+                                            if _has_selected_snapshot else ["Resumo", "Histórico"]),
+                default="Resumo", required=True, width="stretch",
+                key="fm_dashboard_detail", label_visibility="collapsed",
+            )
+
+            if dashboard_detail == "Resumo" and _has_selected_snapshot:
                 st.markdown("**Resumo do estoque**")
 
-                final_total = (
-                    dimension_value(_dashboard_summary_map, selected_month, "TOTAL", "TOTAL")
-                    if _has_selected_snapshot else None
+                final_total = dimension_value(
+                    _dashboard_summary_map, selected_month, "TOTAL", "TOTAL"
                 )
                 initial_total = (
                     dimension_value(_dashboard_summary_map, previous, "TOTAL", "TOTAL")
@@ -3802,13 +3808,6 @@ with _fm_page_surface.container():
                     ),
                     unsafe_allow_html=True,
                 )
-
-            dashboard_detail = st.segmented_control(
-                "Visualização do painel", (["Resumo", "Armazém", "Tipo", "Histórico"]
-                                            if _has_selected_snapshot else ["Resumo", "Histórico"]),
-                default="Resumo", required=True, width="stretch",
-                key="fm_dashboard_detail", label_visibility="collapsed",
-            )
 
             if dashboard_detail == "Armazém":
                 current_warehouses = {
@@ -3854,7 +3853,8 @@ with _fm_page_surface.container():
                                     ),
                                     unsafe_allow_html=True,
                                 )
-
+                else:
+                    st.info("Sem detalhamento por armazém nesta competência.")
 
             if dashboard_detail == "Tipo":
                 current_types = {
@@ -3894,7 +3894,7 @@ with _fm_page_surface.container():
                     download_left, download_right = st.columns([3.3, 1])
                     with download_right:
                         st.download_button(
-                            "EXPORTAR RESUMO PNG",
+                            "Exportar por tipo (PNG)",
                             data=png_data,
                             file_name=(
                                 "valor_em_estoque_"
@@ -3905,7 +3905,8 @@ with _fm_page_surface.container():
                             use_container_width=True,
                             key=f"download_tp_png_{selected_month.isoformat()}",
                         )
-
+                else:
+                    st.info("Sem detalhamento por tipo nesta competência.")
 
             if dashboard_detail == "Histórico":
                 history_view = st.segmented_control(
