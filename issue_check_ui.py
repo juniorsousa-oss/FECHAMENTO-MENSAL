@@ -1750,7 +1750,7 @@ def render_ops_feeder():
         st.success(flash)
 
 
-def render_issue_check(*, on_open_ops=None):
+def render_issue_check():
     _band()
     try:
         current_ops = _ops_meta()
@@ -1768,11 +1768,6 @@ def render_issue_check(*, on_open_ops=None):
             "Nenhum Relatório OPS foi importado para esta conferência. "
             "Sem esta fonte, nenhuma baixa será considerada comprovada."
         )
-    if on_open_ops is not None:
-        st.button("Abrir alimentador OPS", on_click=on_open_ops, icon=":material/folder_open:",
-                  key="fm_issue_open_ops_feeder")
-    else:
-        st.caption("Importação OPS: Configurações → Alimentadores → OPS.")
     try:
         states = _states()
         for key in SOURCE_KEYS:
