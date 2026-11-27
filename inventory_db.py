@@ -306,6 +306,18 @@ def list_inventory_items(competencia: date | str) -> list[dict]:
     return response.json() or []
 
 
+def has_cb_catalog() -> bool:
+    """Look up one active entry; the full catalogue is loaded separately."""
+    response = requests.get(
+        f"{supabase_url()}/rest/v1/fm_cb_catalogo",
+        headers=_headers(),
+        params={"select": "codigo", "ativo": "eq.true", "limit": 1},
+        timeout=30,
+    )
+    _raise(response)
+    return bool(response.json())
+
+
 def list_cb_catalog() -> list[dict]:
     response = requests.get(
         f"{supabase_url()}/rest/v1/fm_cb_catalogo",

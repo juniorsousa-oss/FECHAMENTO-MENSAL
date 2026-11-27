@@ -48,6 +48,23 @@ class ClosingPurchasesTests(unittest.TestCase):
         self.assertEqual(september["armazens_pendentes"], ["EP"])
         self.assertIsNone(closing_write_off(100, 90, september))
 
+    def test_optional_warehouse_20_does_not_block_month_without_a_load(self):
+        model = {
+            "coverage_metas": [
+                {"competencia": "2026-10", "armazem": "S2"},
+                {"competencia": "2026-10", "armazem": "20"},
+                {"competencia": "2026-11", "armazem": "S2"},
+            ],
+            "rows": [
+                source_row(amount="20", armazem="20"),
+                source_row(month="2026-11", amount="100"),
+            ],
+        }
+        months = summarize_purchases(model)
+        self.assertEqual(months["2026-10"]["compras"], 20)
+        self.assertEqual(months["2026-11"]["armazens_pendentes"], [])
+        self.assertEqual(closing_write_off(1000, 900, months["2026-11"]), 200)
+
     def test_unidentified_inbound_must_be_reviewed(self):
         model = {
             "coverage_metas": [{"competencia": "2026-10", "armazem": "S2"}],
