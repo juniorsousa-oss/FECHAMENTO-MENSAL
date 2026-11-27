@@ -260,35 +260,13 @@ def _import_controls(imports, model=None):
     st.caption("Importe arquivos XLSX/XLTX ou uma base histórica ZIP consolidada. Cada atualização afeta somente os meses e armazéns informados no próprio arquivo: o histórico S2 e outros armazéns ficam preservados quando não fizerem parte da importação.")
     st.info("Para acrescentar EP, 20 e E2 de janeiro a outubro, envie a base histórica consolidada ZIP. O sistema identificará os três armazéns e suas competências automaticamente. Verifique a prévia e confirme a importação uma única vez.")
     epoch = st.session_state.get("fm_mov_upload_epoch", 0)
-    import central_movement_feeds as central_feeds
-    state = central_feeds.state_or_empty()
-    st.markdown("##### FONTES DA CENTRAL")
-    choices = [k for k in central_feeds.KARDEX_KEYS if state.get(k, {}).get("current")]
-    for k in central_feeds.KARDEX_KEYS:
-        st.caption(central_feeds.describe(k, state.get(k, {})))
-    selected = st.multiselect(
-        "FONTES PARA CONFERÊNCIA", choices,
-        default=[k for k in choices if not state[k]["applied"]],
-        format_func=lambda k: central_feeds.describe(k, state[k]),
-        key=f"fm_kardex_central_{epoch}_" + "_".join(str(state[k]["meta"].get("version") or 0) for k in choices),
-    )
-    with st.expander("CONTINGÊNCIA MANUAL", expanded=False):
-        files = st.file_uploader("Relatórios KARDEX", type=["xlsx", "xltx", "zip"], accept_multiple_files=True,
-                                 key=f"fm_mov_uploads_{epoch}")
-    if selected or files:
+    files = st.file_uploader("Relatórios KARDEX", type=["xlsx", "xltx", "zip"], accept_multiple_files=True,
+                             key=f"fm_mov_uploads_{epoch}")
+    if files:
         try:
-            parsed, preview, seen, origins = [], [], set(), {}
-            incoming = []
-            for k in selected:
-                try:
-                    item = central_feeds.load_parsed(k, state[k]["token"])
-                except Exception as exc:
-                    central_feeds.mark_error(k, state[k], exc)
-                    raise
-                incoming.append((item["meta"]["arquivo_nome"], item, k))
-            for file in files or []:
-                incoming.append((file.name, _parse_import(file.getvalue(), file.name), None))
-            for file_name, item, central_key in incoming:
+            parsed, preview, seen = [], [], set()
+            for file in files:
+                item = _parse_import(file.getvalue(), file.name)
                 meta = item["meta"]
                 if meta["sha256"] in seen:
                     raise ValueError("O mesmo arquivo foi selecionado mais de uma vez. Mantenha apenas uma cópia.")
@@ -297,7 +275,7 @@ def _import_controls(imports, model=None):
                 if not meta.get("periodo_informado") and not meta.get("coberturas_arquivo"):
                     start = start.replace(day=1)
                 end = date.fromisoformat(meta["periodo_fim"])
-                with st.expander("CONFERIR PERÍODO · " + file_name):
+                with st.expander("CONFERIR PERÍODO · " + file.name):
                     st.caption("Confirme o período extraído no sistema. Os armazéns são identificados nos próprios registros.")
                     if meta.get("coberturas_arquivo"):
                         st.caption("Base consolidada com competências declaradas no manifesto. Meses sem lançamentos são preservados como cobertura com 0 registros. O período de cada armazém não será inferido a partir da data do último movimento.")
@@ -309,13 +287,11 @@ def _import_controls(imports, model=None):
                             end = st.date_input("Dados até", value=end, format="DD/MM/YYYY", key="fm_mov_until_" + meta["sha256"])
                 item = history.prepare_import(item, start.isoformat(), end.isoformat())
                 parsed.append(item)
-                if central_key:
-                    origins[item["meta"]["sha256"]] = central_key
                 scopes = {(s["competencia"], s["armazem"]) for s in item["meta"]["escopos"]}
                 replaced = 0
                 if model is not None and not model["frame"].empty:
                     replaced = sum((r.data[:7], r.armazem) in scopes for r in model["frame"].itertuples())
-                preview.append({"Arquivo": file_name, "Armazéns": ", ".join(item["meta"]["armazens"]),
+                preview.append({"Arquivo": file.name, "Armazéns": ", ".join(item["meta"]["armazens"]),
                                 "Competências abrangidas": ", ".join(m[5:] + "/" + m[:4] for m in item["meta"]["competencias"]),
                                 "Dados até": end.strftime("%d/%m/%Y"), "Novos registros": len(item["rows"]),
                                 "Registros atuais no recorte": replaced})
@@ -336,14 +312,8 @@ def _import_controls(imports, model=None):
                 with st.spinner("Gravando e conferindo os arquivos KARDEX..."):
                     known = store.list_imports()
                     saved = unchanged = 0
-                    # Verify every selected version before any write to history.
-                    for k in selected:
-                        central_feeds.verify_current(k, state[k]["token"])
                     for item in parsed:
                         result = store.save_import(item, known)
-                        central_key = origins.get(item["meta"]["sha256"])
-                        if central_key:
-                            central_feeds.mark_applied(central_key, state[central_key], len(item["rows"]))
                         saved += result["saved"]; unchanged += not result["saved"]
                         known = [k for k in known if k["chave"] != result["key"]]
                         known.append({"chave": result["key"], "meta": result["meta"]})
@@ -478,8 +448,11 @@ def _context(frame, imports, coverage=None):
         from datetime import timedelta
         if coverage_end < (next_month - timedelta(days=1)).isoformat():
             st.caption(f"PERÍODO PARCIAL · histórico disponível até {date.fromisoformat(coverage_end).strftime('%d/%m/%Y')}.")
-    # O período e os armazéns continuam aplicados ao recorte, mas o texto
-    # redundante de "BASE DA ANÁLISE" não é exibido no topo do KARDEX.
+    active_period = (f"{month[5:]}/{month[:4]}" if mode == "MÊS SELECIONADO"
+                     else f"Janeiro a {month[5:]}/{month[:4]}" if mode == "ACUMULADO DO ANO"
+                     else "Todo o histórico")
+    active_warehouses = ", ".join(chosen) if chosen else "Todos os armazéns"
+    st.caption(f"Recorte ativo: {active_period} · {active_warehouses}")
     return view.copy()
 
 
@@ -609,15 +582,37 @@ def _overview_scope_cards(slot, frame: pd.DataFrame, scope_label: str) -> None:
         )
 
 
+
+def _show_missing_tes(frame: pd.DataFrame, token: str) -> None:
+    unknown = frame["descricao_tes"].eq("NI - TES não localizada no cadastro")
+    total = int(unknown.sum())
+    if not total:
+        return
+    if not st.toggle(
+        f"Ver {count(total)} movimentações com TES sem descrição",
+        key=f"fm_mov_missing_tes_{token}",
+    ):
+        return
+    st.caption("A descrição está ausente no cadastro. As movimentações continuam nos totais e grupos vigentes.")
+    missing = frame.loc[unknown].sort_values("data", ascending=False, kind="stable")
+    page_size = 100
+    max_pages = max(1, (len(missing) + page_size - 1) // page_size)
+    page = int(st.number_input("Página", min_value=1, max_value=max_pages, value=1, step=1,
+                               key=f"fm_mov_missing_tes_page_{token}")) if max_pages > 1 else 1
+    columns = {"data": "Data", "tes": "TES", "codigo": "Produto", "armazem": "Armazém",
+               "documento": "Documento", "ae_original": "OP / AE original"}
+    table = missing.iloc[(page - 1) * page_size:page * page_size][list(columns)].rename(columns=columns)
+    table["Data"] = pd.to_datetime(table["Data"]).dt.date
+    st.dataframe(table, hide_index=True, width="stretch",
+                 column_config={"Data": st.column_config.DateColumn(format="DD/MM/YYYY")})
+
 def _overview(frame, token):
     # Reserva a posição dos cards antes das tabelas; preenche depois das
     # seleções para mostrar o recorte corrente no alto do Resumo.
     cards_slot = st.empty()
     scope_frame = frame
     scope_label = "TOTAL DO KARDEX"
-    unknown = int((frame["descricao_tes"] == "NI - TES não localizada no cadastro").sum())
-    if unknown:
-        st.warning(f"{count(unknown)} movimentações possuem TES sem descrição no cadastro de referência.")
+    _show_missing_tes(frame, token)
     st.markdown("**01 · MOVIMENTAÇÕES POR GRUPO DE TES**")
     try:
         config = _groups_read()

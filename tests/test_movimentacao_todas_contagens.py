@@ -58,9 +58,14 @@ assert by_code.loc["C", "QUANTIDADE PROTHEUS"] == 2
 content = source.read_text(encoding="utf-8")
 assert 'cb_report_snapshot = movement_comparison[' in content
 assert 'movement_comparison["Físico"].notna()' in content
-assert '_finalization_snapshot = cb_report_snapshot.copy()' in content
-assert '_conferidos = _finalization_snapshot["Status"].eq("CONFERIDO")' in content
-assert '"Diferença Qtd", "Diferença R$"' in content
+assert '_finalization_snapshot = finalization_rows(' in content
+from cb_review import finalization_rows
+reviewed = finalization_rows(
+    pd.DataFrame([{"Status": "CONFERIDO", "Físico": 20, "Diferença Qtd": 2, "Diferença R$": 10}]),
+    pd.DataFrame(), False,
+)
+assert reviewed.iloc[0]["Físico"] == 20
+assert reviewed.iloc[0]["Diferença Qtd"] == reviewed.iloc[0]["Diferença R$"] == 0
 
 schema = (source.parent / "supabase_schema.sql").read_text(encoding="utf-8")
 assert "count(*) filter (where abs(coalesce(diferenca_qtd, 0)) > 1e-9)" in schema

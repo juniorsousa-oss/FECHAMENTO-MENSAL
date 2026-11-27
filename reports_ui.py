@@ -23,6 +23,73 @@ REPORT_NAMES = [
 MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
+class _SemDados(ValueError):
+    """O recorte é válido, mas não contém registros exportáveis."""
+
+
+def _trace_context(choice, period, start, end, warehouses, extra):
+    trace = [
+        ("Relatório", choice),
+        ("Período solicitado", period),
+        ("Competência do recorte", f"{start:%m/%Y} a {end:%m/%Y}" if start and end else "Histórico completo"),
+        ("Gerado em (Brasília)", datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M")),
+    ]
+    if choice != REPORT_NAMES[0]:
+        trace.append(("Filtro · Armazéns", warehouses or "Todos os disponíveis"))
+        trace.append(("Filtro · Tipos de material", extra.get("types") or "Todos os tipos"))
+    if choice == REPORT_NAMES[1]:
+        trace.extend([
+            ("Filtro · Status da OP", extra["status"]),
+            ("Filtro · Somente OPs com alerta", "Sim" if extra["alerts"] else "Não"),
+            ("Filtro · Critério do período", "Faturamento ou atividade" if extra["include_activity"] else "Faturamento"),
+        ])
+    if choice == REPORT_NAMES[2]:
+        trace.extend([
+            ("Filtro · Apresentação", "Resumo gerencial" if extra["summary_only"] else "Completo"),
+            ("Filtro · Grupos", extra["groups"] or "Todos os grupos"),
+            ("Filtro · TES", extra["tes"].strip() or "Todas as TES"),
+        ])
+    return trace
+
+
+def _stock_trace(imports, months):
+    selected = {datetime.strptime(month, "%m/%Y").date() for month in months}
+    baselines = {date(m.year - (m.month == 1), m.month - 1 or 12, 1) for m in selected} - selected
+    result = [("Competências exportadas", sorted(months, key=lambda m: m[3:] + m[:2]))]
+    for entry in sorted(imports, key=lambda item: str(item.get("competencia") or "")):
+        month = reports._date(entry.get("competencia"))
+        if month not in selected | baselines:
+            continue
+        label = "Fonte " + month.strftime("%m/%Y")
+        if month in baselines:
+            label += " · saldo inicial"
+        elif entry.get("preview"):
+            label += " · prévia"
+        source = reports.trace_source(label, entry)
+        if source:
+            result.append(source)
+    return result
+
+
+def _kardex_trace(model, frame, start, end):
+    scopes = set(zip(frame["competencia"].astype(str), frame["armazem"].astype(str)))
+    result = [("Competências exportadas", sorted({month for month, _ in scopes})),
+              ("Versão das regras de classificação", model.get("versao"))]
+    by_id = {row.get("import_id"): row for row in model.get("import_registry") or []}
+    for entry in model.get("coverage_metas") or []:
+        month, warehouse = entry["competencia"], entry["armazem"]
+        if (month, warehouse) not in scopes:
+            continue
+        begin, finish = reports._date(entry["periodo_inicio"]), reports._date(entry["periodo_fim"])
+        if (start and finish and finish < start) or (end and begin and begin > end):
+            continue
+        known = {**entry, "importado_em": by_id.get(entry.get("import_id"), {}).get("importado_em")}
+        source = reports.trace_source(f"Fonte KARDEX · {month} / {warehouse}", known)
+        if source:
+            result.append(source)
+    return result
+
+
 def _known_warehouses(imports: list[dict]) -> list[str]:
     found = set()
     for item in imports:
@@ -66,7 +133,23 @@ def _get_issue_model(selected_warehouses: tuple[str, ...] = ()) -> dict:
         stages.VERSION + "|" + issue.lot_conference.VERSION,
         model, master_records, catalog_types)
     prices, price_meta = issue._optional_catalog_prices()
+    refs = [
+        reports.trace_source(
+            "Fonte " + {"relatorio_geral": "Relatório Geral", "endereco": "ENDEREÇO"}.get(key, key),
+            (model.get("source_meta") or {}).get(key) or states[key], version=version,
+        )
+        for key, version, _ in tokens
+    ]
+    for label, reference in [
+        ("OPS", next(iter(model.get("history_meta") or []), meta or {})),
+        ("Plano Mestre", master_meta),
+        ("CADASTROS · Tipos", catalog_meta),
+        ("CADASTROS · Preços", price_meta),
+    ]:
+        if reference and not reference.get("erro") and reference.get("available") is not False:
+            refs.append(reports.trace_source("Fonte " + label, reference))
     return {**enriched, "master_plan_meta": master_meta,
+            "export_source_trace": [ref for ref in refs if ref],
             "catalog_meta": catalog_meta,
             "catalog_prices": prices, "catalog_price_meta": price_meta}
 
@@ -87,6 +170,9 @@ def _date_controls():
                             key="fm_reports_end")
     if isinstance(start, tuple) or isinstance(end, tuple):
         st.warning("Selecione uma única data inicial e uma única data final.")
+        return start, end, ""
+    if start is None or end is None:
+        st.info("Informe a data inicial e a final para gerar o Excel.")
         return start, end, ""
     if start > end:
         st.error("A data inicial não pode ser posterior à data final.")
@@ -123,7 +209,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
             "não representam saldos diários."
         )
         if not imports:
-            st.warning("Não há competências de estoque disponíveis para exportação.")
+            st.info("Sem dados · Não há competências de estoque disponíveis para exportação.")
             return
         sheet_count = 4
 
@@ -256,7 +342,7 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
         "Histórico completo" if start is None
         else f"{start:%d/%m/%Y} a {end:%d/%m/%Y}"
     )
-    st.caption(f"**Resumo da exportação:** {choice} · {period_label} · {sheet_count} aba(s)")
+    st.caption(f"**Resumo da exportação:** {choice} · {period_label} · {sheet_count} aba(s) de dados + Rastreabilidade")
 
     report_key = hashlib.sha256(repr((
         reports.EXPORT_SCHEMA_VERSION,
@@ -269,18 +355,21 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
     btn_prepare, btn_download = st.columns(2, gap="medium")
     with btn_prepare:
         prepare_clicked = st.button(
-            "PREPARAR EXCEL", type="primary", use_container_width=True,
+            "Gerar Excel", type="primary", use_container_width=True,
             key="fm_reports_prepare",
         )
     if prepare_clicked:
         audit_notes = []
+        trace = _trace_context(choice, period_label, start, end, warehouses, extra)
+        st.session_state.pop("fm_reports_error", None)
         try:
-            with st.spinner("Preparando as informações do relatório selecionado..."):
+            with st.spinner("Gerando Excel…"):
                 if choice == REPORT_NAMES[0]:
                     counts = reports.stock_data(summaries, imports, start, end)
                     if not counts["Resumo Geral"]:
-                        raise ValueError("Nenhuma competência possui resumo de estoque no período escolhido.")
-                    data = reports.export_stock(summaries, imports, start, end)
+                        raise _SemDados("Nenhuma competência possui resumo de estoque no período escolhido.")
+                    trace.extend(_stock_trace(imports, [row[0] for row in counts["Evolução Mensal"]]))
+                    data = reports.export_stock(summaries, imports, start, end, trace=trace)
                     records = len(counts["Evolução Mensal"])
                     prefix = "ESTOQUE_FECHAMENTO"
                 elif choice == REPORT_NAMES[1]:
@@ -343,17 +432,26 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                         alerts_only=extra["alerts"], material_types=types,
                         include_activity=extra["include_activity"])
                     if not rows:
-                        raise ValueError("Nenhuma OP com atividade ou produto corresponde ao recorte selecionado.")
+                        raise _SemDados("Nenhuma OP ou material corresponde ao recorte selecionado.")
+                    date_column = reports.OP_COLUMNS.index("Faturamento")
+                    bills = {day.strftime("%Y-%m") for row in rows if (day := reports._date(row[date_column]))}
+                    trace.extend([
+                        ("Competências de faturamento das linhas", ", ".join(f"{month[5:]}/{month[:4]}" for month in sorted(bills)) or "Nenhuma data válida nas linhas"),
+                        ("Base de data da OP", "Consulte Faturamento em cada linha; pode estar vazio quando incluída por atividade."),
+                        ("Data de referência da conferência", model.get("as_of")),
+                        ("Armazéns efetivamente consultados", model.get("warehouses")),
+                    ])
+                    trace.extend(model.get("export_source_trace") or [])
                     data = reports.export_issues(
                         model, start, end, statuses=statuses,
                         alerts_only=extra["alerts"], material_types=types,
-                        include_activity=extra["include_activity"])
+                        include_activity=extra["include_activity"], trace=trace)
                     records = len(rows)
                     prefix = "CONFERENCIA_BAIXAS"
                 else:
                     imported = movement._imports()
                     if not imported:
-                        raise ValueError("Nenhuma base KARDEX está registrada.")
+                        raise _SemDados("Nenhuma base KARDEX está registrada.")
                     tokens = tuple((item["chave"], item.get("atualizado_em", ""),
                                     item.get("meta") or {}) for item in imported)
                     model = movement._model(tokens, mv.rules()["versao"] + movement.history.VERSION)
@@ -366,10 +464,11 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                         group_names=set(extra["groups"]) if extra["groups"] else None,
                         group_config=group_config)
                     if frame.empty:
-                        raise ValueError("Nenhuma movimentação KARDEX corresponde ao recorte.")
+                        raise _SemDados("Nenhuma movimentação KARDEX corresponde ao recorte.")
+                    trace.extend(_kardex_trace(model, frame, start, end))
                     data = reports.export_kardex(
                         frame, group_config,
-                        summary_only=extra["summary_only"])
+                        summary_only=extra["summary_only"], trace=trace)
                     records = len(frame)
                     prefix = "KARDEX"
             st.session_state["fm_reports_audit_notes"] = (
@@ -385,19 +484,18 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
         except Exception as exc:
             st.session_state.pop("fm_reports_ready", None)
             st.session_state.pop("fm_reports_audit_notes", None)
-            st.error(f"Não foi possível preparar o relatório: {exc}")
+            st.session_state["fm_reports_error"] = (report_key, isinstance(exc, _SemDados), str(exc))
 
     prepared = st.session_state.get("fm_reports_ready")
     if prepared and prepared[0] == report_key:
         with btn_download:
             st.download_button(
-                "BAIXAR EXCEL", data=prepared[1], file_name=prepared[2],
-                mime=MIME, type="primary",
+                "Baixar Excel", data=prepared[1], file_name=prepared[2],
+                mime=MIME, type="primary", on_click="ignore",
                 use_container_width=True, key="fm_reports_download",
             )
         st.caption(
-            f"Arquivo pronto · {prepared[3]:,} registros · "
-            "dados originais preservados.".replace(",", ".")
+            f"Pronto para baixar · {format(prepared[3], ',').replace(',', '.')} registros."
         )
         notes = st.session_state.get("fm_reports_audit_notes")
         if notes and notes[0] == report_key and notes[1]:
@@ -405,5 +503,12 @@ def render_reports(*, summaries: list[dict], imports: list[dict]) -> None:
                 for note in notes[1]:
                     st.caption(note)
     else:
-        st.caption("Prepare o Excel para habilitar o download.")
+        failure = st.session_state.get("fm_reports_error")
+        if failure and failure[0] == report_key:
+            if failure[1]:
+                st.info(f"Sem dados · {failure[2]}")
+            else:
+                st.error(f"Não foi possível gerar o Excel: {failure[2]}")
+        else:
+            st.caption("Gere o Excel para habilitar o download.")
 

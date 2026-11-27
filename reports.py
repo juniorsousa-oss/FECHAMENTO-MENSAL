@@ -25,7 +25,7 @@ MONEY_FORMAT = '#,##0.00;[Red](#,##0.00)'
 # separador decimal isolado que o formato #,##0.###### gerava no pt-BR.
 QUANTITY_FORMAT = "General"
 QUANTITY_INTEGER_FORMAT = "General"
-EXPORT_SCHEMA_VERSION = "2026-11-04.7-ATENCAO-R15"
+EXPORT_SCHEMA_VERSION = "2026-11-27.1-RASTREABILIDADE-R15"
 PERCENT_FORMAT = '0.00%;[Red](0.00%)'
 
 # Formato homologado: cabeçalho da OP repetido e, à direita, a mesma
@@ -289,6 +289,40 @@ class _Excel:
         return output.getvalue()
 
 
+TRACE_SHEET = "Rastreabilidade"
+
+
+def write_trace_sheet(workbook, trace: list[tuple[str, object]]) -> None:
+    """Anexa a origem e os filtros sem alterar as abas homologadas."""
+    if not trace:
+        return
+    table = _Excel()
+    table.workbook = workbook
+    ws = table.sheet(TRACE_SHEET, ["Informação", "Valor"])
+    ws.column_dimensions["A"].width = 36
+    ws.column_dimensions["B"].width = 90
+    for label, value in trace:
+        if value is not None and value != "":
+            table.add(TRACE_SHEET, [label, value])
+
+
+def trace_source(label: str, meta: dict, *, version=None) -> tuple[str, str] | None:
+    """Inclui somente identificadores efetivamente informados pela fonte."""
+    name = meta.get("arquivo_nome") or meta.get("last_file_name")
+    if version is None:
+        version = meta.get("source_version", meta.get("version", meta.get("versao")))
+    updated = meta.get("importado_em") or meta.get("last_update_at") or meta.get("atualizado_em")
+    digest = meta.get("content_sha256") or meta.get("sha256") or meta.get("import_id")
+    details = [str(name)] if name else []
+    if version is not None and version != "":
+        details.append(f"Versão: {version}")
+    if updated:
+        details.append(f"Atualização registrada: {updated}")
+    if digest:
+        details.append(f"Identificador: {digest}")
+    return (label, " | ".join(details)) if details else None
+
+
 STOCK_HEADERS = ["Competência", "Estoque inicial (R$)", "Estoque final (R$)",
                  "Resumo (R$)", "Variação (%)", "Validação", "Fonte"]
 
@@ -348,7 +382,8 @@ def stock_data(summaries: list[dict], imports: list[dict],
 
 
 def export_stock(summaries: list[dict], imports: list[dict],
-                 start: date | None = None, end: date | None = None) -> bytes:
+                 start: date | None = None, end: date | None = None, *,
+                 trace: list[tuple[str, object]] | None = None) -> bytes:
     data = stock_data(summaries, imports, start, end)
     wb = _Excel()
     for name, rows in data.items():
@@ -361,6 +396,7 @@ def export_stock(summaries: list[dict], imports: list[dict],
                  percent={4 + offset})
         for row in rows:
             wb.add(name, row)
+    write_trace_sheet(wb.workbook, trace or [])
     return wb.save()
 
 
@@ -528,7 +564,8 @@ def issue_rows(model: dict, start: date | None = None, end: date | None = None,
 def export_issues(model: dict, start: date | None = None, end: date | None = None,
                   *, statuses: set[str] | None = None, alerts_only: bool = False,
                   material_types: set[str] | None = None,
-                  include_activity: bool = False) -> bytes:
+                  include_activity: bool = False,
+                  trace: list[tuple[str, object]] | None = None) -> bytes:
     """Espelha cabeçalho da OP + campos validados do R3, inclusive previsão."""
     selected_ops, selected_codes = _issue_selection(
         model, start, end, statuses=statuses, alerts_only=alerts_only,
@@ -550,6 +587,7 @@ def export_issues(model: dict, start: date | None = None, end: date | None = Non
             alert=has_alert,
             attention=lot_conference.is_attention_result(values[-1]),
         )
+    write_trace_sheet(wb.workbook, trace or [])
     return wb.save()
 
 
@@ -584,6 +622,8 @@ def filtered_kardex(frame: pd.DataFrame, start: date | None = None, end: date | 
 
 
 def export_kardex(frame: pd.DataFrame, group_config: dict, *,
-                  summary_only: bool = False) -> bytes:
+                  summary_only: bool = False,
+                  trace: list[tuple[str, object]] | None = None) -> bytes:
     import movements
-    return movements.export_excel(frame, group_config=group_config, summary_only=summary_only)
+    options = {"prepare_workbook": lambda workbook: write_trace_sheet(workbook, trace)} if trace else {}
+    return movements.export_excel(frame, group_config=group_config, summary_only=summary_only, **options)

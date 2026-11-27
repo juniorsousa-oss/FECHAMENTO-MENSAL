@@ -214,7 +214,7 @@ class IssueCheckUITests(unittest.TestCase):
     def test_responsive_filters_cards_and_all_warehouses_without_manual_controls(self):
         import issue_check_ui as ui
         source = (Path(__file__).resolve().parents[1] / "issue_check_ui.py").read_text("utf-8")
-        renderer = source.split("def render_issue_check():", 1)[1]
+        renderer = source.split("def render_issue_check(", 1)[1]
         self.assertNotIn('ATUALIZAR CONFERÊNCIA', renderer)
         self.assertNotIn('st.multiselect(', renderer)
         self.assertIn('chosen = tuple(sorted(set(options) | import_warehouses))', renderer)
