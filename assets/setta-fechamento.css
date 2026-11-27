@@ -38,48 +38,24 @@
  visibility:hidden!important;pointer-events:none!important;
 }
 .setta-inv-route-loader{display:none}
-html[data-setta-inventory-navigating] [class*="st-key-fm_route_body_"],
-html[data-setta-inventory-navigating] [class*="st-key-fm_route_body_"] *,
-html[data-setta-inventory-navigating] .footer{visibility:hidden!important;pointer-events:none!important}
-html[data-setta-inventory-navigating][data-setta-nav-placeholder] .setta-inv-route-loader{
+html[data-setta-page-updating] [class*="st-key-fm_route_body_"],
+html[data-setta-page-updating] .footer,
+html[data-setta-inventory-navigating] .setta-inv-intro{
+ opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:none!important;
+}
+html[data-setta-page-updating] [class*="st-key-fm_route_body_"] *,
+html[data-setta-inventory-navigating] .setta-inv-intro *{
+ visibility:hidden!important;pointer-events:none!important;
+}
+html[data-setta-page-updating] [data-testid="stMain"]{overflow-anchor:none}
+html[data-setta-page-updating][data-setta-nav-placeholder] .setta-inv-route-loader,
+html[data-setta-op-transition][data-setta-op-placeholder] .setta-inv-route-loader{
  display:flex;align-items:center;gap:.55rem;position:fixed;z-index:910;
- top:calc(var(--inv-top) + 103px);left:28px;
+ top:calc(var(--inv-top) + 10px);right:28px;
  border:1px solid var(--inv-border);border-radius:9px;background:#fff;
  padding:.45rem .75rem;color:var(--inv-mute);font:.84rem Outfit,system-ui,sans-serif;
 }
 .setta-inv-route-loader::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--inv-accent)}
-html[data-setta-section-loading="dashboard"] .st-key-fm_section_panel_dashboard,
-html[data-setta-section-loading="chapas"] .st-key-fm_section_panel_chapas,
-html[data-setta-section-loading="kardex"] .st-key-fm_section_panel_kardex,
-html[data-setta-section-loading="reports"] .st-key-fm_section_panel_reports,
-html[data-setta-section-loading="settings"] .st-key-fm_section_panel_settings{
- opacity:0!important;visibility:hidden!important;pointer-events:none!important;
-}
-html[data-setta-section-loading] [data-testid="stMainBlockContainer"] [data-stale="true"]:is(
- .st-key-fm_dashboard_detail,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,[class*="st-key-cb_visible_stage_"]
-),
-html[data-setta-section-loading] [data-testid="stMainBlockContainer"] [data-stale="true"]:is(
- :has(.st-key-fm_dashboard_detail,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,[class*="st-key-cb_visible_stage_"]),
- .st-key-fm_dashboard_detail *,.st-key-fm_mov_navigation *,.st-key-fm_reports_kind *,.st-key-fm_settings_area *,[class*="st-key-cb_visible_stage_"] *
-){
- opacity:1!important;visibility:visible!important;
-}
-html[data-setta-section-loading] [data-testid="stMainBlockContainer"] [data-stale="true"] :is(
- .st-key-fm_dashboard_detail,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,[class*="st-key-cb_visible_stage_"]
-) *,
-html[data-setta-section-loading] [data-testid="stMainBlockContainer"] :is(
- .st-key-fm_dashboard_detail,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,[class*="st-key-cb_visible_stage_"]
-) [data-stale="true"] *{visibility:visible!important}
-/* Same-page updates keep controls in place; route masks still suppress the entire old page. */
-html:not([data-setta-inventory-navigating]) [data-testid="stMainBlockContainer"] [data-stale="true"]:is(:is(.st-key-fm_dashboard_detail,.st-key-fm_history_view,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,.st-key-fm_feeder_type,.st-key-fm_ops_settings_view,.st-key-fm_issue_filters,[class*="st-key-cb_visible_stage_"]),:is(.st-key-fm_dashboard_detail,.st-key-fm_history_view,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,.st-key-fm_feeder_type,.st-key-fm_ops_settings_view,.st-key-fm_issue_filters,[class*="st-key-cb_visible_stage_"]) *),
-html:not([data-setta-inventory-navigating]) [data-testid="stMainBlockContainer"] :is(.st-key-fm_dashboard_detail,.st-key-fm_history_view,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,.st-key-fm_feeder_type,.st-key-fm_ops_settings_view,.st-key-fm_issue_filters,[class*="st-key-cb_visible_stage_"]) [data-stale="true"] *{
- opacity:1!important;visibility:visible!important;
-}
-html[data-setta-section-loading="history"] .st-key-fm_section_panel_history,
-html[data-setta-section-loading="feeders"] .st-key-fm_section_panel_feeders,
-html[data-setta-section-loading="ops_source"] .st-key-fm_section_panel_ops_source{
- opacity:0!important;visibility:hidden!important;pointer-events:none!important;
-}
 /* Only OP headers keep their previous pixels during a fragment update.
    The old and new details are not shown together. */
 html[data-setta-op-transition] [data-testid="stMainBlockContainer"] [data-stale="true"]:is(
