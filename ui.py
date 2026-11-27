@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from contextlib import contextmanager
 from functools import lru_cache
 from html import escape
 from pathlib import Path
@@ -314,3 +315,16 @@ def render_shell(*, title: str, page_label: str, route_id: int) -> None:
         f'<div class="setta-inv-breadcrumb">Fechamento mensal / {escape(page_label)}</div>'
         f'<h1>{escape(page_label)}</h1></div>'
     )
+
+
+@contextmanager
+def section_surface(name: str, selection: object):
+    """Isolate the changing panel from its stable tab picker."""
+    with st.container(key=f"fm_section_panel_{name}"):
+        try:
+            yield
+        finally:
+            st.html(
+                f'<span class="setta-ready-marker" data-setta-section-ready="{escape(name)}" '
+                f'data-setta-section-choice="{escape(str(selection), quote=True)}" aria-hidden="true"></span>'
+            )
