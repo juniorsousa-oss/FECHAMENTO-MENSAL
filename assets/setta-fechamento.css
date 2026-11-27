@@ -22,10 +22,11 @@
 .setta-inv-mark{width:88px;height:38px;display:grid;place-items:center;background:#fff;border-radius:6px;flex:none}
 .setta-inv-mark img{width:66px;height:24px;object-fit:contain}
 .setta-drawer-toggle{position:absolute;top:7px;left:12px;width:44px;height:44px;box-sizing:border-box;padding:0;display:grid;place-items:center;pointer-events:auto;color:#fff;background:#424242;border:1px solid #767676;border-radius:8px;cursor:pointer}
-.setta-drawer-toggle svg{width:21px;height:21px}
-.setta-drawer-toggle .setta-close-icon,
-html[data-setta-drawer-open] .setta-drawer-toggle .setta-menu-icon{display:none}
-html[data-setta-drawer-open] .setta-drawer-toggle .setta-close-icon{display:inline}
+/* O ícone é desenhado em CSS: o sanitizador do st.html remove SVG inline. */
+.setta-drawer-toggle::before,.setta-drawer-toggle::after{position:absolute;inset:0;width:18px;height:2px;margin:auto;border-radius:2px;background:currentColor;pointer-events:none}
+.setta-drawer-toggle::before{content:"";box-shadow:0 -5px currentColor,0 5px currentColor}
+.setta-drawer-toggle[aria-expanded="true"]::before{box-shadow:none;transform:rotate(45deg)}
+.setta-drawer-toggle[aria-expanded="true"]::after{content:"";transform:rotate(-45deg)}
 .setta-drawer-toggle:hover{background:#555}
 .setta-drawer-toggle:focus-visible{outline:2px solid var(--inv-accent);outline-offset:2px}
 /* Nas reexecuções internas, o Streamlit mantém nós antigos brevemente.
