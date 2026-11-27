@@ -133,10 +133,10 @@ def _op(value) -> str:
     return match.group(1) if match else ""
 
 
-def parse(raw: bytes, file_name: str, *, source_pack: dict | None = None) -> dict:
+def parse(raw: bytes, file_name: str) -> dict:
     if not file_name.lower().endswith((".xlsx", ".xltx")):
         raise ValueError("Envie o relatório OPS em formato XLSX ou XLTX.")
-    digest = str(source_pack["source_sha256"]) if source_pack is not None else hashlib.sha256(raw).hexdigest()
+    digest = hashlib.sha256(raw).hexdigest()
     maps = {}
     grouped = defaultdict(Decimal)
     representative = {}
@@ -144,7 +144,7 @@ def parse(raw: bytes, file_name: str, *, source_pack: dict | None = None) -> dic
     dates = set()
     errors = []
     sample_headers = []
-    for sheet, line, cells, epoch in (mv.normalized_xml_rows(source_pack) if source_pack is not None else mv._xml_rows(raw)):
+    for sheet, line, cells, epoch in mv._xml_rows(raw):
         found = _detect_header(cells)
         if found is not None:
             # Repetição do cabeçalho dentro da planilha é comum.

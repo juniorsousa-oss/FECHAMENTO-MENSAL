@@ -95,10 +95,6 @@ def day(value) -> str:
 
 
 def _band():
-    st.markdown('<div class="section-band"><div class="section-band-kicker">CONFERÊNCIAS</div>'
-                '<div class="section-band-title">CONFERÊNCIA DE BAIXAS</div>'
-                '<div class="section-band-note">Consulte OPs, confronte as baixas do relatório OPS por produto e lote e identifique pendências por endereço.</div></div>',
-                unsafe_allow_html=True)
     st.markdown("""
     <style>
     .st-key-fm_issue_filters {
@@ -806,6 +802,7 @@ def _clear_filters():
     st.session_state.fm_issue_search = ""
     st.session_state.fm_issue_filter = "Todos"
     st.session_state.fm_issue_op_status = "Todos os status"
+    st.session_state.fm_issue_warehouse = "Todos os armazéns"
     st.session_state.fm_issue_invoice_start = None
     st.session_state.fm_issue_invoice_end = None
     st.session_state.fm_issue_applied_filters = _default_issue_filters()
@@ -815,7 +812,7 @@ def _clear_filters():
 
 def _default_issue_filters() -> dict:
     return {"op": "", "alertas": "Todos", "status": "Todos os status",
-            "datas": (None, None)}
+            "datas": (None, None), "armazem": "Todos os armazéns"}
 
 
 def _material_at_position(group: pd.DataFrame, selection):
@@ -903,6 +900,35 @@ def _filter(frame: pd.DataFrame, query: str, choice: str) -> pd.DataFrame:
         view = view.loc[view["op"].isin(selected)]
     return view.copy()
 
+
+
+def _filter_warehouse_evidence(frame: pd.DataFrame, stock: list[dict], warehouse: str) -> pd.DataFrame:
+    """Recorta OPs com evidência no ENDEREÇO, sem atribuir baixas a um armazém.
+
+    O OPS não informa armazém. Usamos somente a evidência de saldo
+    positivo do produto e, quando conhecido, do lote exato no ENDEREÇO.
+    A OP selecionada permanece íntegra no resultado.
+    """
+    if not warehouse or warehouse == "Todos os armazéns" or frame.empty:
+        return frame
+    pairs = {
+        (str(row["codigo"]), ops_lot_source.lot(row.get("lote")))
+        for row in stock
+        if str(row.get("armazem") or "") == warehouse
+        and mv.decimal(row.get("saldo")) > check.EPSILON
+    }
+    if not pairs:
+        return frame.iloc[:0]
+    codes = {code for code, _ in pairs}
+    product_codes = frame["codigo"].astype(str)
+    if "lote" in frame:
+        lots = frame["lote"].map(ops_lot_source.lot)
+        mask = [((product, lot) in pairs) if lot else (product in codes)
+                for product, lot in zip(product_codes, lots)]
+    else:
+        mask = product_codes.isin(codes)
+    supported_ops = frame.loc[mask, "op"]
+    return frame.loc[frame["op"].isin(supported_ops)]
 
 def _billing_date(value):
     """Data digitável (DD/MM/AAAA); vazio significa sem limite."""
@@ -1085,22 +1111,26 @@ def _ops(model, view, token):
     info_source = model.get("lot_ops")
     if info_source is None:
         info_source = model["ops"]
-    info = info_source.set_index("op").to_dict("index")
+    visible_numbers = numbers[(page - 1) * size:page * size]
+    info = info_source.loc[info_source["op"].isin(visible_numbers)].set_index("op").to_dict("index")
+    visible = view.loc[view["op"].isin(visible_numbers)]
+    result_column = "resultado_lote" if "resultado_lote" in visible else "status"
+    attention_by_op = (
+        visible[result_column].isin(lot_conference.ATTENTION_RESULTS)
+        .groupby(visible["op"]).sum().to_dict()
+    )
     with st.container(key="fm_issue_ops"):
-        for number in numbers[(page - 1) * size:page * size]:
-            group = view.loc[view["op"] == number]
-            context = info[number]
+        for number in visible_numbers:
+            context = info.get(number)
+            if context is None:
+                st.warning(f"OP {number}: resumo indisponível nesta leitura. Atualize as fontes para conferir.")
+                continue
             total = int(context["itens"])
             separated = int(context["separados"])
             confirmed = int(context["conferidos"])
             discharged = int(context.get("baixados", 0))
             issues = int(context["divergencias"])
-            result_column = "resultado_lote" if "resultado_lote" in group else "status"
-            attention_count = int(
-                group[result_column].astype(str).isin(
-                    lot_conference.ATTENTION_RESULTS
-                ).sum()
-            )
+            attention_count = int(attention_by_op.get(number, 0))
             summary = (
                 "ORDEM COM ALERTA" if issues
                 else "ORDEM EM CONFERÊNCIA" if context.get("status_op") == op_rules.EM_CONFERENCIA
@@ -1108,35 +1138,29 @@ def _ops(model, view, token):
                 else "ORDEM EM ATENÇÃO" if attention_count
                 else "ORDEM OK"
             )
-            title = (
-                f"OP {number} | {total} PRODUTOS | {separated} SEPARADOS | "
-                f"{confirmed} CONFERIDOS | {discharged} BAIXADOS | "
-                f"{issues} ALERTAS"
-                + (f" | {attention_count} ATENÇÕES" if attention_count else "")
-                + f" — {summary}"
-            )
-            # Padrão visual habitual: cartão neutro para etapas normais
-            # da produção. Âmbar fica no RESULTADO do lote; vermelho
-            # no cartão apenas quando há alerta operacional ativo.
+            title = f"OP {number} · {total} materiais · {issues} alertas"
+            if attention_count:
+                title += f" · {attention_count} atenções"
+            title += " · " + summary
             css_key = "fm_issue_op_alert_" if issues else "fm_issue_op_ok_"
             is_open = st.session_state.get("fm_issue_open_op") == number
             with st.container(key=css_key + number):
                 st.button(
-                    ("▼ " if is_open else "▶ ") + title,
+                    title, icon=":material/expand_less:" if is_open else ":material/expand_more:",
                     key="fm_issue_select_" + number, use_container_width=True,
                     on_click=_toggle_issue_op, args=(number,),
                 )
-                st.markdown(_op_metadata(context), unsafe_allow_html=True)
             if is_open:
+                group = visible.loc[visible["op"] == number]
                 with st.container(key="fm_issue_op_detail_" + number):
+                    st.markdown(_op_metadata(context), unsafe_allow_html=True)
+                    st.caption(f"{separated} separados · {confirmed} conferidos · {discharged} baixados")
                     st.caption(f"P.A.: {context['pa'] or '—'} · {context['descricao_pa'] or 'Descrição não informada'}")
                     source_lines = int(context.get("linhas_mes", total))
                     if source_lines != total:
                         st.caption(
-                            f"{source_lines} linhas no Relatório Geral do MES "
-                            f"consolidadas em {total} produtos distintos nesta OP. "
-                            "A tabela mostra uma linha por OP + código + lote; "
-                            "registros duplicados da mesma chave permanecem nas evidências."
+                            f"{source_lines} linhas de origem · {total} produtos distintos. "
+                            "A tabela separa por lote; as linhas de origem ficam nas evidências."
                         )
                     if not bool(group.iloc[0]["op_possui_baixa"]):
                         st.caption("Não há consumo líquido identificado no histórico desta OP até a data de referência.")
@@ -1235,8 +1259,8 @@ def _sources(model):
         }]), hide_index=True, width="stretch")
         st.caption(
             "A fonte OPS substitui o KARDEX apenas para comprovar baixas. "
-            "Cada nova planilha OPS substitui toda a versão anterior; "
-            "não duplica lançamentos históricos. A quantidade é somada "
+            "Novos arquivos substituem apenas seu intervalo de datas, sem duplicar movimentos. "
+            "A quantidade é somada "
             "somente quando OP, produto e lote são idênticos."
         )
     diagnostics = model.get("diagnostico_baixas") or {}
@@ -1283,7 +1307,7 @@ def render_results(model):
         frame = model["items"]
     period = model["coverage"]
     if not model["history_available"]:
-        st.warning("Relatório OPS ainda não importado. As baixas são desconhecidas, não zero. Importe a fonte na área acima.")
+        st.warning("Sem Relatório OPS, as baixas ficam desconhecidas, não zeradas.")
     elif not model.get("accumulated_history") and not period["fim"]:
         st.warning("OPS sem cobertura histórica identificada.")
     elif (not model.get("accumulated_history") and period["fim"]
@@ -1317,11 +1341,14 @@ def render_results(model):
             except (ValueError, TypeError, OverflowError):
                 st.session_state[date_key] = None
 
+    warehouses = ["Todos os armazéns"] + list(model.get("warehouses") or ())
+    if st.session_state.get("fm_issue_warehouse") not in (None, *warehouses):
+        st.session_state.fm_issue_warehouse = warehouses[0]
     with st.container(key="fm_issue_filters"):
         st.markdown(
             '<div class="fm-issue-filter-heading">FILTROS DA CONFERÊNCIA</div>'
             '<div class="fm-issue-filter-subtitle">'
-            'Escolha os critérios e clique em PESQUISAR para consultar as OPs.'
+            'Filtre por OP, tipo de pendência, status ou faturamento.'
             '</div>', unsafe_allow_html=True,
         )
         # Inputs dentro do formulário não disparam cálculos enquanto são editados.
@@ -1334,6 +1361,10 @@ def render_results(model):
                     query_draft = st.text_input(
                         "LOCALIZAR OP", key="fm_issue_search",
                         placeholder="Digite o número da OP",
+                    )
+                    warehouse_draft = st.selectbox(
+                        "ARMAZÉM (ENDEREÇO)", warehouses, key="fm_issue_warehouse",
+                        help="Filtra OPs com material e saldo no armazém. As baixas do OPS não são atribuídas a um armazém.",
                     )
             with classification_col:
                 with st.container(key="fm_issue_class_group"):
@@ -1392,7 +1423,7 @@ def render_results(model):
         else:
             st.session_state.fm_issue_applied_filters = {
                 "op": query_draft, "alertas": choice_draft,
-                "status": status_draft, "datas": submitted_dates,
+                "status": status_draft, "datas": submitted_dates, "armazem": warehouse_draft,
             }
             st.session_state.fm_issue_page = 1
             st.session_state.fm_issue_open_op = None
@@ -1401,9 +1432,15 @@ def render_results(model):
     choice = applied["alertas"]
     selected_status = applied["status"]
     invoice_period = applied["datas"]
+    warehouse = applied.get("armazem", warehouses[0])
+    if warehouse not in warehouses:
+        warehouse = warehouses[0]
     view = _filter_op_status_invoice(
         _filter(frame, query, choice), model["ops"], selected_status, invoice_period
     )
+    view = _filter_warehouse_evidence(view, model.get("stock") or [], warehouse)
+    if warehouse != warehouses[0]:
+        st.caption(f"{warehouse} · OPs com saldo no ENDEREÇO. Cada OP mantém todos os materiais e baixas.")
     if "lote" in view.columns:
         selected_keys = set(zip(
             view["op"].astype(str), view["codigo"].astype(str),
@@ -1445,7 +1482,7 @@ def render_results(model):
         unsafe_allow_html=True,
     )
     token = hashlib.sha256(
-        (op_rules.VERSION + lot_conference.VERSION + query + choice + selected_status + str(invoice_period)
+        (op_rules.VERSION + lot_conference.VERSION + query + choice + selected_status + str(invoice_period) + warehouse
          + str(model["warehouses"]) + str(model["source_meta"]) + str(period)).encode()
     ).hexdigest()[:14]
     if view.empty:
@@ -1476,11 +1513,8 @@ def render_results(model):
             st.session_state["fm_issue_report_ready"] = (report_key, data)
     with right:
         st.caption(
-            "Exportação R15 em uma única aba: 12 campos da OP e 13 do material, "
-            "reproduzindo o R3 validado. Inclui Valor previsto da baixa "
-            "(CADASTROS × quantidade pendente), saldos e resultado. "
-            "Cada lote do mesmo produto aparece em sua própria linha. "
-            "A diferença de lote é destacada separadamente da falta real de baixa."
+            "O espelho exporta toda a conferência, não os filtros da fila, inclusive o de armazém. "
+            "O Excel R15 mantém uma linha por OP, produto e lote, com saldos, resultado e valor previsto da baixa."
         )
     prepared = st.session_state.get("fm_issue_report_ready")
     if prepared and prepared[0] == report_key:
@@ -1523,11 +1557,8 @@ def render_ops_feeder():
             + " · período " + day(current_ops.get("periodo_inicio"))
             + " a " + day(current_ops.get("periodo_fim"))
         )
-    import central_movement_feeds as central_feeds
-    entry = central_feeds.state_or_empty().get("ops", {})
-    st.caption(central_feeds.describe("ops", entry))
     with st.expander("IMPORTAR / SUBSTITUIR RELATÓRIO OPS COM LOTE",
-                     expanded=not bool(current_ops) or (entry.get("current") and not entry.get("applied"))):
+                     expanded=not bool(current_ops)):
         st.caption(
             "Arquivo XLSX/XLTX do OPS: identifica automaticamente as colunas "
             "de OP, produto, quantidade, data, lote, tipo RE/DE e TES. "
@@ -1537,18 +1568,10 @@ def render_ops_feeder():
             "Movimentos fora do intervalo são preservados. "
             "Não altera o KARDEX gerencial."
         )
-        use_central = st.checkbox(
-            "USAR OPS DA CENTRAL", value=bool(entry.get("current") and not entry.get("applied")),
-            disabled=not bool(entry.get("current")),
-            key="fm_ops_central_" + str((entry.get("meta") or {}).get("version") or 0)
-                + "_" + str(bool(entry.get("applied"))),
+        uploaded = st.file_uploader(
+            "Relatório OPS", type=["xlsx", "xltx"],
+            key="fm_issue_ops_file",
         )
-        with st.expander("CONTINGÊNCIA MANUAL", expanded=False):
-            uploaded = st.file_uploader(
-                "Relatório OPS", type=["xlsx", "xltx"],
-                key="fm_issue_ops_file",
-                disabled=use_central,
-            )
         replace_mode = st.radio(
             "CRITÉRIO DE SUBSTITUIÇÃO",
             options=("period", "op"),
@@ -1567,21 +1590,14 @@ def render_ops_feeder():
                 "inclusive as de outras datas. O histórico das demais OPs "
                 "será preservado e será criado um backup antes da gravação."
             )
-        if use_central or uploaded is not None:
+        if uploaded is not None:
             try:
                 with st.spinner("Lendo movimentações e consolidando OP, produto, lote e data..."):
-                    if use_central:
-                        try:
-                            parsed_ops = central_feeds.load_parsed("ops", entry["token"])
-                        except Exception as exc:
-                            central_feeds.mark_error("ops", entry, exc)
-                            raise
-                    else:
-                        parsed_ops = _parse_ops_upload(
-                            uploaded.getvalue(), uploaded.name,
-                            ops_lot_source.VERSION,
-                            ops_lot_source.PARSER_VERSION,
-                        )
+                    parsed_ops = _parse_ops_upload(
+                        uploaded.getvalue(), uploaded.name,
+                        ops_lot_source.VERSION,
+                        ops_lot_source.PARSER_VERSION,
+                    )
                 metadata = parsed_ops["meta"]
                 if metadata.get("versao") != ops_lot_source.VERSION:
                     raise RuntimeError(
@@ -1695,14 +1711,12 @@ def render_ops_feeder():
                     ("CONFIRMAR SUBSTITUIÇÃO DAS OPs" if replace_mode == "op"
                      else "CONFIRMAR SUBSTITUIÇÃO DO PERÍODO OPS"), type="primary",
                     key="fm_issue_ops_save", use_container_width=True,
-                    disabled=not accept or (not impact["alterou"] and not use_central),
+                    disabled=not accept or not impact["alterou"],
                 ):
                     with st.spinner(
                         "Criando backup, substituindo período e validando "
                         "a integridade do histórico OPS..."
                     ):
-                        if use_central:
-                            central_feeds.verify_current("ops", entry["token"])
                         saved_ops = ops_lot_source.save(
                             parsed_ops,
                             expected_previous_sha=impact["sha256_anterior"],
@@ -1718,8 +1732,6 @@ def render_ops_feeder():
                             "O banco não confirmou a versão das regras OPS. "
                             "A atualização não pode ser considerada concluída."
                         )
-                    if use_central:
-                        central_feeds.mark_applied("ops", entry, len(parsed_ops["rows"]))
                     effective = saved_ops["impact"]
                     st.session_state["_fm_issue_ops_flash"] = (
                         (("OPs do relatório substituídas e histórico validado no banco. "
@@ -1741,9 +1753,8 @@ def render_ops_feeder():
         st.success(flash)
 
 
-def render_issue_check():
+def render_issue_check(*, on_open_ops=None):
     _band()
-    st.markdown("#### FONTE DAS BAIXAS · RELATÓRIO OPS")
     try:
         current_ops = _ops_meta()
     except Exception as exc:
@@ -1759,21 +1770,19 @@ def render_issue_check():
         )
         if current_ops.get("versao") != ops_lot_source.VERSION:
             st.error(
-                "ESTA VERSÃO DA FONTE OPS PRECISA SER REPROCESSADA. "
-                "As regras anteriores descartavam RE1/TES 999 (inclusive a "
-                "baixa de 16 unidades do produto 06050080). "
-                "Abra a importação abaixo, carregue o MESMO OPS.xltx "
-                "e confirme a substituição para recalcular as baixas."
+                "Reprocesse a fonte OPS. Esta versão pode omitir RE1/TES 999. "
+                "No alimentador, carregue o mesmo arquivo e confirme a substituição."
             )
     else:
         st.warning(
             "Nenhum Relatório OPS foi importado para esta conferência. "
             "Sem esta fonte, nenhuma baixa será considerada comprovada."
         )
-    st.info(
-        "A importação do Relatório OPS foi movida para "
-        "CONFIGURAÇÕES → ALIMENTADORES → OPS. A conferência usa a versão vigente."
-    )
+    if on_open_ops is not None:
+        st.button("Abrir alimentador OPS", on_click=on_open_ops, icon=":material/folder_open:",
+                  key="fm_issue_open_ops_feeder")
+    else:
+        st.caption("Importação OPS: Configurações → Alimentadores → OPS.")
     try:
         states = _states()
         for key in SOURCE_KEYS:

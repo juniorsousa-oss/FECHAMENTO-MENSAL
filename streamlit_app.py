@@ -52,6 +52,7 @@ def _setta_data_editor(data, *args, **kwargs):
 from PIL import Image, ImageDraw, ImageFont
 from cb_balance_math import saldo_categoria as _sum_cb_category, numero_br as _decimal_number_br
 from competence_calendar import selectable_months
+from closing_dashboard import closing_status, read_quality_rows
 
 import inventory_db as db
 import central_fechamento_data as central_data
@@ -74,7 +75,6 @@ FAVICON_FILE = ROOT / "config" / "favicon_setta.b64"
 TZ = ZoneInfo("America/Sao_Paulo")
 
 CONNECTED_API_SOURCE_KEYS = {
-    "ops", "kardex_s2", "kardex_ep", "kardex_e2",
     "analitico",
     "cadastros",
     "relatorio_geral",
@@ -3310,9 +3310,6 @@ def _refresh_fm_data() -> None:
     _cached_preview_summaries.clear()
     central_data.source_state_for.clear()
     central_data._consumer_status_rows.clear()
-    import central_movement_feeds as movement_feeds
-    movement_feeds.feed_state.clear()
-    movement_feeds.load_parsed.clear()
     st.session_state.pop("_fm_analitico_synced", None)
     st.session_state.pop("_fm_cadastros_synced", None)
     st.session_state.pop("fm_reports_ready", None)
@@ -3508,6 +3505,8 @@ if _needs_inventory_core:
                     central_context.get("meta") or {}
                 ).get("last_update_at"),
                 "preview": True,
+                "source_version": (central_context.get("meta") or {}).get("version"),
+                "content_sha256": (central_context.get("meta") or {}).get("content_sha256"),
             }
         )
             summaries.extend(
@@ -3598,15 +3597,6 @@ with _fm_page_surface.container():
             _selected_month_query = selected_month.strftime("%Y-%m")
             if str(st.query_params.get("mes", "") or "") != _selected_month_query:
                 st.query_params["mes"] = _selected_month_query
-            if (selected_month == live_competencia
-                    and selected_month.isoformat() not in persisted_import_keys):
-                st.caption(
-                    "MÊS VIGENTE · "
-                    + month_start(selected_month).strftime("%d/%m/%Y")
-                    + " A " + closing_date(selected_month).strftime("%d/%m/%Y")
-                    + " · POSIÇÃO CORRENTE DO ANALÍTICO; AINDA NÃO É FECHAMENTO."
-                )
-
             _dashboard_summaries = list(summaries)
             _dashboard_imports_by_month = dict(imports_by_month)
             _dashboard_summary_map = dict(summary_map)
@@ -3739,34 +3729,43 @@ with _fm_page_surface.container():
             )
 
             _has_selected_snapshot = bool(import_info)
+            _closing_saved = current_competencia.isoformat() in persisted_import_keys
+            _closing_pending = bool(_closing_source_parsed.get("errors"))
+            _selected_pending = int(import_info.get("linhas_invalidas") or 0)
+            analysis_col, closing_col = st.columns(2)
+            with analysis_col:
+                st.metric("Mês em análise", month_label(selected_month))
+                if import_info.get("manual_snapshot"):
+                    st.caption("Carga manual de fechamento")
+                elif selected_month == live_competencia and selected_month.isoformat() not in persisted_import_keys:
+                    st.caption("Posição atual do Analítico · ainda não é fechamento")
+                elif selected_month.isoformat() in persisted_import_keys:
+                    st.caption("Fechamento gravado")
+            with closing_col:
+                st.metric("Competência a encerrar", month_label(current_competencia))
+                st.caption(closing_status(saved=_closing_saved, available=_closing_source_available,
+                                          errors=_closing_pending))
+
             if not _has_selected_snapshot:
-                st.info(
-                    f"{month_label(selected_month)} está disponível para acompanhamento, "
-                    "mas ainda não possui uma fotografia de estoque consolidada. "
-                    "As conferências e contagens da competência continuam acessíveis. "
-                    "Se houver uma carga manual do último dia, selecione-a acima "
-                    "para visualizar os saldos dessa competência."
-                )
+                st.info("Esta competência não tem saldo consolidado. As conferências continuam disponíveis.")
             elif status != "VALIDO":
-                st.warning(
-                    f"{month_label(selected_month)} possui pendência de qualidade no relatório "
-                    f"({int(import_info.get('linhas_invalidas') or 0)} item(ns)). "
-                    "A análise permanece disponível com as linhas válidas; apenas a gravação do fechamento fica bloqueada."
-                )
-                if bool(import_info.get("manual_snapshot")):
-                    historical_errors = list(
-                        _dashboard_selected_context.get("errors") or []
-                    )
-                elif bool(import_info.get("preview")) and selected_month == current_competencia:
-                    historical_errors = list(central_parsed.get("errors") or [])
-                else:
-                    historical_errors = db.list_import_errors(selected_month)
-                if historical_errors:
-                    _setta_dataframe(
-                        pd.DataFrame(historical_errors),
-                        use_container_width=True,
-                        hide_index=True,
-                    )
+                pending_label = (f"{_selected_pending} pendência(s) na base de "
+                                 f"{month_label(selected_month)}" if _selected_pending else
+                                 f"Base de {month_label(selected_month)} com pendências")
+                st.warning(pending_label + ". Os totais usam apenas as linhas válidas.")
+                with st.expander("Ver pendências", icon=":material/fact_check:"):
+                    try:
+                        quality_rows = read_quality_rows(
+                            import_info, selected_month, live_competencia,
+                            _dashboard_selected_context, central_parsed, db.list_import_errors,
+                        )
+                    except Exception:
+                        st.warning("Não foi possível consultar os detalhes. Tente atualizar as fontes.")
+                    else:
+                        if quality_rows:
+                            _setta_dataframe(pd.DataFrame(quality_rows), width="stretch", hide_index=True)
+                        else:
+                            st.caption("Nenhuma linha de detalhe está disponível nesta fonte.")
 
             previous_status = str(
                 _dashboard_imports_by_month.get(previous.isoformat(), {}).get("status") or ""
@@ -4050,32 +4049,24 @@ with _fm_page_surface.container():
             "GRAVAR COMPETÊNCIA",
             "",
         )
-        st.caption(
-            f"COMPETÊNCIA A ENCERRAR: {month_label(current_competencia)}. "
-            f"O mês vigente {month_label(live_competencia)} permanece em acompanhamento "
-            "até seu próprio fechamento."
-        )
-
-        if _closing_source_available:
-            _has_closing_errors = bool(
-                _closing_source_parsed.get("errors")
+        _has_closing_errors = bool(_closing_source_parsed.get("errors"))
+        _is_saved_current = current_competencia.isoformat() in persisted_import_keys
+        if _is_saved_current:
+            st.success(
+                f"{month_label(current_competencia)} já foi encerrada. "
+                "O saldo gravado não é substituído pelo Analítico atual."
             )
-            _is_saved_current = current_competencia.isoformat() in persisted_import_keys
+        if _closing_source_available:
             _save_label = (
-                "COMPETÊNCIA JÁ GRAVADA · PRESERVADA NO HISTÓRICO"
+                "Competência já gravada"
                 if _is_saved_current
                 else "GRAVAR FECHAMENTO DA COMPETÊNCIA"
             )
-            if _is_saved_current:
-                st.success(
-                    f"Fechamento de {month_label(current_competencia)} preservado no banco. "
-                    "O Analítico atual acompanha o mês vigente, sem substituir esta fotografia."
-                )
-
-            if _has_closing_errors:
+            if _has_closing_errors and not _is_saved_current:
                 st.warning(
-                    "FECHAMENTO NÃO PODE SER GRAVADO ENQUANTO EXISTIREM INCONSISTÊNCIAS NO ANALÍTICO. "
-                    "TODAS AS ETAPAS DE ANÁLISE E CONFERÊNCIA PERMANECEM LIBERADAS."
+                    f"{month_label(current_competencia)} não pode ser gravada enquanto a base de "
+                    f"{'carga manual' if _closing_source_kind == 'manual' else 'estoque'} "
+                    "tiver pendências de qualidade."
                 )
 
             if st.button(
@@ -4100,8 +4091,8 @@ with _fm_page_surface.container():
                     st.rerun()
                 except Exception as exc:
                     st.error(f"NÃO FOI POSSÍVEL GRAVAR O FECHAMENTO: {exc}")
-        else:
-            st.warning("NENHUMA FONTE DE ESTOQUE DISPONÍVEL PARA O FECHAMENTO.")
+        elif not _is_saved_current:
+            st.warning("Nenhuma fonte de estoque disponível para gravar a competência.")
 
 
     elif page == "Conferência de chapas e barramentos":
@@ -4439,8 +4430,8 @@ with _fm_page_surface.container():
 
             cb_stage_header(
                 "03",
-                "CONFERÊNCIA E DIVERGÊNCIAS",
-                "Analise quantidades, diferenças e materiais pendentes antes de concluir o período.",
+                "Conferir",
+                "Consulte contagens, saldos e diferenças.",
             )
             with st.expander("CRITÉRIOS DE CÁLCULO E TOLERÂNCIA", expanded=False):
                 st.caption(
@@ -4449,6 +4440,7 @@ with _fm_page_surface.container():
                     "Barramentos com diferença absoluta inferior a 3 m são aceitos automaticamente."
                 )
 
+            reconciliation = pd.DataFrame()
             cb_adjustment_snapshot = pd.DataFrame()
             cb_report_snapshot = pd.DataFrame()
             cb_missing_count = 0
@@ -4846,109 +4838,125 @@ with _fm_page_surface.container():
                                 errors="coerce",
                             ).fillna(0.0)
 
-                    shown_display.insert(
-                        0,
-                        "Remover",
-                        False,
-                    )
-
-                    with st.form(
-                        "cb_remove_analysis_form",
-                        clear_on_submit=False,
+                    if st.toggle(
+                        "Gerenciar exclusões da análise",
+                        key="cb_manage_analysis_exclusions",
+                        help="Desmarque para retornar à tabela de conferência.",
                     ):
-                        editable = _setta_data_editor(
+                        shown_display.insert(
+                            0,
+                            "Remover",
+                            False,
+                        )
+
+                        with st.form(
+                            "cb_remove_analysis_form",
+                            clear_on_submit=False,
+                        ):
+                            editable = _setta_data_editor(
+                                shown_display,
+                                use_container_width=True,
+                                hide_index=True,
+                                disabled=[
+                                    col
+                                    for col in shown_display.columns
+                                    if col != "Remover"
+                                ],
+                                column_config={
+                                    "Remover": st.column_config.CheckboxColumn(
+                                        "Remover",
+                                        help=(
+                                            "Marque todos os itens desejados. "
+                                            "A tela só será atualizada ao confirmar."
+                                        ),
+                                    ),
+                                    "Saldo fechamento": st.column_config.NumberColumn(
+                                        "Saldo fechamento",
+                                        format="localized",
+                                        help="Base oficial do cálculo. Posição do último dia da competência.",
+                                    ),
+                                    "Saldo atual": st.column_config.NumberColumn(
+                                        "Saldo atual",
+                                        format="localized",
+                                        help="Saldo do Analítico atual.",
+                                    ),
+                                    "Variação atual x fechamento": st.column_config.NumberColumn(
+                                        "Variação atual x fechamento",
+                                        format="localized",
+                                        help="Saldo atual menos saldo do fechamento.",
+                                    ),
+                                    "Saldo base ajuste": st.column_config.NumberColumn(
+                                        "Saldo base ajuste",
+                                        format="localized",
+                                        help="Menor saldo entre Fechamento e Atual. É a base usada para calcular a diferença.",
+                                    ),
+                                    "Base usada": st.column_config.TextColumn(
+                                        "Base usada",
+                                        help="ATUAL quando o saldo atual é menor; FECHAMENTO nos demais casos.",
+                                    ),
+                                    "Físico": st.column_config.NumberColumn(
+                                        "Físico",
+                                        format="localized",
+                                    ),
+                                    "Consumo informado": st.column_config.NumberColumn(
+                                        "Consumo informado",
+                                        format="localized",
+                                    ),
+                                    "Diferença Qtd": st.column_config.NumberColumn(
+                                        "Diferença Qtd",
+                                        format="localized",
+                                    ),
+                                    "Diferença R$": st.column_config.NumberColumn(
+                                        "Diferença R$",
+                                        format="R$ %.2f",
+                                    ),
+                                },
+                                key="cb_reconciliation_editor",
+                            )
+
+                            remove_submitted = st.form_submit_button(
+                                "REMOVER SELECIONADOS DA ANÁLISE",
+                                type="secondary",
+                                use_container_width=True,
+                            )
+
+                        if remove_submitted:
+                            selected_to_remove = editable[
+                                editable["Remover"] == True
+                            ]
+
+                            if selected_to_remove.empty:
+                                st.warning(
+                                    "Selecione pelo menos um item para remover."
+                                )
+                            else:
+                                for code in selected_to_remove[
+                                    "Código"
+                                ].astype(str):
+                                    db.set_cb_exclusion(
+                                        cb_month,
+                                        code,
+                                        True,
+                                        "REMOVIDO MANUALMENTE NA CONFERÊNCIA",
+                                    )
+
+                                st.session_state["_cb_count_flash"] = (
+                                    f"{len(selected_to_remove)} item(ns) removido(s) "
+                                    "da análise desta competência."
+                                )
+                                load_cb_page_snapshot.clear()
+                                st.rerun()
+                    else:
+                        _setta_dataframe(
                             shown_display,
                             use_container_width=True,
                             hide_index=True,
-                            disabled=[
-                                col
-                                for col in shown_display.columns
-                                if col != "Remover"
-                            ],
                             column_config={
-                                "Remover": st.column_config.CheckboxColumn(
-                                    "Remover",
-                                    help=(
-                                        "Marque todos os itens desejados. "
-                                        "A tela só será atualizada ao confirmar."
-                                    ),
-                                ),
-                                "Saldo fechamento": st.column_config.NumberColumn(
-                                    "Saldo fechamento",
-                                    format="localized",
-                                    help="Base oficial do cálculo. Posição do último dia da competência.",
-                                ),
-                                "Saldo atual": st.column_config.NumberColumn(
-                                    "Saldo atual",
-                                    format="localized",
-                                    help="Saldo do Analítico atual.",
-                                ),
-                                "Variação atual x fechamento": st.column_config.NumberColumn(
-                                    "Variação atual x fechamento",
-                                    format="localized",
-                                    help="Saldo atual menos saldo do fechamento.",
-                                ),
-                                "Saldo base ajuste": st.column_config.NumberColumn(
-                                    "Saldo base ajuste",
-                                    format="localized",
-                                    help="Menor saldo entre Fechamento e Atual. É a base usada para calcular a diferença.",
-                                ),
-                                "Base usada": st.column_config.TextColumn(
-                                    "Base usada",
-                                    help="ATUAL quando o saldo atual é menor; FECHAMENTO nos demais casos.",
-                                ),
-                                "Físico": st.column_config.NumberColumn(
-                                    "Físico",
-                                    format="localized",
-                                ),
-                                "Consumo informado": st.column_config.NumberColumn(
-                                    "Consumo informado",
-                                    format="localized",
-                                ),
-                                "Diferença Qtd": st.column_config.NumberColumn(
-                                    "Diferença Qtd",
-                                    format="localized",
-                                ),
                                 "Diferença R$": st.column_config.NumberColumn(
-                                    "Diferença R$",
-                                    format="R$ %.2f",
+                                    "Diferença R$", format="R$ %.2f",
                                 ),
                             },
-                            key="cb_reconciliation_editor",
                         )
-
-                        remove_submitted = st.form_submit_button(
-                            "REMOVER SELECIONADOS DA ANÁLISE",
-                            type="secondary",
-                            use_container_width=True,
-                        )
-
-                    if remove_submitted:
-                        selected_to_remove = editable[
-                            editable["Remover"] == True
-                        ]
-
-                        if selected_to_remove.empty:
-                            st.warning(
-                                "Selecione pelo menos um item para remover."
-                            )
-                        else:
-                            for code in selected_to_remove[
-                                "Código"
-                            ].astype(str):
-                                db.set_cb_exclusion(
-                                    cb_month,
-                                    code,
-                                    True,
-                                    "REMOVIDO MANUALMENTE NA CONFERÊNCIA",
-                                )
-
-                            st.session_state["_cb_count_flash"] = (
-                                f"{len(selected_to_remove)} item(ns) removido(s) "
-                                "da análise desta competência."
-                            )
-                            load_cb_page_snapshot.clear()
-                            st.rerun()
 
                 if excluded_codes:
                     excluded_view = reconciliation_all[
@@ -4993,80 +5001,64 @@ with _fm_page_surface.container():
                                 load_cb_page_snapshot.clear()
                                 st.rerun()
 
-            cb_stage_header(
-                "04",
-                "FINALIZAÇÃO E HISTÓRICO",
-                "Revise os ajustes propostos e registre a fotografia mensal com rastreabilidade.",
+            from cb_review import (
+                ADJUSTMENT_COLUMNS,
+                confirmation_key,
+                effective_adjustments,
+                finalization_rows,
+                missing_zero_preview,
             )
 
+            cb_stage_header(
+                "04",
+                "Revisar ajustes",
+                "Confira os materiais, as quantidades e o impacto estimado antes de registrar.",
+            )
+
+            _zero_preview = missing_zero_preview(reconciliation)
             _assume_missing_zero = False
             if cb_missing_count > 0:
                 _assume_missing_zero = st.checkbox(
-                    (
-                        f"FINALIZAR CONSIDERANDO {cb_missing_count} MATERIAL(IS) "
-                        "SEM CONTAGEM COMO ZERO"
-                    ),
+                    f"Considerar Físico = 0 nos {cb_missing_count} materiais sem contagem",
                     value=False,
                     key="cb_assume_missing_zero",
-                    help=(
-                        "Quando marcado, cada material sem contagem recebe Físico = 0. "
-                        "A baixa será calculada contra o Saldo base ajuste, que é o menor "
-                        "saldo entre Fechamento e Atual."
-                    ),
+                    help="Prevê a baixa contra o menor saldo entre Fechamento e Atual.",
                 )
-
-            _finalization_snapshot = cb_report_snapshot.copy()
-            if not _finalization_snapshot.empty:
-                # A diferença tolerada é contagem conferida, mas não é ajuste ERP.
-                _conferidos = _finalization_snapshot["Status"].eq("CONFERIDO")
-                _finalization_snapshot.loc[
-                    _conferidos, ["Diferença Qtd", "Diferença R$"]
-                ] = 0.0
-
-            if (
-                _assume_missing_zero
-                and "reconciliation" in locals()
-                and not reconciliation.empty
-            ):
-                _missing_zero_rows = reconciliation[
-                    reconciliation["Status"] == "SEM CONTAGEM"
-                ].copy()
-
-                if not _missing_zero_rows.empty:
-                    _missing_zero_rows["Físico"] = 0.0
-                    _missing_zero_rows["Contagem assumida zero"] = True
-                    _missing_zero_rows["Diferença Qtd"] = (
-                        -pd.to_numeric(
-                            _missing_zero_rows["Saldo base ajuste"],
-                            errors="coerce",
-                        ).fillna(0.0)
+                with st.expander("Prévia de materiais sem contagem", expanded=False):
+                    _no_count_display = _zero_preview.reindex(columns=ADJUSTMENT_COLUMNS[:-1])
+                    _setta_dataframe(
+                        _no_count_display,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Diferença R$": st.column_config.NumberColumn(
+                                "Diferença R$", format="R$ %.2f",
+                            ),
+                        },
                     )
-                    _missing_zero_rows["Diferença R$"] = (
-                        pd.to_numeric(
-                            _missing_zero_rows["Diferença Qtd"],
-                            errors="coerce",
-                        ).fillna(0.0)
-                        * pd.to_numeric(
-                            _missing_zero_rows["Custo unitário"],
-                            errors="coerce",
-                        ).fillna(0.0)
+                    st.caption(
+                        f"Impacto se Físico = 0: {money_br(_zero_preview['Diferença R$'].sum())}. "
+                        "Os materiais sem impacto não geram ajuste."
                     )
-                    _missing_zero_rows["Status"] = "DIVERGÊNCIA"
-                    _missing_zero_rows = _missing_zero_rows[
-                        pd.to_numeric(
-                            _missing_zero_rows["Diferença Qtd"],
-                            errors="coerce",
-                        ).fillna(0.0).abs() > 1e-9
-                    ].copy()
 
-                    if not _missing_zero_rows.empty:
-                        _finalization_snapshot = pd.concat(
-                            [
-                                _finalization_snapshot,
-                                _missing_zero_rows,
-                            ],
-                            ignore_index=True,
-                        )
+            _finalization_snapshot = finalization_rows(
+                cb_report_snapshot, _zero_preview, _assume_missing_zero,
+            )
+            _review_adjustments = effective_adjustments(_finalization_snapshot)
+            if not _review_adjustments.empty:
+                with st.expander(f"Ajustes propostos · {len(_review_adjustments)}", expanded=True):
+                    _setta_dataframe(
+                        _review_adjustments,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Diferença R$": st.column_config.NumberColumn(
+                                "Diferença R$", format="R$ %.2f",
+                            ),
+                        },
+                    )
+            else:
+                st.info("Nenhum ajuste de quantidade na revisão atual.")
 
             _adj_chapa = (
                 _finalization_snapshot[
@@ -5128,6 +5120,12 @@ with _fm_page_surface.container():
                 "SINAL NEGATIVO = baixa/redução. A previsão em R$ usa o custo "
                 "unitário registrado na conferência. O ajuste é sempre calculado "
                 "contra o menor saldo entre Fechamento e Atual."
+            )
+
+            section_band(
+                "05 · FINALIZAR",
+                "Registrar ajustes e consultar histórico",
+                "O registro preserva a revisão mensal; não movimenta o estoque no ERP.",
             )
 
             try:
@@ -5200,11 +5198,21 @@ with _fm_page_surface.container():
                 else "FINALIZAR E REGISTRAR AJUSTES"
             )
 
+            _review_confirmed = False
+            if _can_finalize_adjustments:
+                _review_confirmed = st.checkbox(
+                    f"Revisei os ajustes de {month_label(cb_month)}.",
+                    value=False,
+                    key=confirmation_key(
+                        cb_month.isoformat(), _finalization_snapshot, _assume_missing_zero,
+                    ),
+                )
+
             if st.button(
                 _finalize_label,
                 type="primary",
                 use_container_width=True,
-                disabled=not _can_finalize_adjustments,
+                disabled=not (_can_finalize_adjustments and _review_confirmed),
                 key="cb_finalize_adjustments",
             ):
                 _rows_to_save = (
@@ -5464,7 +5472,12 @@ with _fm_page_surface.container():
     elif page == "Conferência de baixas":
         from issue_check_ui import render_issue_check
 
-        render_issue_check()
+        def _open_ops_feeder():
+            _set_fm_page("Configurações")
+            st.session_state["fm_settings_area"] = "ALIMENTADORES"
+            st.session_state["fm_feeder_type"] = "OPS"
+
+        render_issue_check(on_open_ops=_open_ops_feeder)
 
 
     elif page == "Análise de movimentações":
@@ -5616,63 +5629,60 @@ with _fm_page_surface.container():
                     unsafe_allow_html=True,
                 )
 
-            control_a, control_b, control_c = st.columns(3)
-
-            if control_a.button(
-                "ATUALIZAR STATUS",
-                use_container_width=True,
-                key="fm_refresh_api_status",
-            ):
+            if st.button("Atualizar status", key="fm_refresh_api_status", icon=":material/refresh:"):
                 load_api_sources.clear()
                 st.rerun()
 
-            if control_b.button(
-                "REPROCESSAR ANALÍTICO",
-                use_container_width=True,
-                key="fm_reprocess_analitico",
-            ):
-                load_central_analitico.clear()
-                load_api_sources.clear()
-                result = central_analitico_context(force=True)
-                if result.get("available"):
-                    st.session_state["_api_flash"] = (
-                        "ANALÍTICO REPROCESSADO COM SUCESSO."
-                    )
-                else:
-                    st.session_state["_api_flash"] = (
-                        "FALHA AO REPROCESSAR ANALÍTICO: "
-                        + str(result.get("error") or "")
-                    )
-                st.rerun()
+            with st.expander("Manutenção das fontes", icon=":material/settings:"):
+                st.caption("Reprocesse uma base quando o arquivo já estiver atualizado e o resultado precisar ser revisto.")
+                control_b, control_c = st.columns(2)
+                if control_b.button(
+                    "Reprocessar Analítico",
+                    use_container_width=True,
+                    key="fm_reprocess_analitico",
+                ):
+                    load_central_analitico.clear()
+                    load_api_sources.clear()
+                    result = central_analitico_context(force=True)
+                    if result.get("available"):
+                        st.session_state["_api_flash"] = (
+                            "ANALÍTICO REPROCESSADO COM SUCESSO."
+                        )
+                    else:
+                        st.session_state["_api_flash"] = (
+                            "FALHA AO REPROCESSAR ANALÍTICO: "
+                            + str(result.get("error") or "")
+                        )
+                    st.rerun()
 
-            if control_c.button(
-                "REPROCESSAR CADASTROS",
-                use_container_width=True,
-                key="fm_reprocess_cadastros",
-            ):
-                load_central_cadastros.clear()
-                result = central_cadastros_context(force=True)
-                load_api_sources.clear()
-                if result.get("available"):
-                    st.session_state["_api_flash"] = (
-                        "CADASTROS REPROCESSADO COM SUCESSO."
-                    )
-                else:
-                    st.session_state["_api_flash"] = (
-                        "FALHA AO REPROCESSAR CADASTROS: "
-                        + str(result.get("error") or "")
-                    )
-                st.rerun()
+                if control_c.button(
+                    "Reprocessar Cadastros",
+                    use_container_width=True,
+                    key="fm_reprocess_cadastros",
+                ):
+                    load_central_cadastros.clear()
+                    result = central_cadastros_context(force=True)
+                    load_api_sources.clear()
+                    if result.get("available"):
+                        st.session_state["_api_flash"] = (
+                            "CADASTROS REPROCESSADO COM SUCESSO."
+                        )
+                    else:
+                        st.session_state["_api_flash"] = (
+                            "FALHA AO REPROCESSAR CADASTROS: "
+                            + str(result.get("error") or "")
+                        )
+                    st.rerun()
 
-            api_flash = st.session_state.pop(
-                "_api_flash",
-                None,
-            )
-            if api_flash:
-                if api_flash.startswith("FALHA"):
-                    st.error(api_flash)
-                else:
-                    st.success(api_flash)
+                api_flash = st.session_state.pop(
+                    "_api_flash",
+                    None,
+                )
+                if api_flash:
+                    if api_flash.startswith("FALHA"):
+                        st.error(api_flash)
+                    else:
+                        st.success(api_flash)
 
             st.markdown(
                 '<div class="topic-divider"></div>',

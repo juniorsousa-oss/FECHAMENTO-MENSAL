@@ -10,7 +10,9 @@ on:
       - 'report_parser.py'
       - 'cb_parser.py'
       - 'cb_balance_math.py'
+      - 'cb_review.py'
       - 'closing_purchases.py'
+      - 'closing_dashboard.py'
       - 'inventory_db.py'
       - 'db.py'
       - 'ui.py'
@@ -58,12 +60,14 @@ jobs:
         run: pip install -r requirements.txt
       - name: Compilar
         run: python -m py_compile competence_calendar.py streamlit_app.py central_fechamento_data.py inventory_db.py report_parser.py cb_parser.py ui.py movements.py movement_store.py movement_analysis_ui.py issue_check.py issue_line_report.py lot_conference.py issue_check_ui.py issue_check_export.py ops_lot_source.py master_plan.py operational_status.py catalog_types.py kardex_history.py reports.py reports_ui.py manual_issue_candidates.py manual_issue_ui.py cb_balance_math.py closing_purchases.py kardex_adjustments.py kardex_conditions.py kardex_group_config.py stock_accuracy.py
+      - name: Validar competência e fonte das pendências do painel
+        run: python -m unittest discover -s tests -p 'test_closing_dashboard.py'
       - name: Validar fórmula das baixas e compras do KARDEX
         run: python -m unittest discover -s tests -p 'test_closing_purchases.py'
       - name: Validar análise de movimentações
         run: python -m unittest discover -s tests -p 'test_movement_analysis*.py'
       - name: Validar relatórios centralizados
-        run: python -m unittest discover -s tests -p 'test_reports.py'
+        run: python -m unittest discover -s tests -p 'test_report*.py'
       - name: Validar base Geral linha por linha e confronto OPS
         run: python -m unittest discover -s tests -p 'test_issue_line_report.py'
       - name: Validar lotes distintos, trocas de lote e pendências reais
@@ -76,6 +80,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_ops_lot_source.py'
       - name: Validar conferência de baixas e telas
         run: python -m unittest discover -s tests -p 'test_issue_check*.py'
+      - name: Validar recorte de armazém e diagnóstico de TES
+        run: python -m unittest discover -s tests -p 'test_fm_queue_warehouse_tes_details.py'
       - name: Validar integração FOR001 Plano Mestre
         run: python -m unittest discover -s tests -p 'test_master_plan.py'
       - name: Validar nova lógica de estágios e alertas
@@ -86,6 +92,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_cb_performance.py'
       - name: Validar exportação de divergências de chapas e barramentos
         run: python -m unittest discover -s tests -p 'test_cb_divergence_export.py'
+      - name: Validar prévia e confirmação do ajuste de chapas e barramentos
+        run: python -m unittest discover -s tests -p 'test_cb_review.py'
       - name: Validar soma decimal de chapas e barramentos
         run: python -m unittest discover -s tests -p 'test_cb_balance_math.py'
       - name: Validar competência de chapas por data
@@ -130,7 +138,7 @@ jobs:
           assert "def list_cb_adjustment_items(" in db
           assert '"Saldo base ajuste"' in app
           assert "DETALHAR MOVIMENTAÇÃO · SALDO ATUAL × FECHAMENTO" in app
-          assert "FINALIZAR CONSIDERANDO" in app
+          assert "cb_assume_missing_zero" in app and "Físico = 0" in app
           assert "contagem_assumida_zero" in db
           assert "saldo_base_ajuste" in db
           assert "treatment_lookup" in app
