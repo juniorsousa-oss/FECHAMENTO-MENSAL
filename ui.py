@@ -302,11 +302,7 @@ def render_shell(*, title: str, page_label: str, route_id: int) -> None:
     top = (
         '<header class="setta-inv-top" aria-label="Fechamento Mensal Setta">'
         '<button class="setta-drawer-toggle" type="button" aria-expanded="false" '
-        'aria-controls="setta-fechamento-sidebar" aria-label="Abrir menu lateral">'
-        '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
-        'stroke-width="2" stroke-linecap="round">'
-        '<path class="setta-menu-icon" d="M4 6h16M4 12h16M4 18h16"/>'
-        '<path class="setta-close-icon" d="m6 6 12 12M18 6 6 18"/></svg></button>'
+        'aria-controls="setta-fechamento-sidebar" aria-label="Abrir menu lateral"></button>'
         '<span class="setta-inv-mark">'
         f'<img src="data:image/svg+xml;base64,{logo}" alt="Setta">'
         f'</span><b>{escape(title)}</b><small>Gestão de estoque</small></header>'
