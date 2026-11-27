@@ -5,7 +5,7 @@ import hashlib
 import html
 import math
 import re
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -96,41 +96,27 @@ def day(value) -> str:
 
 def _band():
     st.markdown("""
-    <style>
+    <style data-fm-baixas>
     .st-key-fm_issue_filters {
-      background:#fff;border:1px solid #dce2e9;border-top:4px solid #121a2b;
-      border-radius:15px;padding:1.15rem 1.35rem 1rem;margin:1.1rem 0 1.35rem;
-      box-shadow:0 6px 20px rgba(15,23,42,.055);
+      background:#fff;border:1px solid #d5dde9;border-radius:12px;
+      padding:.5rem .7rem;margin:0;
     }
-    .fm-issue-filter-heading {
-      color:#131e30;font-size:.87rem;font-weight:850;letter-spacing:.035em;
-      text-transform:uppercase;line-height:1.4;margin:0 0 .3rem;
+    [data-testid="stElementContainer"]:has(style[data-fm-baixas]){
+      display:none!important;
     }
-    .fm-issue-filter-subtitle {
-      color:#66758a;font-size:.73rem;line-height:1.4;
-      margin:0 0 1rem;
+    .st-key-fm_issue_filters [data-testid="stForm"] {padding:0!important}
+    .st-key-fm_issue_filters [data-testid="stForm"] [data-testid="stVerticalBlock"] {
+      gap:.4rem;
     }
-    .fm-issue-group-label {
-      color:#68768b;letter-spacing:.09em;font-size:.64rem;
-      font-weight:850;margin:0 0 .65rem;
-    }
-    .st-key-fm_issue_date_filters {
-      margin-top:.85rem;padding:1rem 0 0;
-      border-top:1px solid #e6eaf0;
-    }
-    .fm-issue-date-title {
-      color:#344054;font-weight:800;font-size:.72rem;
-      letter-spacing:.065em;text-transform:uppercase;margin:0 0 .15rem;
-    }
-    .fm-issue-date-note {
-      font-size:.71rem;color:#7b8797;margin:0 0 .7rem;
+    .st-key-fm_issue_filters [data-testid="stExpander"] summary {
+      padding:.25rem .55rem;min-height:36px;
     }
     .st-key-fm_issue_filters label {
       font-size:.73rem!important;font-weight:650!important;
       color:#334155!important;
     }
     @media(max-width:640px){
-      .st-key-fm_issue_filters {padding:.85rem!important}
+      .st-key-fm_issue_filters {padding:.5rem!important}
     }
     [class*="st-key-fm_issue_op_alert_"] [data-testid="stButton"] button {
       background:#fff3f3!important;border:1px solid #f6c7ca!important;
@@ -164,28 +150,9 @@ def _band():
       background:#fff;border:1px solid #dfe5ec;border-radius:12px;
       padding:1rem 1.05rem;margin:0 0 .65rem;
     }
-    .st-key-fm_issue_ops{margin-top:1.15rem}
+    .st-key-fm_issue_ops{margin-top:.2rem}
     /* SETTA / Filtros v3: estiliza a SUPERFÍCIE clicável, não só o placeholder.
        BaseWeb e Streamlit possuem wrappers diferentes para texto, select e data. */
-    .st-key-fm_issue_filters {
-      border:1px solid #d5dde9!important;
-      border-top:4px solid #152137!important;
-      border-radius:17px!important;
-      background:#ffffff!important;
-      padding:1.3rem 1.4rem 1.2rem!important;
-      box-shadow:0 9px 23px rgba(14,25,44,.075)!important;
-    }
-    .st-key-fm_issue_search_group,
-    .st-key-fm_issue_class_group {
-      background:#f8fafc!important;
-      border:1px solid #e5eaf1!important;
-      border-radius:13px!important;
-      padding:.85rem .95rem 1rem!important;
-      box-sizing:border-box!important;
-      height:auto!important;
-      min-height:136px!important;
-      overflow:visible!important;
-    }
     .st-key-fm_issue_filters [data-testid="stTextInput"],
     .st-key-fm_issue_filters [data-testid="stSelectbox"],
     .st-key-fm_issue_filters [data-testid="stDateInput"] {
@@ -305,18 +272,9 @@ def _band():
       margin-bottom:.2rem!important;
       letter-spacing:.025em!important;
     }
-    .st-key-fm_issue_filters .fm-issue-filter-subtitle {margin-bottom:1.15rem!important}
-    .st-key-fm_issue_date_filters {
-      border:1px solid #e5eaf1!important;
-      border-top:2px solid #d9e1ec!important;
-      border-radius:13px!important;
-      margin-top:1rem!important;
-      padding:1rem .95rem .95rem!important;
-      background:#f8fafc!important;
-    }
     .st-key-fm_issue_clear_filters button {
       min-height:48px!important;
-      margin-top:1.4rem!important;
+      margin-top:0!important;
       border:1.5px solid #8e9fb6!important;
       border-radius:10px!important;
       background:#fff!important;
@@ -440,31 +398,15 @@ def _band():
       align-self:center!important;
       flex-shrink:0!important;
     }
-    /* Faixa de ações única: os dois botões compartilham a mesma linha
-       e ficam juntos à direita, sem o grande vazio intermediário. */
-    .st-key-fm_issue_filter_actions {
-      border-top:1px solid #e4e9f1!important;
-      margin-top:.95rem!important;
-      padding-top:.85rem!important;
-    }
-    /* A barra de ações inteira fica unida à direita (até 450 px).
-       Preserve duas colunas na versão mobile em vez de empilhá-las. */
-    .st-key-fm_issue_filter_actions > div [data-testid="stHorizontalBlock"] {
-      display:flex!important;
-      flex-direction:row!important;
-      flex-wrap:nowrap!important;
-      gap:.7rem!important;
-      max-width:450px!important;
-      margin-left:auto!important;
-      margin-right:0!important;
-      align-items:stretch!important;
-    }
-    .st-key-fm_issue_filter_actions > div [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
-      box-sizing:border-box!important;
-      flex:1 1 0!important;
-      width:calc(50% - .35rem)!important;
-      min-width:0!important;
-      align-self:stretch!important;
+    .st-key-fm_issue_toolbar [data-testid="stHorizontalBlock"] {gap:.55rem!important}
+    @media(max-width:650px) {
+      .st-key-fm_issue_toolbar [data-testid="stHorizontalBlock"] {
+        display:flex!important;flex-wrap:wrap!important;gap:.35rem!important;
+      }
+      .st-key-fm_issue_toolbar [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        flex:1 1 calc(50% - .35rem)!important;
+        min-width:0!important;width:calc(50% - .35rem)!important;
+      }
     }
     .st-key-fm_issue_filters .st-key-fm_issue_search_submit,
     .st-key-fm_issue_filters .st-key-fm_issue_clear_filters {
@@ -505,7 +447,7 @@ def _band():
       .setta-logo-card img{max-height:56px!important;max-width:148px!important}
       .app-title{font-size:1.55rem!important;line-height:1.13!important;letter-spacing:-.035em!important}
       .app-sub{font-size:.72rem!important;line-height:1.35!important;margin-bottom:1.1rem!important}
-      .st-key-fm_issue_filters{padding:1rem!important;border-radius:15px!important}
+      .st-key-fm_issue_filters{padding:.5rem!important;border-radius:12px!important}
       .st-key-fm_issue_filters [data-testid="stHorizontalBlock"]{gap:.35rem!important}
       .st-key-fm_issue_date_filters [data-testid="stHorizontalBlock"]{display:flex!important;flex-wrap:wrap!important;gap:.65rem!important}
       .st-key-fm_issue_date_filters [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]{
@@ -528,14 +470,6 @@ def _band():
     }
     </style>""", unsafe_allow_html=True)
 
-
-def _cards(items):
-    parts = ['<div class="cb-kpi-grid">']
-    for label, value, note in items:
-        parts.append('<div class="cb-kpi"><div class="cb-kpi-label">' + html.escape(label) + '</div>'
-                     '<div class="cb-kpi-value">' + html.escape(value) + '</div>'
-                     '<div class="cb-kpi-note">' + html.escape(note) + '</div></div>')
-    st.markdown("".join(parts) + "</div>", unsafe_allow_html=True)
 
 
 @st.cache_data(ttl=30, show_spinner=False)
@@ -797,22 +731,24 @@ def _reload():
     central.source_state_for.clear()
 
 
-def _clear_filters():
+def _clear_filters(today: date | None = None):
     """Limpa os critérios editáveis e os resultados da pesquisa anterior."""
     st.session_state.fm_issue_search = ""
     st.session_state.fm_issue_filter = "Prioridade"
     st.session_state.fm_issue_op_status = "Todos os status"
     st.session_state.fm_issue_warehouse = "Todos os armazéns"
-    st.session_state.fm_issue_invoice_start = None
-    st.session_state.fm_issue_invoice_end = None
-    st.session_state.fm_issue_applied_filters = _default_issue_filters()
+    defaults = _default_issue_filters(today)
+    st.session_state.fm_issue_invoice_start, st.session_state.fm_issue_invoice_end = defaults["datas"]
+    st.session_state.fm_issue_applied_filters = defaults
     st.session_state.fm_issue_page = 1
     st.session_state.fm_issue_open_op = None
 
 
-def _default_issue_filters() -> dict:
+def _default_issue_filters(today: date | None = None) -> dict:
+    local_day = today or datetime.now(TZ).date()
     return {"op": "", "alertas": "Com alertas", "status": "Todos os status",
-            "datas": (None, None), "armazem": "Todos os armazéns"}
+            "datas": (local_day.replace(day=1), local_day), "armazem": "Todos os armazéns",
+            "periodo_manual": False}
 
 
 def _material_at_position(group: pd.DataFrame, selection):
@@ -1290,7 +1226,7 @@ def _sources(model):
 
 
 @st.fragment
-def render_results(model):
+def render_results(model, *, today: date | None = None):
     """Filtros e OPs atualizam em fragmento sem reconstruir o aplicativo inteiro."""
     if model.get("status_version") != op_rules.VERSION:
         # Compatibilidade de chamadas diretas e modelos anteriores: nunca
@@ -1339,21 +1275,46 @@ def render_results(model):
     warehouses = ["Todos os armazéns"] + list(model.get("warehouses") or ())
     if st.session_state.get("fm_issue_warehouse") not in (None, *warehouses):
         st.session_state.fm_issue_warehouse = warehouses[0]
+    defaults = _default_issue_filters(today)
+    scope_key = "fm_issue_default_invoice_dates"
+    last_default = st.session_state.get(scope_key)
+    if last_default != defaults["datas"]:
+        for index, key in enumerate(("fm_issue_invoice_start", "fm_issue_invoice_end")):
+            if last_default is None or st.session_state.get(key) == last_default[index]:
+                st.session_state[key] = defaults["datas"][index]
+        st.session_state[scope_key] = defaults["datas"]
+    applied_scope = st.session_state.get("fm_issue_applied_filters") or defaults
+    chosen_dates = applied_scope["datas"] if applied_scope.get("periodo_manual") else defaults["datas"]
+    for key, fallback in zip(("fm_issue_invoice_start", "fm_issue_invoice_end"), chosen_dates):
+        if key not in st.session_state:
+            st.session_state[key] = fallback
     with st.container(key="fm_issue_filters"):
         with st.form("fm_issue_filter_form", clear_on_submit=False, border=False):
-            lookup_col, alert_col = st.columns([2, 1], gap="small")
-            with lookup_col:
-                query_draft = st.text_input(
-                    "Buscar OP", key="fm_issue_search", placeholder="Número da OP",
+            with st.container(key="fm_issue_toolbar"):
+                lookup_col, alert_col, search_col, clear_col = st.columns(
+                    [3.0, 2.0, 1.0, 1.15], gap="small", vertical_alignment="bottom"
                 )
-            with alert_col:
-                choice_draft = st.selectbox(
-                    "Mostrar", ["Prioridade"] + list(FILTERS), key="fm_issue_filter",
-                    format_func=lambda item: {
-                        "Prioridade": "OPs com alerta por padrão", "Com alertas": "Somente OPs com alerta", "Todos": "Todas as OPs",
-                        "Sem alertas": "OPs sem alerta",
-                    }.get(item, item),
-                )
+                with lookup_col:
+                    query_draft = st.text_input(
+                        "Buscar OP", key="fm_issue_search", placeholder="Número da OP",
+                    )
+                with alert_col:
+                    choice_draft = st.selectbox(
+                        "Mostrar", ["Prioridade"] + list(FILTERS), key="fm_issue_filter",
+                        format_func=lambda item: {
+                            "Prioridade": "Priorizar alertas", "Com alertas": "Somente com alerta",
+                            "Todos": "Todas as OPs", "Sem alertas": "Sem alerta",
+                        }.get(item, item),
+                    )
+                with search_col:
+                    submitted = st.form_submit_button(
+                        "Buscar", type="primary", key="fm_issue_search_submit", width="stretch",
+                    )
+                with clear_col:
+                    st.form_submit_button(
+                        "Limpar filtros", on_click=_clear_filters, args=(today,),
+                        key="fm_issue_clear_filters", width="stretch",
+                    )
             with st.expander("Filtros", expanded=False):
                 warehouse_col, status_col = st.columns(2)
                 with warehouse_col:
@@ -1372,42 +1333,34 @@ def render_results(model):
                 date_from_col, date_to_col = st.columns(2)
                 with date_from_col:
                     date_from_raw = st.date_input(
-                        "Faturamento inicial", value=None, format="DD/MM/YYYY", key="fm_issue_invoice_start",
+                        "Faturamento inicial", value=None, min_value=date(2000, 1, 1), max_value=date(2100, 12, 31),
+                        format="DD/MM/YYYY", key="fm_issue_invoice_start",
                     )
                 with date_to_col:
                     date_to_raw = st.date_input(
-                        "Faturamento final", value=None, format="DD/MM/YYYY", key="fm_issue_invoice_end",
+                        "Faturamento final", value=None, min_value=date(2000, 1, 1), max_value=date(2100, 12, 31),
+                        format="DD/MM/YYYY", key="fm_issue_invoice_end",
                     )
-            with st.container(key="fm_issue_filter_actions"):
-                action_search, action_clear = st.columns([1, 1], gap="small")
-                with action_search:
-                    submitted = st.form_submit_button(
-                        "Buscar", type="primary",
-                        key="fm_issue_search_submit", use_container_width=True,
-                    )
-                with action_clear:
-                    st.form_submit_button(
-                        "Limpar filtros", on_click=_clear_filters,
-                        key="fm_issue_clear_filters", use_container_width=True,
-                    )
-
     if submitted:
         submitted_dates, validation_error = _invoice_bounds(date_from_raw, date_to_raw)
+        if not validation_error and not all(submitted_dates):
+            validation_error = "Informe as duas datas de faturamento."
         if validation_error:
-            st.warning(validation_error + " A pesquisa anterior foi mantida.")
+            st.warning(validation_error)
         else:
             effective_alerts = ("Todos" if query_draft.strip() else "Com alertas") if choice_draft == "Prioridade" else choice_draft
             st.session_state.fm_issue_applied_filters = {
                 "op": query_draft, "alertas": effective_alerts,
                 "status": status_draft, "datas": submitted_dates, "armazem": warehouse_draft,
+                "periodo_manual": submitted_dates != defaults["datas"],
             }
             st.session_state.fm_issue_page = 1
             st.session_state.fm_issue_open_op = None
-    applied = st.session_state.get("fm_issue_applied_filters") or _default_issue_filters()
+    applied = st.session_state.get("fm_issue_applied_filters") or defaults
     query = applied["op"]
     choice = applied["alertas"]
     selected_status = applied["status"]
-    invoice_period = applied["datas"]
+    invoice_period = applied["datas"] if applied.get("periodo_manual") else defaults["datas"]
     warehouse = applied.get("armazem", warehouses[0])
     if warehouse not in warehouses:
         warehouse = warehouses[0]
@@ -1417,44 +1370,12 @@ def render_results(model):
     view = _filter_warehouse_evidence(view, model.get("stock") or [], warehouse)
     if warehouse != warehouses[0]:
         st.caption(f"{warehouse} · OPs com saldo no ENDEREÇO. Cada OP mantém todos os materiais e baixas.")
-    if "lote" in view.columns:
-        selected_keys = set(zip(
-            view["op"].astype(str), view["codigo"].astype(str),
-            view["lote"].map(ops_lot_source.lot),
-        ))
-        confirmed_pairs = {
-            (r["op"], r["codigo"], ops_lot_source.lot(r.get("lote")))
-            for r in model["general"]
-            if str(r.get("responsavel_conferencia") or "").strip()
-        } & selected_keys
-        separated_pairs = {
-            (r["op"], r["codigo"], ops_lot_source.lot(r.get("lote")))
-            for r in model["general"]
-            if r["atendida"] > check.EPSILON
-        } & selected_keys
-    else:
-        selected_pairs = set(zip(view["op"].astype(str), view["codigo"].astype(str)))
-        confirmed_pairs = {
-            (r["op"], r["codigo"]) for r in model["general"]
-            if str(r.get("responsavel_conferencia") or "").strip()
-        } & selected_pairs
-        separated_pairs = {
-            (r["op"], r["codigo"]) for r in model["general"]
-            if r["atendida"] > check.EPSILON
-        } & selected_pairs
-    with st.expander("Totais da pesquisa"):
-        _cards([
-            ("OPs encontradas", count(view["op"].nunique()), "Ordens no recorte"),
-            ("Produtos/lotes", count(len(view)), "Cada OP + produto + lote é um registro distinto"),
-            ("Separados", count(len(separated_pairs)), "Quantidade atendida, inclusive materiais conferidos"),
-            ("Conferidos", count(len(confirmed_pairs)), "Atendidos com conferente no Relatório Geral"),
-        ])
     alerts = view.loc[view["divergente"]]
     st.markdown(
         '<div class="fm-issue-results-heading"><strong>ORDENS DE PRODUÇÃO</strong>'
         f'<span>{count(alerts["op"].nunique())} OPs com alertas · '
-        f'{count(len(alerts))} produtos para verificar · '
-        f'Referência: {day(model["as_of"])}</span></div>',
+        f'{count(len(alerts))} materiais com alerta · '
+        f'Faturamento: {day(invoice_period[0])} a {day(invoice_period[1])}</span></div>',
         unsafe_allow_html=True,
     )
     token = hashlib.sha256(
@@ -1466,40 +1387,6 @@ def render_results(model):
     else:
         _ops(model, view, token)
 
-    from reports import EXPORT_SCHEMA_VERSION
-    report_key = hashlib.sha256((
-        EXPORT_SCHEMA_VERSION + str(model.get("as_of")) + str(model.get("warehouses"))
-        + str(model.get("history_meta")) + str(model.get("source_meta"))
-        + op_rules.VERSION + lot_conference.VERSION + str(model.get("master_plan_meta"))
-    ).encode()).hexdigest()
-    with st.expander("Exportar conferência completa"):
-        st.caption("O Excel inclui todas as OPs, sem os filtros da pesquisa.")
-        if st.button("PREPARAR EXCEL · ESPELHO DA CONFERÊNCIA", use_container_width=True, key="fm_issue_prepare_report"):
-            from reports import export_issues
-            with st.spinner("Exportando a conferência e os valores previstos conforme R3..."):
-                prices, price_meta = _optional_catalog_prices()
-                if price_meta.get("erro"):
-                    st.warning(
-                        "CADASTROS sem preço disponível. Valores previstos "
-                        "ficarão vazios quando não houver preço válido. "
-                        + str(price_meta["erro"])
-                    )
-                data = export_issues({**model, "catalog_prices": prices})
-            st.session_state["fm_issue_report_ready"] = (report_key, data)
-        prepared = st.session_state.get("fm_issue_report_ready")
-        if prepared and prepared[0] == report_key:
-            st.download_button(
-                "BAIXAR EXCEL · CONFERÊNCIA DE BAIXAS",
-                data=prepared[1],
-                file_name="CONFERENCIA_BAIXAS_SETTA_" + model["as_of"] + "_R15.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="fm_issue_download_complete", use_container_width=True,
-            )
-    # st.expander executaria tabelas das fontes mesmo fechado; toggle
-    # evita trabalho desnecessário em cada pesquisa ou abertura de OP.
-    if st.toggle("FONTES, COBERTURA E CRITÉRIOS TÉCNICOS",
-                 value=False, key="fm_issue_show_sources"):
-        _sources(model)
 
 
 def _history_warehouses(imports: list[dict]) -> set[str]:
@@ -1750,8 +1637,9 @@ def render_ops_feeder():
         st.success(flash)
 
 
-def render_issue_check():
-    _band()
+def render_issue_check(*, diagnostics: bool = False):
+    if not diagnostics:
+        _band()
     try:
         current_ops = _ops_meta()
     except Exception as exc:
@@ -1804,11 +1692,13 @@ def render_issue_check():
             model, master_records, types,
         )
         view_model = {**model, "master_plan_meta": master_meta, "catalog_meta": catalog_meta}
-        render_results(view_model)
-        # Isolado e somente leitura: a carga histórica KARDEX só ocorre
-        # após a confirmação explícita no painel de conciliação assistida.
-        import manual_issue_ui
-        manual_issue_ui.render(view_model)
+        if diagnostics:
+            _sources(view_model)
+            # Consulta assistida; não grava baixas nem altera a conferência.
+            import manual_issue_ui
+            manual_issue_ui.render(view_model)
+        else:
+            render_results(view_model)
     except Exception as exc:
         st.error(f"Não foi possível concluir a conferência: {exc}")
         st.info("A ausência de uma fonte não é tratada como saldo zero ou ausência de baixa. Regularize a fonte no Monitor de APIs e recarregue o aplicativo.")

@@ -164,15 +164,17 @@ def _month_bounds(competence: date, today: date) -> tuple[date, date]:
 def _date_controls(competence: date | None = None):
     today = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
     default_start, default_end = _month_bounds(competence or today, today)
-    st.caption(f"Mês em análise · {default_start:%m/%Y}")
+    period_display = st.empty()
     with st.expander("Mais opções"):
         mode = st.radio(
             "Período", ["Mês em análise", "Período personalizado", "Histórico completo"],
             horizontal=True, key="fm_reports_period_mode",
         )
         if mode == "Histórico completo":
+            period_display.caption("Histórico completo")
             return None, None, "COMPLETO"
         if mode == "Mês em análise":
+            period_display.caption(f"Mês em análise · {default_start:%m/%Y}")
             return default_start, default_end, f"{default_start:%Y%m%d}_{default_end:%Y%m%d}"
         left, right = st.columns(2)
         with left:
@@ -187,6 +189,7 @@ def _date_controls(competence: date | None = None):
         if start > end:
             st.error("A data inicial não pode ser posterior à data final.")
             return start, end, ""
+        period_display.caption(f"Período · {start:%d/%m/%Y} a {end:%d/%m/%Y}")
         return start, end, f"{start:%Y%m%d}_{end:%Y%m%d}"
 
 
