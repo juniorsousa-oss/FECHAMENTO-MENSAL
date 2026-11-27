@@ -244,3 +244,23 @@ class KardexStoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CentralPeriodTests(unittest.TestCase):
+    def test_central_replaces_only_detected_range_and_retains_old_rows(self):
+        from kardex_history import merge_central_kardex, resolve, INTERVAL_POLICY
+        from test_movement_analysis import record
+        files = {f"kardex_{a.lower()}": pack([
+            record(armazem=a, data="2026-11-10", documento=f"NOVO_{a}")
+        ], a, start="2026-11-10", end="2026-11-15") for a in ("S2","EP","E2")}
+        old = history.prepare_import(pack(
+            [record(armazem="S2", data=d, documento=doc)
+             for d, doc in [("2026-11-09","ANTES"),("2026-11-12","REMOVIDO"),("2026-11-16","DEPOIS")]],
+            "old", start="2026-11-01", end="2026-11-26"))
+        central = merge_central_kardex(files, dict.fromkeys(files,"v1|test"), current_month="2026-11")
+        self.assertEqual(central["meta"]["politica"], INTERVAL_POLICY)
+        active = resolve([old,central])
+        self.assertEqual({r["documento"] for item in active["imports"] for r in item["rows"]},
+                         {"ANTES","DEPOIS","NOVO_S2","NOVO_EP","NOVO_E2"})
+        intervals = {(s["periodo_inicio"],s["periodo_fim"]) for s in active["coverage"] if s["armazem"]=="S2"}
+        self.assertEqual(intervals, {("2026-11-01","2026-11-09"),("2026-11-10","2026-11-15"),("2026-11-16","2026-11-26")})

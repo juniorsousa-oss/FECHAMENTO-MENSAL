@@ -46,5 +46,5 @@ As regras de movimentações serão definidas em etapa posterior.
 Dados e configurações são persistidos no Supabase. A página e a competência selecionadas permanecem na URL.
 
 ### Fechamento: duas bases independentes
-- **Kardex consolidado**: em Configurações → Alimentadores → KARDEX, há uma única prévia de S2, EP e E2. A prévia é somente leitura. A aplicação explícita grava uma única revisão da competência em aberto, mantendo a origem e a cobertura de cada armazém. As fontes manuais continuam disponíveis em contingência.
+- **Kardex consolidado**: em Configurações → Alimentadores → KARDEX, há uma única prévia de S2, EP e E2. A prévia é somente leitura. A aplicação explícita grava uma única revisão da competência em aberto, substituindo apenas o intervalo detectado de cada armazém e preservando os dias fora dele. As fontes manuais continuam disponíveis em contingência.
 - **OPS**: em Configurações → Alimentadores → OPS, a origem da Conferência de Baixas é conferida e aplicada separadamente. O fluxo não agrega linhas ou valores ao Kardex.

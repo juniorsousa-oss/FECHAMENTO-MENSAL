@@ -299,7 +299,7 @@ def _render_central_kardex(current_month, read_closed_months):
             for row in meta["fontes_central"].values()]
     st.dataframe(pd.DataFrame(recs), width="stretch", hide_index=True)
     confirm = st.checkbox(
-        "Confirmei que os três Kardex cobrem o mês desde o dia 1",
+        "Confirmo a substituição apenas dos períodos acima, por armazém",
         key="fm_confirm_central_kardex_" + meta["import_id"],
     )
     if st.button("Aplicar Kardex consolidado", key="fm_apply_central_kardex", disabled=not confirm):

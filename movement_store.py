@@ -67,19 +67,13 @@ def load_import(key: str) -> dict:
 def load_history(entries: list[dict]) -> list[dict]:
     """Read active payloads; superseded versions need only their saved metadata."""
     ordered = sorted(entries, key=lambda item: str(item.get("atualizado_em") or ""))
-    owners = {}
-    for item in ordered:
-        meta = item.get("meta") or {}
-        if meta.get("politica") == history.POLICY:
-            for scope in history.validate_scopes(meta.get("escopos") or []):
-                owners[scope["competencia"], scope["armazem"]] = item["chave"]
-    active = []
-    for item in ordered:
-        meta = item.get("meta") or {}
-        inactive = meta.get("politica") == history.POLICY and all(
-            owners[scope["competencia"], scope["armazem"]] != item["chave"] for scope in meta["escopos"])
-        if not inactive:
-            active.append(item["chave"])
+    owners = history.day_owners((item["chave"], item.get("meta") or {}) for item in ordered)
+    active = [
+        item["chave"] for item in ordered
+        if (item.get("meta") or {}).get("politica") not in history.REPLACEMENT_POLICIES
+        or any(owners[point] == item["chave"]
+               for point in history.replacement_days(item["meta"]))
+    ]
 
     # Ler arquivos KARDEX em paralelo reduz a soma da latência por armazém.
     url, key = db.supabase_url(), db.supabase_key()
@@ -106,15 +100,9 @@ def save_import(parsed: dict, known: list[dict] | None = None) -> dict:
     digest = parsed["meta"]["sha256"]
     key = _key(parsed["meta"].get("import_id") or digest)
     existing = known if known is not None else list_imports()
-    if parsed["meta"].get("politica") == history.POLICY:
-        scopes = history.import_scopes(parsed)
-        owners = {}
-        for item in existing:
-            meta = item.get("meta") or {}
-            if meta.get("politica") == history.POLICY:
-                for scope in history.validate_scopes(meta.get("escopos") or []):
-                    owners[scope["competencia"], scope["armazem"]] = item["chave"]
-        already_active = all(owners.get((s["competencia"], s["armazem"])) == key for s in scopes)
+    if parsed["meta"].get("politica") in history.REPLACEMENT_POLICIES:
+        owners = history.day_owners((item["chave"], item.get("meta") or {}) for item in existing)
+        already_active = all(owners.get(point) == key for point in history.replacement_days(parsed["meta"]))
     else:
         already_active = any(item["chave"] == key for item in existing)
     if already_active:
