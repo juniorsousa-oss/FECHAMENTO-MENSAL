@@ -7,6 +7,15 @@
   const renderedRoute = () => document.querySelector('.setta-inv-intro')?.dataset.settaRoute;
   const busy = new Set(['running', 'rerunRequested', 'stopRequested']);
   let pending = null;
+  let section = null;
+  let op = null;
+  const sectionKeys = [
+    ['dashboard', '.st-key-fm_dashboard_detail'],
+    ['chapas', '[class*="st-key-cb_visible_stage_"]'],
+    ['kardex', '.st-key-fm_mov_navigation'],
+    ['reports', '.st-key-fm_reports_kind'],
+    ['settings', '.st-key-fm_settings_area'],
+  ];
   let frame = 0;
 
   // Abrir o menu é só uma mudança visual local: nenhum evento vai ao Python.
@@ -65,33 +74,83 @@
     }
   }).observe(document.body, {subtree: true, childList: true, characterData: true});
 
-  function finish() {
+  const staleSelector = '[data-stale="true"]';
+  const marker = (selector) => document.querySelector(selector);
+  const live = (node) => node && !node.closest(staleSelector);
+  const appIsBusy = () => busy.has(document.querySelector('[data-testid="stApp"]')?.dataset.testScriptState);
+  const stable = (job, condition) => {
+    job.frames = condition ? (job.frames || 0) + 1 : 0;
+    return job.frames >= 2;
+  };
+  function finishRoute() {
     pending = null;
     delete root.dataset.settaInventoryNavigating;
+    delete root.dataset.settaNavPlaceholder;
   }
-
+  function finishSection() {
+    section = null;
+    delete root.dataset.settaSectionLoading;
+  }
+  function finishOp(animate) {
+    if (animate && op?.target) {
+      marker('.st-key-fm_issue_op_detail_' + op.target)?.setAttribute('data-setta-op-entering', '');
+    }
+    op = null;
+    delete root.dataset.settaOpTransition;
+  }
   function watch() {
-    if (frame || !pending) return;
+    if (frame || (!pending && !section && !op)) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
-      if (!pending) return;
-      const work = document.querySelector(bodySelector);
-      const state = document.querySelector('[data-testid="stApp"]')?.dataset.testScriptState;
-      const running = busy.has(state);
-      const stale = !!work?.querySelector('[data-stale="true"]');
-      const elapsed = performance.now() - pending.start;
-      if (running || stale) pending.sawRender = true;
-      // O novo título pode ser entregue antes do corpo da tela. Não abre a
-      // máscara antes de o Streamlit terminar e remover os elementos antigos.
-      if ((!running && !stale &&
-            (renderedRoute() === pending.target || (pending.sawRender && elapsed > 2200) ||
-             (!pending.sawRender && elapsed > 1500))) ||
-          state === 'compilationError' || elapsed > 25_000) {
-        finish();
-        return;
+      const running = appIsBusy();
+      const now = performance.now();
+      if (pending) {
+        const elapsed = now - pending.start;
+        const wrapper = marker('.st-key-fm_route_body_' + pending.target);
+        const ready = wrapper?.querySelector('[data-setta-aba-pronta="' + pending.target + '"]');
+        if (elapsed > 170) root.dataset.settaNavPlaceholder = 'true';
+        if (stable(pending, renderedRoute() === pending.target && !running && live(ready)
+                         && !wrapper.querySelector(staleSelector))) {
+          finishRoute();
+        } else if (elapsed > 25_000 ||
+          marker('[data-testid="stApp"]')?.dataset.testScriptState === 'compilationError') {
+          finishRoute();
+        }
+      }
+      if (section) {
+        const elapsed = now - section.start;
+        const ready = marker('[data-setta-section-ready="' + section.name + '"]');
+        const panel = marker('.st-key-fm_section_panel_' + section.name);
+        if (running || (panel && (!live(panel) || panel.querySelector(staleSelector)))) section.started = true;
+        const changed = ready?.dataset.settaSectionChoice !== section.previous;
+        if (stable(section, !running && live(ready) && panel
+                       && !panel.querySelector(staleSelector) && (changed || section.started))
+            || elapsed > 25_000 || (!running && !section.started && elapsed > 650)) finishSection();
+      }
+      if (op) {
+        const elapsed = now - op.start;
+        const ready = marker('[data-setta-op-pronta]');
+        const list = marker('.st-key-fm_issue_ops');
+        const complete = !running && live(ready) && ready.dataset.settaOpPronta === op.target
+          && list && !list.querySelector(staleSelector);
+        if (stable(op, complete)) finishOp(true);
+        else if (elapsed > 12_000) finishOp(false);
       }
       watch();
     });
+  }
+  function startSection(event) {
+    if (pending || !(event.target instanceof Element)) return;
+    const match = sectionKeys.find(([, selector]) => event.target.closest(selector));
+    if (!match) return;
+    if (event.type === 'click' && !event.target.closest('button,label,input,[role="radio"]')) return;
+    if (event.type === 'keydown' && !['Enter', ' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    const [name] = match;
+    const ready = marker('[data-setta-section-ready="' + name + '"]');
+    if (!ready) return;
+    section = {name, previous: ready.dataset.settaSectionChoice, start: performance.now()};
+    root.dataset.settaSectionLoading = name;
+    watch();
   }
 
   document.addEventListener('click', event => {
@@ -100,6 +159,20 @@
       setDrawer(!drawerOpen());
       return;
     }
+    const opButton = event.target.closest('[class*="st-key-fm_issue_select_"] button');
+    if (!pending && opButton && !opButton.disabled) {
+      const wrap = opButton.closest('[class*="st-key-fm_issue_select_"]');
+      const id = [...wrap.classList].find(k => /^st-key-fm_issue_select_[0-9]+$/.test(k))?.split('_').at(-1);
+      const current = marker('[data-setta-op-pronta]')?.dataset.settaOpPronta;
+      if (id && current !== undefined) {
+        document.querySelectorAll('[data-setta-op-entering]').forEach(el => el.removeAttribute('data-setta-op-entering'));
+        op = {target: id === current ? '' : id, start: performance.now()};
+        root.dataset.settaOpTransition = 'true';
+        watch();
+      }
+      return;
+    }
+    startSection(event);
     const button = event.target.closest('.st-key-setta_route_list button');
     if (!button || button.disabled || !renderedRoute()) return;
     const wrapper = button.closest('[class*="st-key-setta_nav_"]');
@@ -114,11 +187,16 @@
       return;
     }
     if (target === pending?.target) return;
-    pending = { target, start: performance.now(), sawRender: false };
+    finishSection();
+    finishOp(false);
+    pending = { target, start: performance.now() };
     root.dataset.settaInventoryNavigating = 'true';
+    delete root.dataset.settaNavPlaceholder;
+    document.querySelector('[data-testid="stMain"]')?.scrollTo({top: 0, behavior: 'instant'});
     watch();
   }, true);
 
+  document.addEventListener('keydown', startSection, true);
   document.addEventListener('keydown', event => {
     if (event.defaultPrevented || event.key !== 'Escape' || !drawerOpen()) return;
     if (!(event.target instanceof Element) ||

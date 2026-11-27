@@ -1168,6 +1168,10 @@ def _ops(model, view, token):
             st.button("PRÓXIMA →", key="fm_issue_next", disabled=page >= pages,
                       on_click=_move_issue_page, args=(1, pages), use_container_width=True)
 
+    opened = str(st.session_state.get("fm_issue_open_op") or "")
+    st.html('<span class="setta-ready-marker" data-setta-op-pronta="'
+            + html.escape(opened, quote=True) + '" aria-hidden="true"></span>')
+
 
 def _sources(model):
     rows = []
@@ -1364,10 +1368,19 @@ def render_results(model, *, today: date | None = None):
     warehouse = applied.get("armazem", warehouses[0])
     if warehouse not in warehouses:
         warehouse = warehouses[0]
-    view = _filter_op_status_invoice(
-        _filter(frame, query, choice), model["ops"], selected_status, invoice_period
-    )
-    view = _filter_warehouse_evidence(view, model.get("stock") or [], warehouse)
+    token = hashlib.sha256(
+        (op_rules.VERSION + lot_conference.VERSION + query + choice + selected_status + str(invoice_period) + warehouse
+         + str(model["warehouses"]) + str(model["source_meta"]) + str(period)).encode()
+    ).hexdigest()[:14]
+    memo = st.session_state.get("_fm_issue_result_view")
+    if memo is None or memo[0] != token or memo[1] is not model:
+        view = _filter_op_status_invoice(
+            _filter(frame, query, choice), model["ops"], selected_status, invoice_period
+        )
+        view = _filter_warehouse_evidence(view, model.get("stock") or [], warehouse)
+        st.session_state["_fm_issue_result_view"] = (token, model, view)
+    else:
+        view = memo[2]
     if warehouse != warehouses[0]:
         st.caption(f"{warehouse} · OPs com saldo no ENDEREÇO. Cada OP mantém todos os materiais e baixas.")
     alerts = view.loc[view["divergente"]]
@@ -1378,10 +1391,6 @@ def render_results(model, *, today: date | None = None):
         f'Faturamento: {day(invoice_period[0])} a {day(invoice_period[1])}</span></div>',
         unsafe_allow_html=True,
     )
-    token = hashlib.sha256(
-        (op_rules.VERSION + lot_conference.VERSION + query + choice + selected_status + str(invoice_period) + warehouse
-         + str(model["warehouses"]) + str(model["source_meta"]) + str(period)).encode()
-    ).hexdigest()[:14]
     if view.empty:
         st.info("Nenhuma OP corresponde à pesquisa ou aos alertas selecionados.")
     else:

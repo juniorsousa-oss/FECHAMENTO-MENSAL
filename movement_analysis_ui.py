@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
+from ui import section_surface
 
 import movement_store as store
 import movements as mv
@@ -1004,37 +1005,38 @@ def render_results(model, imports):
                              default=area, on_change=_area_changed, args=(navigation_key,),
                              format_func=lambda value: AREA_LABELS.get(value, value),
                              label_visibility="collapsed", width="stretch")
-    headers = {
-        "Visão geral": ("01 · RESUMO", "RESULTADO POR GRUPOS TES",
-                       "Grupos, subgrupos, TES e movimentações em uma única consulta."),
-        "Por OP": ("02 · ORDENS DE PRODUÇÃO", "CONSULTA POR OP",
-                   "Localize uma OP e consulte suas movimentações na própria tela."),
-        "Cadastros": ("03 · CADASTROS", "GRUPOS, TES E SUBGRUPOS",
-                      "Gerencie as TES e a fila de condições que define os subgrupos."),
-        "Fontes e relatórios": ("04 · FONTES E RELATÓRIOS",
-                               "HISTÓRICO E EXPORTAÇÃO",
-                               "Registros originais, histórico de importações e relatórios completos."),
-    }
-    if area != "Visão geral":
-        band(*headers[area])
-    if area == "Fontes e relatórios":
-        _import_registry(model)
-        _exports(scope, model, _view_token(scope))
-        if model["duplicates"]:
-            st.caption(f"Importações sobrepostas: {count(model['duplicates'])} repetições reconhecidas, sem soma em duplicidade.")
-        return
-    view = _consultation_filters(scope, area) if area in FILTER_AREAS else scope
-    if view.empty and area != "Cadastros":
-        st.info("Nenhuma movimentação corresponde a esta consulta. Ajuste os filtros ou o período da análise.")
-        return
-    token = _view_token(view, area)
-    if area == "Visão geral":
-        _overview(view, token)
-    elif area == "Por OP":
-        _ops(view, token)
-    elif area == "Cadastros":
-        with st.container(key="fm_mov_catalog"):
-            _catalog(view)
+    with section_surface("kardex", area):
+        headers = {
+            "Visão geral": ("01 · RESUMO", "RESULTADO POR GRUPOS TES",
+                           "Grupos, subgrupos, TES e movimentações em uma única consulta."),
+            "Por OP": ("02 · ORDENS DE PRODUÇÃO", "CONSULTA POR OP",
+                       "Localize uma OP e consulte suas movimentações na própria tela."),
+            "Cadastros": ("03 · CADASTROS", "GRUPOS, TES E SUBGRUPOS",
+                          "Gerencie as TES e a fila de condições que define os subgrupos."),
+            "Fontes e relatórios": ("04 · FONTES E RELATÓRIOS",
+                                   "HISTÓRICO E EXPORTAÇÃO",
+                                   "Registros originais, histórico de importações e relatórios completos."),
+        }
+        if area != "Visão geral":
+            band(*headers[area])
+        if area == "Fontes e relatórios":
+            _import_registry(model)
+            _exports(scope, model, _view_token(scope))
+            if model["duplicates"]:
+                st.caption(f"Importações sobrepostas: {count(model['duplicates'])} repetições reconhecidas, sem soma em duplicidade.")
+            return
+        view = _consultation_filters(scope, area) if area in FILTER_AREAS else scope
+        if view.empty and area != "Cadastros":
+            st.info("Nenhuma movimentação corresponde a esta consulta. Ajuste os filtros ou o período da análise.")
+            return
+        token = _view_token(view, area)
+        if area == "Visão geral":
+            _overview(view, token)
+        elif area == "Por OP":
+            _ops(view, token)
+        elif area == "Cadastros":
+            with st.container(key="fm_mov_catalog"):
+                _catalog(view)
 
 
 def render_movement_analysis():

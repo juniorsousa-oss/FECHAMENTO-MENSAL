@@ -83,7 +83,7 @@ class LazyRenderingTests(unittest.TestCase):
         source = (Path(__file__).resolve().parents[1] / "streamlit_app.py").read_text("utf-8")
         checks = (Path(__file__).resolve().parents[1] / "issue_check_ui.py").read_text("utf-8")
         self.assertIn("_fm_page_surface = st.empty()", source)
-        self.assertIn("with _fm_page_surface.container():", source)
+        self.assertIn('with _fm_page_surface.container(key=f"fm_route_body_{PAGES.index(page)}"):', source)
         self.assertIn('@st.cache_data(show_spinner=False, ttl=600, max_entries=1)', source)
         self.assertIn("def load_global_visual_config()", source)
         self.assertIn('@st.cache_resource(show_spinner=False, max_entries=1)', source)

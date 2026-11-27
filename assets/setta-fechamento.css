@@ -29,27 +29,63 @@
 .setta-drawer-toggle[aria-expanded="true"]::after{content:"";transform:rotate(-45deg)}
 .setta-drawer-toggle:hover{background:#555}
 .setta-drawer-toggle:focus-visible{outline:2px solid var(--inv-accent);outline-offset:2px}
-/* Nas reexecuções internas, o Streamlit mantém nós antigos brevemente.
-   Preserve o espaço, mas não exiba nem permita operar conteúdo desatualizado.
-   O shell continua visível e a navegação principal mantém sua máscara própria. */
-[data-testid="stMainBlockContainer"] [data-stale="true"]:not(:has(.setta-inv-top)):not(.setta-inv-top *){
+/* Isolate routing from the stable title and header. Stale content is never interactive. */
+.setta-ready-marker,[data-testid="stElementContainer"]:has(.setta-ready-marker){display:none!important}
+[data-testid="stMainBlockContainer"] [data-stale="true"]:not(:has(.setta-inv-top,.setta-inv-intro)):not(.setta-inv-top *,.setta-inv-intro *){
  opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:none!important;
 }
-[data-testid="stMainBlockContainer"] [data-stale="true"]:not(:has(.setta-inv-top)):not(.setta-inv-top *) *{
+[data-testid="stMainBlockContainer"] [data-stale="true"]:not(:has(.setta-inv-top,.setta-inv-intro)):not(.setta-inv-top *,.setta-inv-intro *) *{
  visibility:hidden!important;pointer-events:none!important;
 }
-/* O conteúdo antigo não participa da troca; fora dela, os widgets
-   mantêm seu funcionamento e o Streamlit pode atualizar a página normal. */
 .setta-inv-route-loader{display:none}
-html[data-setta-inventory-navigating] [data-testid="stMainBlockContainer"],
-html[data-setta-inventory-navigating] [data-testid="stMainBlockContainer"] *{visibility:hidden!important;pointer-events:none!important}
-html[data-setta-inventory-navigating] [data-testid="stMainBlockContainer"] :is(
- .setta-inv-top,.setta-inv-top *,.setta-inv-route-loader
-){visibility:visible!important}
-html[data-setta-inventory-navigating] [data-testid="stMainBlockContainer"] .setta-drawer-toggle{pointer-events:auto!important}
-html[data-setta-inventory-navigating] .setta-inv-route-loader{
- display:block;position:fixed;top:calc(var(--inv-top) + 20px);left:50%;transform:translateX(-50%);z-index:910;
- color:var(--inv-mute);font:.875rem Outfit,system-ui,sans-serif;
+html[data-setta-inventory-navigating] [class*="st-key-fm_route_body_"],
+html[data-setta-inventory-navigating] [class*="st-key-fm_route_body_"] *,
+html[data-setta-inventory-navigating] .footer{visibility:hidden!important;pointer-events:none!important}
+html[data-setta-inventory-navigating][data-setta-nav-placeholder] .setta-inv-route-loader{
+ display:flex;align-items:center;gap:.55rem;position:fixed;z-index:910;
+ top:calc(var(--inv-top) + 103px);left:28px;
+ border:1px solid var(--inv-border);border-radius:9px;background:#fff;
+ padding:.45rem .75rem;color:var(--inv-mute);font:.84rem Outfit,system-ui,sans-serif;
+}
+.setta-inv-route-loader::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--inv-accent)}
+html[data-setta-section-loading="dashboard"] .st-key-fm_section_panel_dashboard,
+html[data-setta-section-loading="chapas"] .st-key-fm_section_panel_chapas,
+html[data-setta-section-loading="kardex"] .st-key-fm_section_panel_kardex,
+html[data-setta-section-loading="reports"] .st-key-fm_section_panel_reports,
+html[data-setta-section-loading="settings"] .st-key-fm_section_panel_settings{
+ opacity:0!important;visibility:hidden!important;pointer-events:none!important;
+}
+html[data-setta-section-loading] [data-testid="stMainBlockContainer"] [data-stale="true"]:is(
+ .st-key-fm_dashboard_detail,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,[class*="st-key-cb_visible_stage_"]
+),
+html[data-setta-section-loading] [data-testid="stMainBlockContainer"] [data-stale="true"]:is(
+ :has(.st-key-fm_dashboard_detail,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,[class*="st-key-cb_visible_stage_"]),
+ .st-key-fm_dashboard_detail *,.st-key-fm_mov_navigation *,.st-key-fm_reports_kind *,.st-key-fm_settings_area *,[class*="st-key-cb_visible_stage_"] *
+){
+ opacity:1!important;visibility:visible!important;
+}
+html[data-setta-section-loading] [data-stale="true"] :is(
+ .st-key-fm_dashboard_detail,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,[class*="st-key-cb_visible_stage_"]
+) *{visibility:visible!important}
+/* Only OP headers keep their previous pixels during a fragment update.
+   The old and new details are not shown together. */
+html[data-setta-op-transition] [data-testid="stMainBlockContainer"] [data-stale="true"]:is(
+ .st-key-fm_issue_ops,.st-key-fm_issue_ops *, .st-key-fm_issue_filters, .st-key-fm_issue_filters *
+):not([class*="st-key-fm_issue_op_detail_"],[class*="st-key-fm_issue_op_detail_"] *){
+ opacity:1!important;visibility:visible!important;
+}
+html[data-setta-op-transition] [data-stale="true"] :is(
+ .st-key-fm_issue_ops,.st-key-fm_issue_filters
+) *:not([class*="st-key-fm_issue_op_detail_"],[class*="st-key-fm_issue_op_detail_"] *){visibility:visible!important}
+html[data-setta-op-transition] [class*="st-key-fm_issue_op_detail_"],
+html[data-setta-op-transition] [class*="st-key-fm_issue_op_detail_"] *{visibility:hidden!important;pointer-events:none!important}
+@media(prefers-reduced-motion:no-preference){
+ [data-setta-op-entering]{animation:setta-op-appear 180ms ease-out both}
+ @keyframes setta-op-appear{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+ @supports(interpolate-size:allow-keywords){
+  [data-setta-op-entering]{interpolate-size:allow-keywords;overflow:clip;animation-name:setta-op-grow}
+  @keyframes setta-op-grow{from{block-size:0;opacity:0}to{block-size:auto;opacity:1}}
+ }
 }
 .setta-inv-intro{padding-top:12px}.setta-inv-breadcrumb{font-size:.75rem;color:var(--inv-mute)}
 .setta-inv-intro h1{font-size:clamp(1.45rem,3vw,1.95rem)!important;font-weight:780;letter-spacing:-.035em;line-height:1.15;margin:4px 0 3px;padding:0;color:var(--inv-ink)}

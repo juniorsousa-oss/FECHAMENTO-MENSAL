@@ -7,6 +7,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import streamlit as st
+from ui import section_surface
 
 import issue_check_ui as issue
 import movement_analysis_ui as movement
@@ -223,306 +224,307 @@ def render_reports(*, summaries: list[dict], imports: list[dict], competence: da
     choice = st.radio(
         "Relatório", REPORT_NAMES, horizontal=True, key="fm_reports_kind",
     )
-    start, end, period_key = _date_controls(competence)
-    if not period_key:
-        return
-
-    extra = {}
-    warehouses = []
-    if choice == REPORT_NAMES[0]:
-        if not _has_stock_summary(summaries, imports, start, end):
-            if start and (start.year, start.month) == (end.year, end.month):
-                st.info(f"Sem dados de estoque para {start:%m/%Y}.")
-            elif start:
-                st.info("Sem dados de estoque no período selecionado.")
-            else:
-                st.info("Sem dados de estoque no histórico disponível.")
+    with section_surface("reports", choice):
+        start, end, period_key = _date_controls(competence)
+        if not period_key:
             return
 
-    elif choice == REPORT_NAMES[1]:
-        with st.expander("Filtros do relatório", expanded=False):
-            left, right = st.columns(2, gap="medium")
-            with left:
-                extra["alerts"] = st.checkbox(
-                    "Somente OPs com alerta",
-                    key="fm_reports_alerts",
-                )
-            with right:
-                extra["include_activity"] = st.checkbox(
-                    "Incluir OPs com atividade no período",
-                    value=False, key="fm_reports_include_activity",
-                    help=(
-                        "Inclui OPs com separação, conferência ou baixa no período, "
-                        "mesmo sem faturamento válido ou com faturamento fora dele."
-                    ),
-                )
-            col_status, col_type = st.columns(2, gap="medium")
-            with col_status:
-                available_statuses = [
-                    stages.FINALIZADO_PATIO, stages.FINALIZADO_ENTREGUE,
-                    stages.NF_EMITIDA, stages.FINALIZADO, stages.REPORTADO,
-                    stages.EM_CONFERENCIA, stages.EM_SEPARACAO,
-                    stages.AGUARDANDO_INICIO,
-                ]
-                extra["status"] = st.selectbox(
-                    "Status da OP", ["Todos os status"] + available_statuses,
-                    key="fm_reports_issue_status",
-                )
-            with col_type:
-                extra["types"] = st.multiselect(
-                    "Tipo de material", ["EP", "II", "MP", "PA", "PI", "NI"],
-                    key="fm_reports_types", placeholder="Todos os tipos",
-                )
-            try:
-                states = issue._states()
-                entry = states.get("endereco") or {}
-                token = (
-                    "endereco", int(entry["version"]),
-                    str(entry.get("last_update_at") or ""),
-                )
-                options = issue._warehouse_options(token)
-            except Exception as exc:
-                options = []
-                st.caption("Armazéns indisponíveis: " + str(exc))
-            if options:
-                warehouses = st.multiselect(
-                    "Armazéns", options, key="fm_reports_wh",
-                    placeholder="Todos os armazéns",
-                )
-        active = []
-        if extra["alerts"]:
-            active.append("somente OPs com alerta")
-        if extra["include_activity"]:
-            active.append("atividade incluída")
-        if extra["status"] != "Todos os status":
-            active.append("status: " + extra["status"])
-        if extra["types"]:
-            active.append("tipos: " + ", ".join(extra["types"]))
-        if warehouses:
-            active.append("armazéns: " + ", ".join(warehouses))
-        if active:
-            st.caption("Filtros ativos · " + " · ".join(active))
-
-    else:
-        extra["summary_only"] = st.selectbox(
-            "Apresentação",
-            ["Completo — grupos, OPs e movimentações",
-             "Resumo gerencial — grupos e TES"],
-            key="fm_reports_detail",
-        ).startswith("Resumo")
-        with st.expander("FILTROS ADICIONAIS · opcional", expanded=False):
-            try:
-                sources = movement_store.list_imports()
-                options = _known_warehouses(sources)
-            except Exception as exc:
-                options = []
-                st.caption("Armazéns indisponíveis: " + str(exc))
-            if options:
-                warehouses = st.multiselect(
-                    "Armazéns", options, key="fm_reports_wh",
-                    placeholder="Todos os armazéns",
-                )
-            col_types, col_groups = st.columns(2, gap="medium")
-            with col_types:
-                extra["types"] = st.multiselect(
-                    "Tipos de material", ["EP", "II", "MP", "PA", "PI"],
-                    key="fm_reports_kardex_types", placeholder="Todos os tipos",
-                )
-            try:
-                group_cfg = movement._groups_read()
-                group_options = [
-                    entry["nome"] for entry in group_cfg.get("grupos", [])
-                ]
-                group_options.append("SEM GRUPO")
-            except Exception:
-                group_options = []
-            with col_groups:
-                extra["groups"] = st.multiselect(
-                    "Grupos gerenciais", group_options,
-                    key="fm_reports_groups", placeholder="Todos os grupos",
-                )
-            extra["tes"] = st.text_input(
-                "TES (opcional)", key="fm_reports_tes",
-                placeholder="Ex.: 020, 520, 550",
-            )
-        active = []
-        if warehouses:
-            active.append("armazéns: " + ", ".join(warehouses))
-        if extra["types"]:
-            active.append("tipos: " + ", ".join(extra["types"]))
-        if extra["groups"]:
-            active.append("grupos: " + ", ".join(extra["groups"]))
-        if extra["tes"].strip():
-            active.append("TES: " + extra["tes"])
-        if active:
-            st.caption("Filtros ativos · " + " · ".join(active))
-
-    period_label = (
-        "Histórico completo" if start is None
-        else f"{start:%d/%m/%Y} a {end:%d/%m/%Y}"
-    )
-
-    report_key = hashlib.sha256(repr((
-        reports.EXPORT_SCHEMA_VERSION,
-        choice, period_key, tuple(warehouses), extra,
-        [(row.get("competencia"), row.get("status"), row.get("importado_em"))
-         for row in imports] if choice == REPORT_NAMES[0] else None,
-    )).encode("utf-8")).hexdigest()
-
-    action = st.empty()
-    prepared = st.session_state.get("fm_reports_ready")
-    ready = prepared and prepared[0] == report_key
-    prepare_clicked = not ready and action.button(
-        "Gerar Excel", type="primary", key="fm_reports_prepare",
-    )
-    if prepare_clicked:
-        audit_notes = []
-        trace = _trace_context(choice, period_label, start, end, warehouses, extra)
-        st.session_state.pop("fm_reports_error", None)
-        try:
-            with st.spinner("Gerando Excel…"):
-                if choice == REPORT_NAMES[0]:
-                    counts = reports.stock_data(summaries, imports, start, end)
-                    if not counts["Resumo Geral"]:
-                        raise _SemDados("Nenhuma competência possui resumo de estoque no período escolhido.")
-                    trace.extend(_stock_trace(imports, [row[0] for row in counts["Evolução Mensal"]]))
-                    data = reports.export_stock(summaries, imports, start, end, trace=trace)
-                    records = len(counts["Evolução Mensal"])
-                    prefix = "ESTOQUE_FECHAMENTO"
-                elif choice == REPORT_NAMES[1]:
-                    model = _get_issue_model(tuple(warehouses))
-                    if model.get("catalog_meta", {}).get("erro"):
-                        audit_notes.append(
-                            "CADASTROS indisponível: a classificação "
-                            "de tipo de material pode estar incompleta."
-                        )
-                    if model.get("catalog_price_meta", {}).get("erro"):
-                        audit_notes.append(
-                            "Preços do CADASTROS indisponíveis: o Valor previsto "
-                            "da baixa ficará vazio para itens sem preço válido. "
-                            + str(model["catalog_price_meta"]["erro"])
-                        )
-                    if not model.get("history_available"):
-                        raise ValueError(
-                            "Relatório OPS obrigatório: sem fonte confiável não "
-                            "é permitido exportar as baixas como zero."
-                        )
-                    audit = reports.selection_diagnostics(
-                        model, start, end,
-                        include_activity=extra["include_activity"],
-                    )
-                    missing = len(audit["excluded_missing_billing"])
-                    outside = len(audit["excluded_outside_billing"])
-                    if not extra["include_activity"] and (missing or outside):
-                        audit_notes.append(
-                            f"Filtro somente por faturamento: {missing} OP(s) "
-                            "sem data válida (NI ou inválida) e "
-                            f"{outside} OP(s) faturadas fora do período "
-                            "não serão exportadas."
-                        )
-                    if extra["include_activity"]:
-                        added = len(audit["added_by_activity"])
-                        audit_notes.append(
-                            f"Movimentações habilitadas: {added} OP(s) "
-                            "adicionadas além das faturadas no período. "
-                            "Essas OPs podem ter faturamento NI ou fora do mês."
-                        )
-                        if audit["unreadable_billing"]:
-                            audit_notes.append(
-                                f"{len(audit['unreadable_billing'])} OP(s) "
-                                "incluídas por atividade têm faturamento "
-                                "não reconhecido. Confira a fonte."
-                            )
-                    # O Relatório Geral é a base linha a linha. O OPS só informa baixas.
-                    if end and model.get("as_of"):
-                        reference = reports._date(model["as_of"])
-                        if reference and end > reference:
-                            audit_notes.append(
-                                f"A fonte de conferência está posicionada em "
-                                f"{reference:%d/%m/%Y}. Nenhum evento posterior "
-                                "a essa data será usado para selecionar OPs."
-                            )
-                    statuses = ({extra["status"]} if extra["status"] != "Todos os status" else None)
-                    types = set(extra["types"]) if extra["types"] else None
-                    rows = reports.issue_rows(
-                        model, start, end, statuses=statuses,
-                        alerts_only=extra["alerts"], material_types=types,
-                        include_activity=extra["include_activity"])
-                    if not rows:
-                        raise _SemDados("Nenhuma OP ou material corresponde ao recorte selecionado.")
-                    date_column = reports.OP_COLUMNS.index("Faturamento")
-                    bills = {day.strftime("%Y-%m") for row in rows if (day := reports._date(row[date_column]))}
-                    trace.extend([
-                        ("Competências de faturamento das linhas", ", ".join(f"{month[5:]}/{month[:4]}" for month in sorted(bills)) or "Nenhuma data válida nas linhas"),
-                        ("Base de data da OP", "Consulte Faturamento em cada linha; pode estar vazio quando incluída por atividade."),
-                        ("Data de referência da conferência", model.get("as_of")),
-                        ("Armazéns efetivamente consultados", model.get("warehouses")),
-                    ])
-                    trace.extend(model.get("export_source_trace") or [])
-                    data = reports.export_issues(
-                        model, start, end, statuses=statuses,
-                        alerts_only=extra["alerts"], material_types=types,
-                        include_activity=extra["include_activity"], trace=trace)
-                    records = len(rows)
-                    prefix = "CONFERENCIA_BAIXAS"
+        extra = {}
+        warehouses = []
+        if choice == REPORT_NAMES[0]:
+            if not _has_stock_summary(summaries, imports, start, end):
+                if start and (start.year, start.month) == (end.year, end.month):
+                    st.info(f"Sem dados de estoque para {start:%m/%Y}.")
+                elif start:
+                    st.info("Sem dados de estoque no período selecionado.")
                 else:
-                    imported = movement._imports()
-                    if not imported:
-                        raise _SemDados("Nenhuma base KARDEX está registrada.")
-                    tokens = tuple((item["chave"], item.get("atualizado_em", ""),
-                                    item.get("meta") or {}) for item in imported)
-                    model = movement._model(tokens, mv.rules()["versao"] + movement.history.VERSION)
-                    group_config = movement._groups_read()
-                    frame = reports.filtered_kardex(
-                        model["frame"], start, end,
-                        warehouses=set(warehouses) if warehouses else None,
-                        types=set(extra["types"]) if extra["types"] else None,
-                        groups=set(x.strip().zfill(3) for x in extra["tes"].split(",") if x.strip()) or None,
-                        group_names=set(extra["groups"]) if extra["groups"] else None,
-                        group_config=group_config)
-                    if frame.empty:
-                        raise _SemDados("Nenhuma movimentação KARDEX corresponde ao recorte.")
-                    trace.extend(_kardex_trace(model, frame, start, end))
-                    data = reports.export_kardex(
-                        frame, group_config,
-                        summary_only=extra["summary_only"], trace=trace)
-                    records = len(frame)
-                    prefix = "KARDEX"
-            st.session_state["fm_reports_audit_notes"] = (
-                report_key, tuple(audit_notes),
-            )
-            st.session_state["fm_reports_ready"] = (
-                report_key, data,
-                f"{prefix}_SETTA_{period_key}_R15.xlsx"
-                if choice == REPORT_NAMES[1]
-                else f"{prefix}_SETTA_{period_key}.xlsx",
-                records
-            )
-        except Exception as exc:
-            st.session_state.pop("fm_reports_ready", None)
-            st.session_state.pop("fm_reports_audit_notes", None)
-            st.session_state["fm_reports_error"] = (report_key, isinstance(exc, _SemDados), str(exc))
+                    st.info("Sem dados de estoque no histórico disponível.")
+                return
 
-    prepared = st.session_state.get("fm_reports_ready")
-    if prepared and prepared[0] == report_key:
-        action.download_button(
-            "Baixar Excel", data=prepared[1], file_name=prepared[2],
-            mime=MIME, type="primary", on_click="ignore", key="fm_reports_download",
+        elif choice == REPORT_NAMES[1]:
+            with st.expander("Filtros do relatório", expanded=False):
+                left, right = st.columns(2, gap="medium")
+                with left:
+                    extra["alerts"] = st.checkbox(
+                        "Somente OPs com alerta",
+                        key="fm_reports_alerts",
+                    )
+                with right:
+                    extra["include_activity"] = st.checkbox(
+                        "Incluir OPs com atividade no período",
+                        value=False, key="fm_reports_include_activity",
+                        help=(
+                            "Inclui OPs com separação, conferência ou baixa no período, "
+                            "mesmo sem faturamento válido ou com faturamento fora dele."
+                        ),
+                    )
+                col_status, col_type = st.columns(2, gap="medium")
+                with col_status:
+                    available_statuses = [
+                        stages.FINALIZADO_PATIO, stages.FINALIZADO_ENTREGUE,
+                        stages.NF_EMITIDA, stages.FINALIZADO, stages.REPORTADO,
+                        stages.EM_CONFERENCIA, stages.EM_SEPARACAO,
+                        stages.AGUARDANDO_INICIO,
+                    ]
+                    extra["status"] = st.selectbox(
+                        "Status da OP", ["Todos os status"] + available_statuses,
+                        key="fm_reports_issue_status",
+                    )
+                with col_type:
+                    extra["types"] = st.multiselect(
+                        "Tipo de material", ["EP", "II", "MP", "PA", "PI", "NI"],
+                        key="fm_reports_types", placeholder="Todos os tipos",
+                    )
+                try:
+                    states = issue._states()
+                    entry = states.get("endereco") or {}
+                    token = (
+                        "endereco", int(entry["version"]),
+                        str(entry.get("last_update_at") or ""),
+                    )
+                    options = issue._warehouse_options(token)
+                except Exception as exc:
+                    options = []
+                    st.caption("Armazéns indisponíveis: " + str(exc))
+                if options:
+                    warehouses = st.multiselect(
+                        "Armazéns", options, key="fm_reports_wh",
+                        placeholder="Todos os armazéns",
+                    )
+            active = []
+            if extra["alerts"]:
+                active.append("somente OPs com alerta")
+            if extra["include_activity"]:
+                active.append("atividade incluída")
+            if extra["status"] != "Todos os status":
+                active.append("status: " + extra["status"])
+            if extra["types"]:
+                active.append("tipos: " + ", ".join(extra["types"]))
+            if warehouses:
+                active.append("armazéns: " + ", ".join(warehouses))
+            if active:
+                st.caption("Filtros ativos · " + " · ".join(active))
+
+        else:
+            extra["summary_only"] = st.selectbox(
+                "Apresentação",
+                ["Completo — grupos, OPs e movimentações",
+                 "Resumo gerencial — grupos e TES"],
+                key="fm_reports_detail",
+            ).startswith("Resumo")
+            with st.expander("FILTROS ADICIONAIS · opcional", expanded=False):
+                try:
+                    sources = movement_store.list_imports()
+                    options = _known_warehouses(sources)
+                except Exception as exc:
+                    options = []
+                    st.caption("Armazéns indisponíveis: " + str(exc))
+                if options:
+                    warehouses = st.multiselect(
+                        "Armazéns", options, key="fm_reports_wh",
+                        placeholder="Todos os armazéns",
+                    )
+                col_types, col_groups = st.columns(2, gap="medium")
+                with col_types:
+                    extra["types"] = st.multiselect(
+                        "Tipos de material", ["EP", "II", "MP", "PA", "PI"],
+                        key="fm_reports_kardex_types", placeholder="Todos os tipos",
+                    )
+                try:
+                    group_cfg = movement._groups_read()
+                    group_options = [
+                        entry["nome"] for entry in group_cfg.get("grupos", [])
+                    ]
+                    group_options.append("SEM GRUPO")
+                except Exception:
+                    group_options = []
+                with col_groups:
+                    extra["groups"] = st.multiselect(
+                        "Grupos gerenciais", group_options,
+                        key="fm_reports_groups", placeholder="Todos os grupos",
+                    )
+                extra["tes"] = st.text_input(
+                    "TES (opcional)", key="fm_reports_tes",
+                    placeholder="Ex.: 020, 520, 550",
+                )
+            active = []
+            if warehouses:
+                active.append("armazéns: " + ", ".join(warehouses))
+            if extra["types"]:
+                active.append("tipos: " + ", ".join(extra["types"]))
+            if extra["groups"]:
+                active.append("grupos: " + ", ".join(extra["groups"]))
+            if extra["tes"].strip():
+                active.append("TES: " + extra["tes"])
+            if active:
+                st.caption("Filtros ativos · " + " · ".join(active))
+
+        period_label = (
+            "Histórico completo" if start is None
+            else f"{start:%d/%m/%Y} a {end:%d/%m/%Y}"
         )
-        units = ("competência", "competências") if choice == REPORT_NAMES[0] else ("registro", "registros")
-        st.caption(f"Pronto para baixar · {prepared[3]:,} {units[prepared[3] != 1]}.".replace(",", "."))
-        notes = st.session_state.get("fm_reports_audit_notes")
-        with st.expander("Detalhes da exportação", expanded=False):
-            st.caption(f"{period_label} · Planilha com aba Rastreabilidade")
-            if notes and notes[0] == report_key:
-                for note in notes[1]:
-                    st.caption(note)
-            st.button("Preparar outro arquivo", on_click=_clear_prepared, key="fm_reports_reset")
-    else:
-        failure = st.session_state.get("fm_reports_error")
-        if failure and failure[0] == report_key:
-            if failure[1]:
-                st.info(f"Sem dados · {failure[2]}")
-            else:
-                st.error(f"Não foi possível gerar o Excel: {failure[2]}")
+
+        report_key = hashlib.sha256(repr((
+            reports.EXPORT_SCHEMA_VERSION,
+            choice, period_key, tuple(warehouses), extra,
+            [(row.get("competencia"), row.get("status"), row.get("importado_em"))
+             for row in imports] if choice == REPORT_NAMES[0] else None,
+        )).encode("utf-8")).hexdigest()
+
+        action = st.empty()
+        prepared = st.session_state.get("fm_reports_ready")
+        ready = prepared and prepared[0] == report_key
+        prepare_clicked = not ready and action.button(
+            "Gerar Excel", type="primary", key="fm_reports_prepare",
+        )
+        if prepare_clicked:
+            audit_notes = []
+            trace = _trace_context(choice, period_label, start, end, warehouses, extra)
+            st.session_state.pop("fm_reports_error", None)
+            try:
+                with st.spinner("Gerando Excel…"):
+                    if choice == REPORT_NAMES[0]:
+                        counts = reports.stock_data(summaries, imports, start, end)
+                        if not counts["Resumo Geral"]:
+                            raise _SemDados("Nenhuma competência possui resumo de estoque no período escolhido.")
+                        trace.extend(_stock_trace(imports, [row[0] for row in counts["Evolução Mensal"]]))
+                        data = reports.export_stock(summaries, imports, start, end, trace=trace)
+                        records = len(counts["Evolução Mensal"])
+                        prefix = "ESTOQUE_FECHAMENTO"
+                    elif choice == REPORT_NAMES[1]:
+                        model = _get_issue_model(tuple(warehouses))
+                        if model.get("catalog_meta", {}).get("erro"):
+                            audit_notes.append(
+                                "CADASTROS indisponível: a classificação "
+                                "de tipo de material pode estar incompleta."
+                            )
+                        if model.get("catalog_price_meta", {}).get("erro"):
+                            audit_notes.append(
+                                "Preços do CADASTROS indisponíveis: o Valor previsto "
+                                "da baixa ficará vazio para itens sem preço válido. "
+                                + str(model["catalog_price_meta"]["erro"])
+                            )
+                        if not model.get("history_available"):
+                            raise ValueError(
+                                "Relatório OPS obrigatório: sem fonte confiável não "
+                                "é permitido exportar as baixas como zero."
+                            )
+                        audit = reports.selection_diagnostics(
+                            model, start, end,
+                            include_activity=extra["include_activity"],
+                        )
+                        missing = len(audit["excluded_missing_billing"])
+                        outside = len(audit["excluded_outside_billing"])
+                        if not extra["include_activity"] and (missing or outside):
+                            audit_notes.append(
+                                f"Filtro somente por faturamento: {missing} OP(s) "
+                                "sem data válida (NI ou inválida) e "
+                                f"{outside} OP(s) faturadas fora do período "
+                                "não serão exportadas."
+                            )
+                        if extra["include_activity"]:
+                            added = len(audit["added_by_activity"])
+                            audit_notes.append(
+                                f"Movimentações habilitadas: {added} OP(s) "
+                                "adicionadas além das faturadas no período. "
+                                "Essas OPs podem ter faturamento NI ou fora do mês."
+                            )
+                            if audit["unreadable_billing"]:
+                                audit_notes.append(
+                                    f"{len(audit['unreadable_billing'])} OP(s) "
+                                    "incluídas por atividade têm faturamento "
+                                    "não reconhecido. Confira a fonte."
+                                )
+                        # O Relatório Geral é a base linha a linha. O OPS só informa baixas.
+                        if end and model.get("as_of"):
+                            reference = reports._date(model["as_of"])
+                            if reference and end > reference:
+                                audit_notes.append(
+                                    f"A fonte de conferência está posicionada em "
+                                    f"{reference:%d/%m/%Y}. Nenhum evento posterior "
+                                    "a essa data será usado para selecionar OPs."
+                                )
+                        statuses = ({extra["status"]} if extra["status"] != "Todos os status" else None)
+                        types = set(extra["types"]) if extra["types"] else None
+                        rows = reports.issue_rows(
+                            model, start, end, statuses=statuses,
+                            alerts_only=extra["alerts"], material_types=types,
+                            include_activity=extra["include_activity"])
+                        if not rows:
+                            raise _SemDados("Nenhuma OP ou material corresponde ao recorte selecionado.")
+                        date_column = reports.OP_COLUMNS.index("Faturamento")
+                        bills = {day.strftime("%Y-%m") for row in rows if (day := reports._date(row[date_column]))}
+                        trace.extend([
+                            ("Competências de faturamento das linhas", ", ".join(f"{month[5:]}/{month[:4]}" for month in sorted(bills)) or "Nenhuma data válida nas linhas"),
+                            ("Base de data da OP", "Consulte Faturamento em cada linha; pode estar vazio quando incluída por atividade."),
+                            ("Data de referência da conferência", model.get("as_of")),
+                            ("Armazéns efetivamente consultados", model.get("warehouses")),
+                        ])
+                        trace.extend(model.get("export_source_trace") or [])
+                        data = reports.export_issues(
+                            model, start, end, statuses=statuses,
+                            alerts_only=extra["alerts"], material_types=types,
+                            include_activity=extra["include_activity"], trace=trace)
+                        records = len(rows)
+                        prefix = "CONFERENCIA_BAIXAS"
+                    else:
+                        imported = movement._imports()
+                        if not imported:
+                            raise _SemDados("Nenhuma base KARDEX está registrada.")
+                        tokens = tuple((item["chave"], item.get("atualizado_em", ""),
+                                        item.get("meta") or {}) for item in imported)
+                        model = movement._model(tokens, mv.rules()["versao"] + movement.history.VERSION)
+                        group_config = movement._groups_read()
+                        frame = reports.filtered_kardex(
+                            model["frame"], start, end,
+                            warehouses=set(warehouses) if warehouses else None,
+                            types=set(extra["types"]) if extra["types"] else None,
+                            groups=set(x.strip().zfill(3) for x in extra["tes"].split(",") if x.strip()) or None,
+                            group_names=set(extra["groups"]) if extra["groups"] else None,
+                            group_config=group_config)
+                        if frame.empty:
+                            raise _SemDados("Nenhuma movimentação KARDEX corresponde ao recorte.")
+                        trace.extend(_kardex_trace(model, frame, start, end))
+                        data = reports.export_kardex(
+                            frame, group_config,
+                            summary_only=extra["summary_only"], trace=trace)
+                        records = len(frame)
+                        prefix = "KARDEX"
+                st.session_state["fm_reports_audit_notes"] = (
+                    report_key, tuple(audit_notes),
+                )
+                st.session_state["fm_reports_ready"] = (
+                    report_key, data,
+                    f"{prefix}_SETTA_{period_key}_R15.xlsx"
+                    if choice == REPORT_NAMES[1]
+                    else f"{prefix}_SETTA_{period_key}.xlsx",
+                    records
+                )
+            except Exception as exc:
+                st.session_state.pop("fm_reports_ready", None)
+                st.session_state.pop("fm_reports_audit_notes", None)
+                st.session_state["fm_reports_error"] = (report_key, isinstance(exc, _SemDados), str(exc))
+
+        prepared = st.session_state.get("fm_reports_ready")
+        if prepared and prepared[0] == report_key:
+            action.download_button(
+                "Baixar Excel", data=prepared[1], file_name=prepared[2],
+                mime=MIME, type="primary", on_click="ignore", key="fm_reports_download",
+            )
+            units = ("competência", "competências") if choice == REPORT_NAMES[0] else ("registro", "registros")
+            st.caption(f"Pronto para baixar · {prepared[3]:,} {units[prepared[3] != 1]}.".replace(",", "."))
+            notes = st.session_state.get("fm_reports_audit_notes")
+            with st.expander("Detalhes da exportação", expanded=False):
+                st.caption(f"{period_label} · Planilha com aba Rastreabilidade")
+                if notes and notes[0] == report_key:
+                    for note in notes[1]:
+                        st.caption(note)
+                st.button("Preparar outro arquivo", on_click=_clear_prepared, key="fm_reports_reset")
+        else:
+            failure = st.session_state.get("fm_reports_error")
+            if failure and failure[0] == report_key:
+                if failure[1]:
+                    st.info(f"Sem dados · {failure[2]}")
+                else:
+                    st.error(f"Não foi possível gerar o Excel: {failure[2]}")
 
