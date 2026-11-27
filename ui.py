@@ -286,10 +286,9 @@ def _setta_asset_b64(name: str) -> str:
     return base64.b64encode((ROOT / "assets" / name).read_bytes()).decode("ascii")
 
 
-def render_shell(*, menu_open: bool, title: str, page_label: str, route_id: int, on_toggle) -> None:
+def render_shell(*, title: str, page_label: str, route_id: int) -> None:
     """Visual reference: the fixed Setta shell shared by MRP and Inventário."""
     assets = ROOT / "assets"
-    drawer = "setta-drawer-open" if menu_open else "setta-drawer-closed"
     font = _setta_asset_b64("outfit-latin.woff2")
     logo = _setta_asset_b64("setta-logo-oficial.svg")
     css = (assets / "setta-fechamento.css").read_text(encoding="utf-8")
@@ -298,28 +297,22 @@ def render_shell(*, menu_open: bool, title: str, page_label: str, route_id: int,
         f'<style id="setta-inv-shell-style">@font-face{{font-family:Outfit;'
         f'src:url(data:font/woff2;base64,{font}) format("woff2");font-weight:100 900;'
         f'font-display:swap}}{css}</style>'
-        f'<span class="setta-shell-marker {drawer}" aria-hidden="true"></span>'
+        '<span class="setta-shell-marker" aria-hidden="true"></span>'
     )
     top = (
         '<header class="setta-inv-top" aria-label="Fechamento Mensal Setta">'
+        '<button class="setta-drawer-toggle" type="button" aria-expanded="false" '
+        'aria-controls="setta-fechamento-sidebar" aria-label="Abrir menu lateral">'
+        '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="2" stroke-linecap="round">'
+        '<path class="setta-menu-icon" d="M4 6h16M4 12h16M4 18h16"/>'
+        '<path class="setta-close-icon" d="m6 6 12 12M18 6 6 18"/></svg></button>'
         '<span class="setta-inv-mark">'
         f'<img src="data:image/svg+xml;base64,{logo}" alt="Setta">'
         f'</span><b>{escape(title)}</b><small>Gestão de estoque</small></header>'
         '<div class="setta-inv-route-loader" role="status" aria-live="polite">Carregando aba…</div>'
     )
-    try:
-        st.html(top + f'<script>{navigation}</script>', unsafe_allow_javascript=True)
-    except TypeError:
-        # Streamlit releases without first-party JavaScript still render the shell.
-        st.html(top)
-    with st.container(key="setta_top_controls"):
-        st.button(
-            "Fechar menu lateral" if menu_open else "Abrir menu lateral",
-            key="setta_drawer_toggle",
-            icon=":material/close:" if menu_open else ":material/menu:",
-            width="stretch",
-            on_click=on_toggle,
-        )
+    st.html(top + f'<script>{navigation}</script>', unsafe_allow_javascript=True)
     st.html(
         f'<div class="setta-inv-intro" data-setta-route="{int(route_id)}">'
         f'<div class="setta-inv-breadcrumb">Fechamento mensal / {escape(page_label)}</div>'
