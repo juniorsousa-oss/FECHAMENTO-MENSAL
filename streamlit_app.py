@@ -3297,7 +3297,6 @@ if page not in PAGES:
 def _set_fm_page(target: str) -> None:
     if target in PAGES:
         st.session_state.nav_page = target
-        st.session_state["_fm_nav_collapsed"] = True
 
 
 def _select_cb_competencia(target: date) -> None:
@@ -3305,10 +3304,6 @@ def _select_cb_competencia(target: date) -> None:
     st.session_state["cb_month"] = target
     st.session_state["fm_feeder_month"] = target
     st.query_params["mes_cb"] = target.strftime("%Y-%m")
-
-
-def _toggle_fm_menu() -> None:
-    st.session_state["_fm_nav_collapsed"] = not st.session_state.get("_fm_nav_collapsed", True)
 
 
 def _refresh_fm_data() -> None:
@@ -3358,11 +3353,9 @@ def _fm_page_label(section: str) -> str:
 
 
 render_shell(
-    menu_open=not st.session_state.get("_fm_nav_collapsed", True),
     title=str(cfg.get("title") or "Fechamento Mensal"),
     page_label=_fm_page_label(page),
     route_id=PAGES.index(page),
-    on_toggle=_toggle_fm_menu,
 )
 
 _sidebar_status_class = {
