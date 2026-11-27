@@ -67,7 +67,7 @@ from cb_parser import (
     parse_interno_excel,
     resolve_chapa_rows,
 )
-from ui import inject_css, logo_html
+from ui import inject_css, render_shell
 
 ROOT = Path(__file__).parent
 FAVICON_FILE = ROOT / "config" / "favicon_setta.b64"
@@ -3294,8 +3294,8 @@ def _select_cb_competencia(target: date) -> None:
     st.query_params["mes_cb"] = target.strftime("%Y-%m")
 
 
-def _open_fm_menu() -> None:
-    st.session_state["_fm_nav_collapsed"] = False
+def _toggle_fm_menu() -> None:
+    st.session_state["_fm_nav_collapsed"] = not st.session_state.get("_fm_nav_collapsed", True)
 
 
 def _refresh_fm_data() -> None:
@@ -3324,6 +3324,29 @@ def _refresh_fm_data() -> None:
 
 
 menu_labels = cfg.get("menu_labels") or {}
+PAGE_ICONS = {
+    "Dashboard": "dashboard",
+    "Conferência de chapas e barramentos": "layers",
+    "Conferência de baixas": "fact_check",
+    "Análise de movimentações": "swap_horiz",
+    "Relatórios": "description",
+    "Configurações": "settings",
+}
+
+
+def _fm_page_label(section: str) -> str:
+    default = DEFAULT_CONFIG["menu_labels"].get(section, section)
+    configured = str(menu_labels.get(section) or "").strip()
+    return configured if configured and configured != default else section
+
+
+render_shell(
+    menu_open=not st.session_state.get("_fm_nav_collapsed", True),
+    title=str(cfg.get("title") or "Fechamento Mensal"),
+    page_label=_fm_page_label(page),
+    route_id=PAGES.index(page),
+    on_toggle=_toggle_fm_menu,
+)
 
 _sidebar_status_class = {
     "ok": "status-ok",
@@ -3334,52 +3357,20 @@ _sidebar_status_class = {
     "status-warning",
 )
 
-if st.session_state.get("_fm_nav_collapsed", False):
-    # A navegação automática fecha a sidebar após escolher uma seção.
-    # O botão de reabertura permanece sempre visível no conteúdo.
-    st.markdown(
-        '<style>section[data-testid="stSidebar"]{display:none!important;'
-        'width:0!important;min-width:0!important;flex-basis:0!important;}</style>',
-        unsafe_allow_html=True,
-    )
-    st.button(
-        "☰ ABRIR MENU",
-        key="fm_reopen_navigation",
-        on_click=_open_fm_menu,
-        type="secondary",
-    )
-
 with st.sidebar:
-    # Blocos separados para a altura do título não colidir com o primeiro botão.
-    st.markdown(
-        (
-            '<div class="sidebar-brand">'
-            f'<div class="sidebar-brand-title">{html.escape(str(cfg["sidebar_title"]))}</div>'
-            f'<div class="sidebar-brand-sub">{html.escape(str(cfg["sidebar_subtitle"]))}</div>'
-            '</div>'
-        ),
-        unsafe_allow_html=True,
-    )
-    # Contêiner próprio garante separação real entre a marca,
-    # o título da seção e cada botão, sem hacks de altura nos wrappers.
-    with st.container(key="fm_sidebar_navigation"):
-        st.markdown(
-            '<div class="sidebar-nav-label">NAVEGAÇÃO</div>',
-            unsafe_allow_html=True,
-        )
+    with st.container(key="setta_route_list"):
+        st.html('<div class="sidebar-brand">Navegação</div>')
         for _index, internal_page in enumerate(PAGES):
-            label = str(
-                menu_labels.get(internal_page)
-                or DEFAULT_CONFIG["menu_labels"].get(
-                    internal_page,
-                    internal_page,
-                )
-            ).strip()
+            if internal_page == "Configurações":
+                st.html('<div class="sidebar-section-label">Sistema</div>')
             st.button(
-                label,
-                key=f"fm_nav_{_index}",
+                ("Chapas e barramentos" if internal_page == "Conferência de chapas e barramentos"
+                 and _fm_page_label(internal_page) == internal_page else _fm_page_label(internal_page)),
+                key=f"setta_nav_{_index}",
                 type=("primary" if page == internal_page else "secondary"),
-                use_container_width=True,
+                icon=f":material/{PAGE_ICONS[internal_page]}:",
+                help=_fm_page_label(internal_page),
+                width="stretch",
                 on_click=_set_fm_page,
                 args=(internal_page,),
             )
@@ -3407,19 +3398,6 @@ with st.sidebar:
         use_container_width=True,
         help="Força a atualização das fontes, do resumo e dos relatórios sem reiniciar a sessão.",
     )
-
-st.markdown(
-    f'<div class="setta-logo-card">{logo_html(str(cfg.get("logo_data") or ""), str(cfg.get("logo_mime") or "image/svg+xml"))}</div>',
-    unsafe_allow_html=True,
-)
-st.markdown(
-    f'<h1 class="app-title">{cfg["title"]} | SETTA</h1>',
-    unsafe_allow_html=True,
-)
-st.markdown(
-    f'<p class="app-sub">{str(cfg["subtitle"]).upper()}</p>',
-    unsafe_allow_html=True,
-)
 
 # Placeholder estável: substitui o conteúdo da página anterior logo no início
 # da navegação, antes de consultar fontes ou executar relatórios pesados.
@@ -5496,11 +5474,6 @@ with _fm_page_surface.container():
         render_reports(summaries=summaries, imports=imports)
 
     else:
-        st.markdown(
-            '<div class="section-title">CONFIGURAÇÕES</div>',
-            unsafe_allow_html=True,
-        )
-
         settings_view = st.segmented_control(
             "Área de configurações",
             ["STATUS API", "ALIMENTADORES", "MENU", "REGRAS", "DESEMPENHO"],

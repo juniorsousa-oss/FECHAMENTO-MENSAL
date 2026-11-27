@@ -14,6 +14,8 @@ on:
       - 'inventory_db.py'
       - 'db.py'
       - 'ui.py'
+      - 'assets/**'
+      - '.streamlit/config.toml'
       - 'movements.py'
       - 'kardex_adjustments.py'
       - 'kardex_conditions.py'
@@ -133,10 +135,10 @@ jobs:
           assert "saldo_base_ajuste" in db
           assert "treatment_lookup" in app
           assert 'href="?pagina=' not in app
-          assert 'key=f"fm_nav_{_index}"' in app
+          assert 'key=f"setta_nav_{_index}"' in app
           assert "def _set_fm_page(target: str)" in app
           assert 'st.session_state["_fm_nav_collapsed"] = True' in app
-          assert 'key="fm_reopen_navigation"' in app
+          assert '_toggle_fm_menu' in app and 'render_shell(' in app
           assert "def load_cb_page_snapshot(" in app
           assert 'if "_fm_nav_initialized" not in st.session_state' in app
           assert "def load_global_visual_config()" in app
@@ -146,17 +148,11 @@ jobs:
           assert 'class="sidebar-status-section"' in app
           assert "sidebar-status-section" in app
           ui = Path("ui.py").read_text(encoding="utf-8")
-          assert "SIDEBAR SETTA — ESTRUTURA VALIDÁVEL" in ui
-          assert "SIDEBAR SETTA — BLOCO ÚNICO" not in ui
-          assert "SETTA SIDEBAR SPACING LOCK — WRAPPERS STREAMLIT" not in ui
-          assert 'with st.container(key="fm_sidebar_navigation")' in app
-          assert 'class="sidebar-nav-label"' in app
-          assert ".st-key-fm_sidebar_navigation" in ui
-          assert "margin-top:24px!important" in ui
-          assert "margin:0 0 12px!important" in ui
-          assert "gap:6px!important" in ui
-          assert "row-gap:0!important" not in ui
-          assert '[data-testid="stVerticalBlock"]{\n  gap:0!important;' not in ui
+          css = Path("assets/setta-fechamento.css").read_text(encoding="utf-8")
+          assert 'key="setta_drawer_toggle"' in ui
+          assert 'with st.container(key="setta_route_list")' in app
+          assert 'setta-shell-marker' in ui and 'setta-inv-top' in ui
+          assert '--inv-top:58px' in css and '--inv-nav:220px' in css
           assert 'class="sidebar-status-section"' in app
           assert not Path("db.py").exists()
           assert "_saldo_codes = set(final_analysis_codes)" in app
