@@ -70,6 +70,16 @@ html[data-setta-section-loading] [data-testid="stMainBlockContainer"] [data-stal
 html[data-setta-section-loading] [data-testid="stMainBlockContainer"] :is(
  .st-key-fm_dashboard_detail,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,[class*="st-key-cb_visible_stage_"]
 ) [data-stale="true"] *{visibility:visible!important}
+/* Same-page updates keep controls in place; route masks still suppress the entire old page. */
+html:not([data-setta-inventory-navigating]) [data-testid="stMainBlockContainer"] [data-stale="true"]:is(:is(.st-key-fm_dashboard_detail,.st-key-fm_history_view,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,.st-key-fm_feeder_type,.st-key-fm_ops_settings_view,.st-key-fm_issue_filters,[class*="st-key-cb_visible_stage_"]),:is(.st-key-fm_dashboard_detail,.st-key-fm_history_view,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,.st-key-fm_feeder_type,.st-key-fm_ops_settings_view,.st-key-fm_issue_filters,[class*="st-key-cb_visible_stage_"]) *),
+html:not([data-setta-inventory-navigating]) [data-testid="stMainBlockContainer"] :is(.st-key-fm_dashboard_detail,.st-key-fm_history_view,.st-key-fm_mov_navigation,.st-key-fm_reports_kind,.st-key-fm_settings_area,.st-key-fm_feeder_type,.st-key-fm_ops_settings_view,.st-key-fm_issue_filters,[class*="st-key-cb_visible_stage_"]) [data-stale="true"] *{
+ opacity:1!important;visibility:visible!important;
+}
+html[data-setta-section-loading="history"] .st-key-fm_section_panel_history,
+html[data-setta-section-loading="feeders"] .st-key-fm_section_panel_feeders,
+html[data-setta-section-loading="ops_source"] .st-key-fm_section_panel_ops_source{
+ opacity:0!important;visibility:hidden!important;pointer-events:none!important;
+}
 /* Only OP headers keep their previous pixels during a fragment update.
    The old and new details are not shown together. */
 html[data-setta-op-transition] [data-testid="stMainBlockContainer"] [data-stale="true"]:is(

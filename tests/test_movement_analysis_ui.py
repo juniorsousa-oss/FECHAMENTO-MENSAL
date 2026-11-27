@@ -185,6 +185,19 @@ class MovementAnalysisUITests(unittest.TestCase):
         self.assertEqual(summary["lancamentos"].tolist(), [0, 1])
         self.assertEqual(summary["valor_saida"].sum(), frame["valor_saida"].sum())
 
+    def test_optional_warehouse_only_appears_when_in_the_selected_period(self):
+        import pandas as pd
+        from movement_analysis_ui import _period_warehouses
+        frame = pd.DataFrame([
+            {"armazem": "20", "competencia": "2026-10"},
+            {"armazem": "S2", "competencia": "2026-11"},
+        ])
+        self.assertEqual(_period_warehouses(frame, [], "2026-11", "MÊS SELECIONADO"), ["S2"])
+        self.assertEqual(_period_warehouses(frame, [], "2026-10", "MÊS SELECIONADO"), ["20", "S2"])
+        self.assertEqual(_period_warehouses(frame, [], "2026-11", "ACUMULADO DO ANO"), ["20", "S2"])
+        declared = [{"armazem": "20", "competencia": "2026-11"}]
+        self.assertIn("20", _period_warehouses(frame, declared, "2026-11", "MÊS SELECIONADO"))
+
     def test_responsive_table_height_avoids_blank_rows(self):
         import movement_analysis_ui as ui
         self.assertEqual(ui._grid_height(1), 74)

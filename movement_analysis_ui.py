@@ -460,6 +460,23 @@ def _import_registry(model):
         st.caption("VIGENTE: arquivo em uso. PARCIALMENTE SUBSTITUÍDO: continua em uso em outros meses ou armazéns. SUBSTITUÍDO: registros fora da análise atual. Reimportar uma versão anterior a torna vigente novamente nos meses e armazéns da prévia.")
 
 
+def _period_warehouses(frame, coverage, month, mode):
+    """Warehouse 20 is optional; its past loads do not create a current pending item."""
+    def in_scope(value):
+        if mode == "TODO O HISTÓRICO":
+            return True
+        if mode == "ACUMULADO DO ANO":
+            return month[:4] + "-01" <= value <= month
+        return value == month
+    warehouses = set(frame["armazem"].unique()) | {m["armazem"] for m in coverage or []}
+    if "20" in warehouses:
+        actual = any(in_scope(value) for value in frame.loc[frame["armazem"].eq("20"), "competencia"].unique())
+        declared = any(m["armazem"] == "20" and in_scope(m["competencia"]) for m in coverage or [])
+        if not actual and not declared:
+            warehouses.remove("20")
+    return sorted(warehouses)
+
+
 def _context(frame, imports, coverage=None):
     current_month = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%Y-%m")
     months = sorted({current_month} | set(frame["competencia"].unique())
@@ -472,7 +489,8 @@ def _context(frame, imports, coverage=None):
     mode = st.session_state.get("fm_mov_period", "MÊS SELECIONADO")
     month = st.session_state.fm_mov_month
     modes = {"MÊS SELECIONADO": "Mensal", "ACUMULADO DO ANO": "Acumulado do ano", "TODO O HISTÓRICO": "Todo o histórico"}
-    selected_warehouses = st.session_state.get("fm_mov_warehouses") or []
+    selected_warehouses = [w for w in st.session_state.get("fm_mov_warehouses", [])
+                           if w in _period_warehouses(frame, coverage, month, mode)]
     label = f"PERÍODO E ARMAZÉM · {month[5:]}/{month[:4]} · {modes[mode]}"
     if selected_warehouses:
         label += " · " + ", ".join(selected_warehouses)
@@ -483,7 +501,7 @@ def _context(frame, imports, coverage=None):
         with second:
             mode = st.selectbox("Período da análise", list(modes), key="fm_mov_period")
         with third:
-            warehouses = sorted(set(frame["armazem"].unique()) | {m["armazem"] for m in coverage or []})
+            warehouses = _period_warehouses(frame, coverage, month, mode)
             if len(warehouses) > 1:
                 chosen = _multiselect("Armazéns", warehouses, "fm_mov_warehouses")
             else:
@@ -508,6 +526,12 @@ def _context(frame, imports, coverage=None):
         selected = chosen or warehouses
         ends = {warehouse: max((m["periodo_fim"] for m in covered if m["armazem"] == warehouse), default="") for warehouse in selected}
         coverage_end = min(ends.values(), default="")
+        # A base legada pode não ter manifesto separado. Uma linha real no
+        # recorte já comprova a presença da carga opcional.
+        if "20" in ends and not ends["20"]:
+            optional_rows = view.loc[view["armazem"].eq("20"), "data"]
+            if not optional_rows.empty:
+                ends["20"] = str(optional_rows.max())
         missing = [warehouse for warehouse, end in ends.items() if not end]
         if missing:
             st.warning("Sem fonte Kardex no recorte: " + ", ".join(missing) + ".")
@@ -1002,7 +1026,7 @@ def render_results(model, imports):
     navigation_key = "fm_mov_nav_area_" + str(AREAS.index(area))
     with st.container(key="fm_mov_navigation"):
         st.segmented_control("Funções da análise", AREAS, key=navigation_key, selection_mode="single",
-                             default=area, on_change=_area_changed, args=(navigation_key,),
+                             default=area, required=True, on_change=_area_changed, args=(navigation_key,),
                              format_func=lambda value: AREA_LABELS.get(value, value),
                              label_visibility="collapsed", width="stretch")
     with section_surface("kardex", area):
